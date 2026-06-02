@@ -397,17 +397,54 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 10 — Phase 0b documents orthogonality with /verify-changes
-# (positive grep `pre-review judges PLAN`) AND PR-mode negation prose
-# present (positive grep on `PR mode (Path A) handles its own push
-# internally and does \*\*not\*\* invoke /verify-changes`). Closes R3.
+# (positive grep `pre-review judges PLAN`) AND the orthogonality note
+# now states PR mode ALSO verifies before landing (issue #1014). The
+# OLD assertion grepped for "does **not** invoke /verify-changes" — that
+# prose is now genuinely wrong (PR mode runs the gate at Step A6.5), so
+# this asserts the corrected prose instead. Closes R3 + #1014.
 # ────────────────────────────────────────────────────────────────────
 ORTHO_DOC=$(grep -c 'pre-review judges PLAN' "$SKILL")
-PR_NEG_DOC=$(grep -cE 'PR mode \(Path A\) handles its own push internally and does \*\*not\*\* invoke /verify-changes' "$SKILL")
+# Corrected: PR mode now invokes /verify-changes before /land-pr.
+PR_VERIFY_DOC=$(grep -cE 'PR mode \(Path A\) ALSO runs the same DIFF verification gate before landing' "$SKILL")
+# Negative: the stale "does not invoke /verify-changes" carve-out must be GONE.
+PR_STALE_DOC=$(grep -cE 'does \*\*not\*\* invoke /verify-changes' "$SKILL")
 
-if [ "$ORTHO_DOC" -ge 1 ] && [ "$PR_NEG_DOC" -ge 1 ]; then
-  pass "10 Phase 0b orthogonality: pre-review-judges-PLAN ($ORTHO_DOC) + PR-mode-negation ($PR_NEG_DOC)"
+if [ "$ORTHO_DOC" -ge 1 ] && [ "$PR_VERIFY_DOC" -ge 1 ] && [ "$PR_STALE_DOC" -eq 0 ]; then
+  pass "10 Phase 0b orthogonality: pre-review-judges-PLAN ($ORTHO_DOC) + PR-mode-verifies-before-land ($PR_VERIFY_DOC) + stale-carve-out-removed (#1014)"
 else
-  fail "10 Phase 0b orthogonality: ortho=$ORTHO_DOC pr-neg=$PR_NEG_DOC"
+  fail "10 Phase 0b orthogonality: ortho=$ORTHO_DOC pr-verify=$PR_VERIFY_DOC stale-still-present=$PR_STALE_DOC"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 10b — modes/pr.md runs the local verification gate (verifier
+# dispatch + Layer-3 verify-response-validate.sh) BEFORE dispatching
+# /land-pr (issue #1014). /do pr was the only PR-mode caller with no
+# local verification gate — it relied solely on CI via /land-pr. The
+# gate must appear ahead of the /land-pr dispatch in modes/pr.md, so a
+# refactor that drops it (or reorders it after land) fails closed.
+#
+#   10b-i.   modes/pr.md dispatches /verify-changes (verifier).
+#   10b-ii.  modes/pr.md runs the Layer-3 verify-response-validate.sh.
+#   10b-iii. Both appear BEFORE the /land-pr dispatch (line-order check).
+# ────────────────────────────────────────────────────────────────────
+PR_MODE_F="$REPO_ROOT/skills/do/modes/pr.md"
+C10b_i=0; C10b_ii=0; C10b_iii=0
+grep -qE '/verify-changes' "$PR_MODE_F" && C10b_i=1
+grep -qF 'verify-response-validate.sh' "$PR_MODE_F" && C10b_ii=1
+
+# Line-order: the FIRST verify-response-validate.sh occurrence must come
+# before the FIRST /land-pr Skill-tool dispatch (`Skill: { skill: "land-pr"`).
+VERIFY_LINE=$(grep -nF 'verify-response-validate.sh' "$PR_MODE_F" | head -1 | cut -d: -f1)
+LAND_LINE=$(grep -nE 'Skill: *\{ *skill: *"land-pr"' "$PR_MODE_F" | head -1 | cut -d: -f1)
+if [ -n "$VERIFY_LINE" ] && [ -n "$LAND_LINE" ] && [ "$VERIFY_LINE" -lt "$LAND_LINE" ]; then
+  C10b_iii=1
+fi
+
+if [ "$C10b_i" = "1" ] && [ "$C10b_ii" = "1" ] && [ "$C10b_iii" = "1" ]; then
+  pass "10b modes/pr.md: /verify-changes + Layer-3 validation BEFORE /land-pr dispatch (verify@$VERIFY_LINE < land@$LAND_LINE) (#1014)"
+else
+  fail "10b modes/pr.md: verify-changes=$C10b_i layer3=$C10b_ii order(verify@${VERIFY_LINE:-none}<land@${LAND_LINE:-none})=$C10b_iii"
+  grep -nE '/verify-changes|verify-response-validate|skill: "land-pr"' "$PR_MODE_F" | sed 's/^/    /' | head -10
 fi
 
 # ────────────────────────────────────────────────────────────────────

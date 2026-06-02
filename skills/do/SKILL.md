@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.01+fb2e19"
+  version: "2026.06.02+7a73dc"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -666,7 +666,7 @@ written** (no tracking for /do). No worktree, no commits, no cron.
 
 On REJECT and `$FORCE -eq 1`: print override message. Continue to Phase 0c.
 
-Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); code changes in `worktree`/`direct` mode trigger /verify-changes unconditionally after execution (issue #713 — `auto` controls landing, not verification). PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
+Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); code changes in `worktree`/`direct` mode trigger /verify-changes unconditionally after execution (issue #713 — `auto` controls landing, not verification). PR mode (Path A) ALSO runs the same DIFF verification gate before landing: it invokes /verify-changes (Layer-3 validated, STOP-on-fail) at its own Step A6.5 (`skills/do/modes/pr.md`) BEFORE dispatching /land-pr — closing the gap (issue #1014) where /do pr was the only PR-mode caller with no local verification gate and relied solely on CI. CI via /land-pr is the backstop, not the gate.
 
 ## Phase 0c — Schedule (if `every` is present)
 
@@ -1014,7 +1014,7 @@ Verification intensity matches the change type (from Phase 1):
 
 ## Phase 4 — Land (if auto flag present, Path C/B only)
 
-Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invocation) AND Phase 3 verification passed (Phase 3 verification runs unconditionally for code changes — see issue #713). Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7; AUTO_FLAG in PR mode is consumed by `modes/pr.md` to request auto-merge via `--auto` to `/land-pr`).
+Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invocation) AND Phase 3 verification passed (Phase 3 verification runs unconditionally for code changes — see issue #713). This is the **push/land** step. Not applicable to PR mode (Path A — PR mode does its OWN push/land through `/land-pr` in Phase 2 Step A8, after its own verification gate in Step A6.5; AUTO_FLAG in PR mode is consumed by `modes/pr.md` to request auto-merge via `--auto` to `/land-pr`). Note this exclusion is about the push/land step only — PR mode DOES verify (Step A6.5), it just lands differently.
 
 1. **If on main (Path C):**
    ```bash

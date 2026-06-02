@@ -6,7 +6,7 @@ Full end-to-end PR flow: create branch, worktree, dispatch agents, open the PR, 
 Selected when the user passes `pr` explicitly, or when
 `execution.landing` in `.claude/zskills-config.json` is `"pr"`.
 
-**This path replaces the normal Phase 2–5 flow entirely. After the PR is created, skip to Phase 5 Report.**
+**This path runs its own end-to-end flow in place of the normal Phase 2–5 sequence. It performs its OWN verification gate (Step A6.5, equivalent to Phase 3) BEFORE handing off to `/land-pr`, then after the PR is created skips to Phase 5 Report. It does NOT re-run SKILL.md's Phase 3 or Phase 4 — those are folded into Step A6.5 (verify) and the `/land-pr` dispatch (push/land) here.**
 
 **Step A1 — Compose task slug (model-layer).** Set shell variable
 `TASK_SLUG` to a kebab-case identifier matching
@@ -230,6 +230,106 @@ branch: $BRANCH_NAME
 LANDED
 ```
 Exit with error directing the user to inspect `$WORKTREE_PATH`.
+
+**Step A6.5 — Verify (before push/land):**
+
+`/do pr` runs the SAME local verification gate as its worktree/direct
+siblings (`/do` Phase 3) and as the other PR-mode callers (`/quickfix`
+Phase 5.5, `/run-plan`, `/fix-issues`, `/commit`) BEFORE handing off to
+`/land-pr`. Issue #1014 — `/do pr` was previously the only PR-mode caller
+with no local verification gate: it relied solely on CI through
+`/land-pr`. CI (via `/land-pr`'s `pr-monitor.sh`) is the **backstop**, not
+the gate — a failing diff should be caught here, locally, before a branch
+is pushed and a PR is opened.
+
+Verification intensity matches the change type the implementation agent
+produced (the content/code/mixed split from `/do` Phase 1, exactly as
+Phase 3 applies it):
+
+- **Content-only changes** (markdown, images, presentations, docs):
+  dispatch a plain review agent — NO full test run. Tell the agent
+  explicitly: "These are content-only changes (no code). Review the diff
+  for correctness and completeness — do NOT run the full test suite. Your
+  job is: do these changes make sense? Are the right files included?
+  Anything accidentally staged? Formatting correct?" Do NOT invoke
+  `/verify-changes` for content-only changes (it would run the full suite
+  regardless).
+
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`.
+  The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is
+  sufficient for content review; the prose preamble above keeps it from
+  running tests.
+
+- **Code changes** (js, css, html, model files) **and mixed changes:**
+  dispatch a separate verification agent running `/verify-changes`. This
+  is the full 7-phase verification: diff review, test coverage audit,
+  full test suite, manual verification if UI, fix problems, re-verify
+  until clean. Push/land (Step A7/A8) only happens if this agent reports
+  clean.
+
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`.
+  This inherits the Layer 0 Bash-timeout extension
+  (`.claude/agents/verifier.md` + CLAUDE.md "Verifier-cannot-run rule") so
+  the verifier's long test runs don't trigger the bg+Monitor stall
+  pattern. The prompt should include the branch name (`$BRANCH_NAME`), the
+  task description (`$TASK_DESCRIPTION`), and the worktree path
+  (`$WORKTREE_PATH`) so the verifier has full context. Tell it to run
+  `/verify-changes` in `$WORKTREE_PATH`.
+
+In BOTH cases, after the dispatch returns, pipe `$VERIFIER_RESPONSE`
+through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`;
+on exit 1 STOP — do NOT push and do NOT dispatch `/land-pr`.
+
+**Layer 3 — verifier response validation:**
+
+```bash
+printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+VALIDATE_EXIT=$?
+```
+
+On `VALIDATE_EXIT=1` — or when the verifier agent reports a verification
+FAILURE it could not resolve (tests still failing, diff unsound) — STOP.
+Do NOT push and do NOT dispatch `/land-pr`. Write the `.landed` marker
+(`status: pr-failed`) and release any acquired issue claim(s) before
+exiting, reusing Step A6's failure shape:
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+cat > "$WORKTREE_PATH/.landed" <<LANDED
+status: pr-failed
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
+source: do
+branch: $BRANCH_NAME
+reason: local verification failed before push/land (#1014)
+LANDED
+# C2 inline-release: this STOP is AFTER the Step A5.5 acquire and BEFORE
+# the explicit-finalize block in Step A8, so release the issue claim(s)
+# (only if any were acquired) before bailing or they leak. Same fan-out
+# over $ISSUE_NUMS the abandon paths use.
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+  for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+  done
+  unset _ISSUE_N
+fi
+```
+
+Then emit the STOP message and exit (do NOT continue to Step A7/A8):
+
+```
+STOP: verifier returned without meaningful results.
+
+$(cat /tmp/last-validate-stderr)
+
+This is a verification FAIL, not a license to push. Surface to the
+user. If the verifier agent file is missing, run /update-zskills.
+```
+
+Only when verification is clean do you continue to Step A7.
 
 **Step A7 — Compose PR title and body BEFORE invoking /land-pr:**
 
