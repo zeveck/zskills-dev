@@ -13,9 +13,10 @@
 #
 # Mechanism (D16(a), 7 steps — see docs/plans/PLUGIN_DISTRIBUTION.md):
 #   1. Plugin hook sources this shim as its first executable line.
-#   2. Shim computes MY_BASENAME from ${BASH_SOURCE[0]} — when sourced,
-#      [0] is the SOURCING hook's path (empirically confirmed under
-#      claude 2.1.149; NOT the shim's own path).
+#   2. Shim computes MY_BASENAME from the OUTERMOST (last) BASH_SOURCE
+#      entry — the path of the hook that sourced this shim. (See the
+#      detailed note at the my_path assignment for why the old hardcoded
+#      [0] was fragile across invocation styles.)
 #   3. Shim reads $CLAUDE_PROJECT_DIR/.claude/settings.json via Python and
 #      iterates hooks.<event>[].hooks[] entries.
 #   4. For each entry's command, extracts the last whitespace-separated
