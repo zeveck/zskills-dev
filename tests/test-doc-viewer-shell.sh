@@ -113,15 +113,12 @@ assert_count_eq "docs-app.js: renderFrontmatterStrip defined" "$APP_JS" "functio
 assert_count_eq "docs-app.js: renderer call site uses both helpers" "$APP_JS" \
   "renderFrontmatterStrip(md) + renderMarkdown(stripFrontmatter(md)" 1
 
-# Upstream routing shape preserved.
-assert_count_ge "docs-app.js: eager fallback (DOCS_CATALOG[0]) preserved" "$APP_JS" \
-  'DOCS_CATALOG\[0\]' 1
-assert_count_ge "docs-app.js: upstream sidebar handler (loadDoc(item, link)) preserved" "$APP_JS" \
-  'loadDoc(item, link)' 1
-assert_count_ge "docs-app.js: upstream main-click direct loadDoc preserved" "$APP_JS" \
-  'loadDoc(item, navItems\[idx\])' 1
-
-# Hash-routing additions are NOT yet in 2a (negative ACs pinning the split).
+# Phase 2b ACs — upstream eager/direct-call shape was REMOVED, hash routing
+# was ADDED. These assertions used to be inverted (Phase 2a pinned the
+# upstream-preserved shape and asserted Phase 2b territory was absent);
+# Phase 2b flipped them. The Phase 2b routing test
+# (test-doc-viewer-routing.sh) is the deeper coverage; we keep these as a
+# fast smoke at this layer too.
 _grep_count_re() {
   local pattern="$1" file="$2"
   local n
@@ -130,22 +127,29 @@ _grep_count_re() {
   printf '%s' "$n"
 }
 
+assert_count_eq "docs-app.js: upstream eager fallback (DOCS_CATALOG[0]) REMOVED" "$APP_JS" \
+  'DOCS_CATALOG\[0\]' 0
+assert_count_eq "docs-app.js: upstream sidebar direct call (loadDoc(item, link)) REMOVED" "$APP_JS" \
+  'loadDoc(item, link)' 0
+assert_count_eq "docs-app.js: upstream main-click direct loadDoc REMOVED" "$APP_JS" \
+  'loadDoc(item, navItems\[idx\])' 0
+
 got=$(_grep_count_re 'hashchange|popstate|DOMContentLoaded' "$APP_JS")
-if [ "$got" = "0" ]; then
-  pass "docs-app.js: no hashchange/popstate/DOMContentLoaded listeners (Phase 2b adds them)"
+if [ "$got" -ge "3" ]; then
+  pass "docs-app.js: 3 routing listeners wired (hashchange/popstate/DOMContentLoaded; got $got)"
 else
-  fail "docs-app.js: unexpected listener wires present (got $got, expected 0 — Phase 2b territory)"
+  fail "docs-app.js: expected ≥3 routing listener wires, got $got"
 fi
 
-assert_count_eq "docs-app.js: no routeFromHash (Phase 2b)" "$APP_JS" "function routeFromHash" 0
-assert_count_eq "docs-app.js: no renderErrorPane (Phase 2b)" "$APP_JS" "function renderErrorPane" 0
-assert_count_eq "docs-app.js: no resolveLink (Phase 2b)" "$APP_JS" "function resolveLink" 0
+assert_count_eq "docs-app.js: routeFromHash defined" "$APP_JS" "function routeFromHash" 1
+assert_count_eq "docs-app.js: renderErrorPane defined" "$APP_JS" "function renderErrorPane" 1
+assert_count_eq "docs-app.js: resolveLink defined" "$APP_JS" "function resolveLink" 1
 
 got=$(_grep_count_re 'import \{[^}]*\bescapeHtml\b[^}]*\}' "$APP_JS")
-if [ "$got" = "0" ]; then
-  pass "docs-app.js: escapeHtml NOT imported in 2a (Phase 2b adds it)"
+if [ "$got" -ge "1" ]; then
+  pass "docs-app.js: escapeHtml imported from MarkdownRenderer"
 else
-  fail "docs-app.js: escapeHtml already imported (got $got, expected 0 — Phase 2b territory)"
+  fail "docs-app.js: escapeHtml import missing (got $got, expected ≥1)"
 fi
 
 # Imports are sibling-relative (no ../src/ui path).
@@ -201,13 +205,13 @@ done
 
 # ---------------------------------------------------------------------------
 # Node: Sanity smoke — load docs-app.js under a DOM stub, mock fetch,
-# drive the eager initial-load path, assert main.innerHTML contains <h1.
+# drive the Phase 2b DOMContentLoaded → routeFromHash → loadDoc path,
+# assert main.innerHTML contains <h1.
 #
-# docs-app.js uses top-level `await`-free code that runs synchronously to
-# build the sidebar then calls loadDoc(firstItem, firstNav) eagerly. We
-# stub document/location/history/fetch globally before importing, then
-# wait one microtask tick for the fetch promise chain to flush before
-# inspecting main.innerHTML.
+# Phase 2a's eager top-of-file loadDoc call was removed by Phase 2b in
+# favour of a DOMContentLoaded listener. We capture listeners via stubbed
+# document/window addEventListener, import the app, then synthesize the
+# DOMContentLoaded fire to drive the load path.
 # ---------------------------------------------------------------------------
 
 SMOKE_OUT=$(APP_JS="$APP_JS" RENDERER="$RENDERER" REGISTRY="$REGISTRY" \
@@ -219,6 +223,7 @@ function makeEl(tag) {
     className: '',
     textContent: '',
     innerHTML: '',
+    href: '',
     children: [],
     _attrs: {},
     appendChild(c) { this.children.push(c); return c; },
@@ -228,6 +233,15 @@ function makeEl(tag) {
     setAttribute(k, v) { this._attrs[k] = String(v); },
     getAttribute(k) { return this._attrs[k] == null ? null : this._attrs[k]; },
     querySelector(sel) {
+      // Match either '.cls' or 'tag[attr=\"val\"]' selectors.
+      const attrMatch = sel.match(/^([a-z]+)\\[([a-z-]+)=\"([^\"]+)\"\\]$/);
+      if (attrMatch) {
+        const [, tag, attr, val] = attrMatch;
+        for (const c of this.children) {
+          if (c.tagName === tag.toUpperCase() && c._attrs[attr] === val) return c;
+        }
+        return null;
+      }
       const cls = sel.replace(/^\./, '');
       for (const c of this.children) {
         if ((c.className || '').split(/\s+/).indexOf(cls) >= 0) return c;
@@ -258,10 +272,18 @@ const nav = makeEl('nav');
 const main = makeEl('main');
 const elements = { 'zl-docs-nav': nav, 'zl-docs-main': main };
 
+// Capture document + window event listeners so we can fire DOMContentLoaded
+// synthetically after import.
+const docListeners = {};
+const winListeners = {};
 global.document = {
   getElementById(id) { return elements[id] || null; },
   createElement(tag) { return makeEl(tag); },
   querySelector() { return null; },
+  addEventListener(ev, fn) { (docListeners[ev] = docListeners[ev] || []).push(fn); },
+};
+global.window = {
+  addEventListener(ev, fn) { (winListeners[ev] = winListeners[ev] || []).push(fn); },
 };
 global.location = { hash: '' };
 global.history = { replaceState() {} };
@@ -273,17 +295,20 @@ global.fetch = async (url) => ({
   text: async () => '# H',
 });
 
-// Import the app — this drives the eager initial-load path.
+// Import the app — module top-level builds the sidebar and registers
+// listeners; no eager loadDoc fires.
 await import(process.env.APP_JS);
 
+// Synthesize the DOMContentLoaded fire that drives the initial load.
+for (const fn of (docListeners.DOMContentLoaded || [])) fn();
+
 // loadDoc is async; flush microtasks so the fetch + render lands before
-// we read main.innerHTML. A few setImmediate ticks suffice.
+// we read main.innerHTML.
 await new Promise(r => setImmediate(r));
 await new Promise(r => setImmediate(r));
 await new Promise(r => setImmediate(r));
 
 const out = main.innerHTML || '';
-// Emit a structured line the bash side can grep.
 process.stdout.write('SMOKE_HTML_START\n' + out + '\nSMOKE_HTML_END\n');
 " 2>&1) || true
 

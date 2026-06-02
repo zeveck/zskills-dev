@@ -222,6 +222,7 @@ run_suite "test-dashboard-run-status-locks.sh" "tests/test-dashboard-run-status-
 run_suite "test-tab-dot-render-dom.sh" "tests/test-tab-dot-render-dom.sh"
 run_suite "test-doc-viewer-renderer.sh" "tests/test-doc-viewer-renderer.sh"
 run_suite "test-doc-viewer-shell.sh" "tests/test-doc-viewer-shell.sh"
+run_suite "test-doc-viewer-routing.sh" "tests/test-doc-viewer-routing.sh"
 run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handleaction-guard.sh"
 run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.sh"
 run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
