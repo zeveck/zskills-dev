@@ -178,10 +178,18 @@ vi_resolve_hook_path() {
 # vi_check_legacy <project_dir>
 #   - .claude/skills/ populated
 #   - every hook registered in .claude/settings.json resolves to a real file
-#   - .claude/rules/zskills/managed.md rendered with NO leftover
-#     <!-- TODO ... --> placeholders
+#   - .claude/rules/zskills/managed.md present AND rendered (no raw,
+#     un-substituted {{TOKEN}} template placeholders)
 #   - .claude/zskills-config.json present
-#   - zskills version present (WARN if absent — informative, not fatal)
+#
+# ZERO-FALSE-POSITIVE BAR (#1004): every FAIL here means "your install is
+# genuinely broken." We do NOT flag the renderer's designed `<!-- TODO ... -->`
+# comments — those are the deliberate output for UNSET OPTIONAL config
+# (dev_server.cmd, ui.auth_bypass, testing.file_patterns, …; see
+# scripts/managed_rules_substitution.py's `_empty_or(..., "<!-- TODO -->")`).
+# Their presence PROVES managed.md rendered. We also do NOT check for a
+# recorded zskills_version: /update-zskills Step F.5 SKIPS writing it when the
+# source clone is untagged, so a valid install can legitimately lack it.
 # ───────────────────────────────────────────────────────────────────────────
 vi_check_legacy() {
   local proj="$1"
@@ -218,14 +226,24 @@ vi_check_legacy() {
     fi
   fi
 
-  # (3) managed.md rendered with no leftover <!-- TODO ... --> placeholders.
+  # (3) managed.md present AND rendered.
+  #
+  # A MISSING file is a real failure. But its mere presence does NOT prove it
+  # rendered: a copied-but-never-rendered CLAUDE_TEMPLATE.md would still carry
+  # raw `{{TOKEN}}` placeholders. So we flag ONLY raw, un-substituted template
+  # tokens — the unambiguous signature of "the renderer never ran." We do NOT
+  # flag `<!-- TODO ... -->` comments: those are the renderer's DESIGNED output
+  # for unset OPTIONAL config and their presence proves the render happened
+  # (scripts/render-managed-rules.py / managed_rules_substitution.py.apply()
+  # even RAISES if any `{{...}}` survives, so a real render can never leave one
+  # — making a surviving token a definitive "not rendered" signal).
   local mm="$claude/rules/zskills/managed.md"
   if [ ! -f "$mm" ]; then
     vi_emit FAIL "legacy.managed-present" ".claude/rules/zskills/managed.md missing"
-  elif grep -qE '<!--[[:space:]]*TODO' "$mm"; then
-    vi_emit FAIL "legacy.managed-no-placeholders" "managed.md still contains <!-- TODO ... --> placeholder(s)"
+  elif grep -qE '\{\{[A-Z_]+\}\}' "$mm"; then
+    vi_emit FAIL "legacy.managed-rendered" "managed.md contains un-substituted {{TOKEN}} template placeholder(s) — renderer did not run"
   else
-    vi_emit PASS "legacy.managed-no-placeholders" "managed.md rendered with no leftover TODO placeholders"
+    vi_emit PASS "legacy.managed-rendered" "managed.md present and rendered (no un-substituted {{TOKEN}} placeholders)"
   fi
 
   # (4) zskills-config.json present.
@@ -236,14 +254,11 @@ vi_check_legacy() {
     vi_emit FAIL "legacy.config-present" ".claude/zskills-config.json missing"
   fi
 
-  # (5) zskills version recorded (informative — WARN if absent).
-  local ver
-  ver="$(vi_config_version "$cfg")"
-  if [ -n "$ver" ]; then
-    vi_emit PASS "legacy.version-recorded" "zskills_version = $ver"
-  else
-    vi_emit WARN "legacy.version-recorded" "zskills_version absent from config (source clone may be untagged)"
-  fi
+  # NOTE (#1004): no `legacy.version-recorded` check. A missing zskills_version
+  # is NOT install breakage — /update-zskills Step F.5 deliberately skips
+  # writing it when the source clone is untagged, so a valid install can
+  # legitimately lack it. Flagging it (even as a WARN) violated the
+  # zero-false-positive bar.
 }
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -258,7 +273,10 @@ vi_check_legacy() {
 #       .claude/hooks/verify-response-validate.sh
 #       .claude/rules/zskills/managed.md
 #   - mirror-less (.claude/skills/ ABSENT in the consumer project)
-#   - zskills version present (WARN if absent)
+#
+# ZERO-FALSE-POSITIVE BAR (#1004): no `plugin.version-recorded` check — the
+# plugin seed config can legitimately have no tag on a valid install, so its
+# absence is not breakage (mirrors the legacy-lane decision above).
 # ───────────────────────────────────────────────────────────────────────────
 vi_check_plugin() {
   local proj="$1"
@@ -285,20 +303,18 @@ vi_check_plugin() {
   done
 
   # (2) Mirror-less: .claude/skills/ must be ABSENT in a clean plugin consumer.
+  # NOTE: a populated .claude/skills/ alongside CLAUDE_PLUGIN_ROOT is detected
+  # as the `dual` lane upstream (vi_detect_lane), so this WARN is reached only
+  # when skills/ exists but is empty — a genuine residue worth surfacing, never
+  # a false positive on a clean mirror-less install.
   if [ -d "$claude/skills" ] && [ -n "$(ls -A "$claude/skills" 2>/dev/null)" ]; then
     vi_emit WARN "plugin.mirror-less" ".claude/skills/ present on the plugin lane (dual-install? run scripts/switch-install-path.sh)"
   else
     vi_emit PASS "plugin.mirror-less" ".claude/skills/ absent (mirror-less plugin install)"
   fi
 
-  # (3) zskills version recorded (informative — WARN if absent).
-  local cfg="$claude/zskills-config.json" ver
-  ver="$(vi_config_version "$cfg")"
-  if [ -n "$ver" ]; then
-    vi_emit PASS "plugin.version-recorded" "zskills_version = $ver"
-  else
-    vi_emit WARN "plugin.version-recorded" "zskills_version absent from config (plugin seed config has no tag)"
-  fi
+  # NOTE (#1004): no `plugin.version-recorded` check — same rationale as the
+  # legacy lane: a missing zskills_version is not install breakage.
 }
 
 # ───────────────────────────────────────────────────────────────────────────
