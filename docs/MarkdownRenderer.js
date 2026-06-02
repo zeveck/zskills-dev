@@ -13,6 +13,25 @@ function stripUnsafeHtml(s) {
   return s
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<\/?(?:iframe|object|embed)\b[^>]*>/gi, '')
+    // Scheme-strip from href= / src= attribute values. Neutralize
+    // javascript:/vbscript:/data:text/html (and HTML-entity-encoded variants
+    // that decode to those schemes at render time) by replacing the scheme
+    // with about:blank#blocked-scheme-<original>. Apply BEFORE on*= stripping
+    // so the on*= regex's quote handling isn't disturbed by our edit.
+    //
+    // Defense covers: javascript:, vbscript:, data:text/html (case-insensitive,
+    // leading whitespace tolerated). Also catches HTML-entity-encoded forms
+    // like &#x6A;avascript: by neutralizing any href=/src= attribute value
+    // starting with &# (HTML numeric entities have no legitimate use in URL
+    // schemes — real URLs use percent-encoding for non-ASCII). Issue #983.
+    .replace(
+      /(\s(?:href|src)\s*=\s*["']?)[\s]*(javascript|vbscript|data:text\/html)/gi,
+      '$1about:blank#blocked-scheme-$2'
+    )
+    .replace(
+      /(\s(?:href|src)\s*=\s*["']?)[\s]*&#/gi,
+      '$1about:blank#blocked-entity-encoded&#'
+    )
     .replace(/\s+on\w+\s*=\s*"[^"]*"/gi, '')
     .replace(/\s+on\w+\s*=\s*'[^']*'/gi, '')
     .replace(/\s+on\w+\s*=\s*[^\s>]+/gi, '')
@@ -270,9 +289,25 @@ export function escapeHtml(s) {
 
 function inlineMarkdown(s, baseUrl) {
   s = escapeHtml(s);
+  // Helper: reject dangerous URLs. Checks the raw and resolved forms because
+  // baseUrl prefixing can mask a `javascript:` scheme behind the prefix. #983.
+  function isDangerousUrl(raw, resolved) {
+    return (
+      /^\s*(javascript|vbscript|data:text\/html)/i.test(raw) ||
+      /^\s*(javascript|vbscript|data:text\/html)/i.test(resolved) ||
+      /^\s*&#/.test(raw) ||
+      /^\s*&#/.test(resolved) ||
+      /^\s*\/\//.test(raw) ||
+      /^\s*\/\//.test(resolved)
+    );
+  }
   // Images: ![alt](url) — resolve relative paths against baseUrl
   s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
     const resolved = src.startsWith('http') || src.startsWith('/') ? src : normalizePath(baseUrl + src);
+    // Reject dangerous schemes/protocol-relative on image src — emit alt only. #983.
+    if (isDangerousUrl(src, resolved)) {
+      return alt;
+    }
     return `<img src="${resolved}" alt="${alt}" class="zl-whatsnew-img">`;
   });
   // Links: [text](url) — anchor links and .md links stay internal, others open in new tab
@@ -282,6 +317,10 @@ function inlineMarkdown(s, baseUrl) {
     }
     // Resolve relative paths against baseUrl (skip absolute URLs and root-relative paths)
     const resolved = href.startsWith('http') || href.startsWith('/') ? href : normalizePath(baseUrl + href);
+    // Reject dangerous schemes / entity-encoded / protocol-relative — emit text only. #983.
+    if (isDangerousUrl(href, resolved)) {
+      return text;
+    }
     // .md links are internal doc navigation — no target="_blank"
     if (resolved.endsWith('.md') || resolved.includes('.md#')) {
       return `<a href="${resolved}" class="zl-docs-internal-link">${text}</a>`;
