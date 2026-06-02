@@ -126,19 +126,12 @@ strip_markers() {
   fi
 }
 
-# Rewrite dev-only URLs (zeveck.github.io/zskills-dev → zskills.synapticnoise.com)
-# in the staging markdown so plugin consumers don't get a README pointing at the
-# dev Pages site. Mirrors scripts/build-prod.sh's rewrite_dev_urls exactly.
-rewrite_dev_urls() {
-  local file="$1"
-  [ -f "$file" ] || return 0
-  if grep -q 'zeveck\.github\.io/zskills-dev' "$file"; then
-    log "rewriting dev→prod URLs in $(basename "$file")"
-    sed -i 's|zeveck\.github\.io/zskills-dev|zskills.synapticnoise.com|g' "$file"
-  fi
-}
+# NOTE (#1002): rewrite_dev_urls is no longer defined here — it now lives in
+# scripts/_lib/finalize-prod-tree.sh (sourced above) and is invoked as a TREE
+# WALK over docs/skills/README.md/CHANGELOG.md from inside finalize_prod_tree
+# (step 8 below), AFTER all strip steps. Both publishers share that ONE
+# definition so the rewrite set can never diverge.
 strip_markers "$STAGE/README.md"
-rewrite_dev_urls "$STAGE/README.md"
 
 # ── 2. Remove dev-maintainer-only files (RELEASING.md + DEV-QUAL.md) ────────
 log "removing dev-maintainer-only files"
@@ -146,20 +139,12 @@ for f in RELEASING.md DEV-QUAL.md; do
   [ -f "$STAGE/$f" ] && { rm -v "$STAGE/$f"; }
 done
 
-# ── 3. Remove canary plans + canary fixtures + canary hooks ────────────────
-# Canary artifacts are dev-only regression guards (plans, monitor fixtures,
-# deliberately-broken hooks). Strip every path whose basename contains
-# `CANARY` (matches CANARY_*.md, CANARYNN_*.md, *_CANARY.md, *CANARYA.md, and
-# the monitor fixture CANARY42.md) so the strip-verification grep (which
-# matches `CANARY` anywhere in the path) sees 0 survivors. The
-# canary*-bad.sh hooks use a lowercase `canary` basename, so they get an
-# explicit pass below.
-log "removing CANARY* plans / fixtures"
-find "$STAGE" -type f -name '*CANARY*' -print -delete || true
-# NOTE: hooks/canary*-bad.sh (lowercase basename), build-*.sh release
-# tooling, and MW-EXAMPLE files are stripped by the SHARED finalizer
-# (finalize_prod_tree, step 8 below) so this builder and build-prod.sh
-# strip the IDENTICAL dev-only set.
+# ── 3. (CANARY strip moved to the shared finalizer — #1002) ─────────────────
+# NOTE (#1002): the CANARY*-named-path strip moved into the SHARED finalizer
+# (finalize_prod_tree, step 8 below) so this builder and build-prod.sh strip
+# the IDENTICAL set. hooks/canary*-bad.sh (lowercase basename), build-*.sh
+# release tooling, MW-EXAMPLE files, and the dev→prod URL tree-walk are also in
+# the shared finalizer.
 
 # ── 4. Remove dev_only skills (+ mirrors) ──────────────────────────────────
 log "scanning for dev_only skills"
@@ -251,7 +236,13 @@ done_ "LOCAL tag prod/$VERSION → $PROD_COMMIT"
 
 # ── 10. Verify the strip set on the LOCAL prod ref ─────────────────────────
 log "verifying strip set on local prod/main"
-HITS="$(git ls-tree -r --name-only refs/heads/prod/main | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
+# NOTE (#1002): the build-*.sh sub-pattern is anchored to `scripts/build-…`
+# (the only place finalize_prod_tree strips build-*.sh — maxdepth 1 in
+# $tree/scripts/). The old loose `build-.*\.sh` false-positived on any path
+# whose basename merely started with `build-`, e.g. the shipped test files
+# tests/test-build-rewrite-dev-urls.sh / tests/test-build-prod-strip-parity.sh,
+# which legitimately ship and are NOT release tooling.
+HITS="$(git ls-tree -r --name-only refs/heads/prod/main | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|scripts/build-[^/]*\.sh|MW-EXAMPLE' || true)"
 if [ -n "$HITS" ]; then
   warn "strip verification FAILED — these forbidden paths survived:"
   printf '%s\n' "$HITS" | sed 's/^/    /'

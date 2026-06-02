@@ -16,18 +16,11 @@
 #   1. `<!-- prod-strip:start --> … <!-- prod-strip:end -->` blocks from
 #      README.md — the dev-repo warning banner and ship-to-prod badge.
 #      (Same marker pattern can be added to any other markdown file later.)
-#   1b. Rewrite dev-only URLs (zeveck.github.io/zskills-dev →
-#      zskills.synapticnoise.com) in README.md so the dev README points at
-#      the dev Pages site while the prod README ships with the prod URL.
-#      (Same per-file pattern can be added to any other markdown file later.)
-#   2. `plans/CANARY_*.md` and any top-level `CANARY_*.md` — canaries are
-#      regression guards for zskills-dev internals; prod consumers don't
-#      need them.
-#   3. RELEASING.md + DEV-QUAL.md — dev-maintainer-only.
-#   4. Any skill directory whose `SKILL.md` front-matter contains
+#   2. RELEASING.md + DEV-QUAL.md — dev-maintainer-only.
+#   3. Any skill directory whose `SKILL.md` front-matter contains
 #      `dev_only: true` — skills we keep in dev but don't distribute.
 #      Strips both `skills/<name>/` and any mirrored `.claude/skills/<name>/`.
-#   5. The SHARED plugin-completion + dev-only strip set (via
+#   4. The SHARED plugin-completion + dev-only strip set (via
 #      scripts/_lib/finalize-prod-tree.sh, also called by
 #      build-plugin-release.sh so the two builders can never diverge):
 #        - D4 suffixless hook siblings (block-agents.sh,
@@ -35,7 +28,11 @@
 #          actually exist for consumers;
 #        - build-*.sh release/dogfood tooling STRIPPED;
 #        - hooks/canary*-bad.sh fixtures STRIPPED;
-#        - MW-EXAMPLE-marked files STRIPPED.
+#        - CANARY*-named plans / fixtures STRIPPED (recursive — #1002);
+#        - MW-EXAMPLE-marked files STRIPPED;
+#        - dev→prod URL rewrite (zeveck.github.io/zskills-dev →
+#          zskills.synapticnoise.com) applied as a TREE WALK over
+#          docs/skills/README.md/CHANGELOG.md AFTER all strips (#1002).
 #
 # Running against an already-stripped tree should be a no-op (idempotent).
 # Intended to grow: add transforms here as the dev/prod split widens.
@@ -45,12 +42,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
-
-# Source the path-config helper so canary glob uses $ZSKILLS_PLANS_DIR
-# instead of a hardcoded `plans/` literal. The helper itself fails loud
-# on missing project root.
-ZSKILLS_PATHS_ROOT="$PROJECT_ROOT"
-source "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 
 # Shared prod-tree finalizer (D4 hook siblings + dev-only strip set). The
 # SAME helper is sourced by build-plugin-release.sh, so the two builders
@@ -79,19 +70,12 @@ strip_markers() {
   fi
 }
 
-rewrite_dev_urls() {
-  local file="$1"
-  [ -f "$file" ] || return 0
-  if grep -q 'zeveck\.github\.io/zskills-dev' "$file"; then
-    log "rewriting dev→prod URLs in $file"
-    sed -i 's|zeveck\.github\.io/zskills-dev|zskills.synapticnoise.com|g' "$file"
-  else
-    printf "  ${DIM}(no dev urls in $file)${RESET}\n"
-  fi
-}
-
+# NOTE (#1002): rewrite_dev_urls is no longer defined here — it now lives in
+# scripts/_lib/finalize-prod-tree.sh (sourced above) and is invoked as a TREE
+# WALK over docs/skills/README.md/CHANGELOG.md from inside finalize_prod_tree,
+# AFTER all strip steps. Both publishers share that ONE definition so the
+# rewrite set can never diverge.
 strip_markers README.md
-rewrite_dev_urls README.md
 
 # ─── 1b. Remove dev-maintainer-only files wholesale ────────────────────
 # RELEASING.md and DEV-QUAL.md are entirely dev-maintainer-only (PAT setup,
@@ -108,17 +92,10 @@ for f in RELEASING.md DEV-QUAL.md; do
 done
 
 # ─── 2. Remove canary plans ────────────────────────────────────────────
-log "removing CANARY_* plans"
-shopt -s nullglob
-canaries=( "$ZSKILLS_PLANS_DIR"/CANARY_*.md CANARY_*.md )
-if [ "${#canaries[@]}" -eq 0 ]; then
-  printf "  ${DIM}(none found)${RESET}\n"
-else
-  for f in "${canaries[@]}"; do
-    rm -v "$f"
-  done
-fi
-shopt -u nullglob
+# NOTE (#1002): CANARY strip moved into the SHARED finalizer
+# (finalize_prod_tree, step below) as a recursive `find -name '*CANARY*'`, so
+# build-prod.sh and build-plugin-release.sh strip the IDENTICAL set (including
+# docs/plans/archive/canaries/*.md, which the old top-level-only glob missed).
 
 # ─── 3. Remove dev-only skills (front-matter `dev_only: true`) ─────────
 log "scanning for dev_only skills"

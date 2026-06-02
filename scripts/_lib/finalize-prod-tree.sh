@@ -31,6 +31,22 @@
 #      - scripts/build-*.sh   (release/dogfood tooling)
 #      - hooks/canary*-bad.sh (deliberately-broken regression fixtures)
 #      - any file containing the MW-EXAMPLE marker (dev-only worked examples)
+#      - CANARY-named plans / fixtures ANYWHERE in the tree (recursive) — the
+#        prod consumer doesn't need zskills-dev's regression guards. Unified
+#        HERE (#1002) so build-prod.sh and build-plugin-release.sh strip the
+#        IDENTICAL set; previously build-prod.sh stripped only top-level
+#        $PLANS/CANARY_*.md + CANARY_*.md while build-plugin-release.sh used a
+#        recursive find, so docs/plans/archive/canaries/*.md shipped via one
+#        builder but not the other.
+#   3. Dev→prod URL rewrite (#1002) — a TREE WALK over docs/skills/README.md/
+#      CHANGELOG.md (.md/.html/.js/.json), run AFTER all strip steps, that
+#      swaps zeveck.github.io/zskills-dev → zskills.synapticnoise.com via an
+#      idempotent (grep-guarded) sed. Previously each builder carried its OWN
+#      copy of rewrite_dev_urls and invoked it on README.md ALONE, so a live
+#      dashboard href, skill issue-filing prose, and a demo URL all shipped to
+#      prod pointing at the dev Pages site. Sharing the definition + walking
+#      the tree closes that (the rewrite_dev_urls helper is also exported for
+#      the function unit test, tests/test-build-rewrite-dev-urls.sh).
 #
 # Usage:
 #   finalize_prod_tree <tree-dir> [<self-script-to-preserve>]
@@ -58,6 +74,44 @@
 # this runs, so removing the on-disk file is safe.
 
 # shellcheck disable=SC2317
+
+# rewrite_dev_urls <file>
+#
+# Idempotently swap the dev-only URLs for their prod equivalents in a SINGLE
+# file. Two distinct dev→prod mappings (#1002), applied in this order:
+#
+#   1. Dev Pages site  zeveck.github.io/zskills-dev → zskills.synapticnoise.com
+#   2. Dev GitHub repo github.com/zeveck/zskills-dev → github.com/zeveck/zskills
+#
+# Mapping #1 runs FIRST because both share the `zeveck` / `zskills-dev` tokens;
+# the Pages host is the more specific pattern and is rewritten before the repo
+# pattern so neither double-fires on the other's output. The grep-q guard makes
+# the whole call a no-op (NO sed -i write) for files carrying NEITHER form, so
+# it is safe to walk over the whole tree and re-run on an already-rewritten
+# tree. Defined at file scope (not nested) so the function unit test
+# (tests/test-build-rewrite-dev-urls.sh) can source this lib and call it
+# directly. The two build scripts no longer define their own copies — they
+# call THIS one, so the rewrite set can never diverge (#1002).
+rewrite_dev_urls() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  # Allow-list escape hatch: a file that intentionally NAMES the dev URL in a
+  # genuinely prose-only context (e.g. CHANGELOG.md describing this very
+  # rewrite, where mechanically swapping the literal would mangle the entry to
+  # "X → X") carries a `zskills-dev-url-allow` marker and is left untouched.
+  # The coverage test (tests/test-prod-tree-no-dev-urls.sh) honors the same
+  # marker, so an allow-listed file is excused from BOTH the rewrite and the
+  # 0-hit assertion.
+  if grep -q 'zskills-dev-url-allow' "$file"; then
+    return 0
+  fi
+  if grep -qE 'zeveck\.github\.io/zskills-dev|github\.com/zeveck/zskills-dev' "$file"; then
+    sed -i \
+      -e 's|zeveck\.github\.io/zskills-dev|zskills.synapticnoise.com|g' \
+      -e 's|github\.com/zeveck/zskills-dev|github.com/zeveck/zskills|g' \
+      "$file"
+  fi
+}
 
 finalize_prod_tree() {
   local tree="$1"
@@ -101,6 +155,35 @@ finalize_prod_tree() {
   # strip-verification grep checks (it greps the ls-tree PATH list).
   _fpt_log "stripping MW-EXAMPLE*-named files from $tree"
   find "$tree" -type f -name 'MW-EXAMPLE*' -print -delete 2>/dev/null || true
+
+  # CANARY-named plans / fixtures, ANYWHERE in the tree (recursive). Unified
+  # here (#1002) so both publishers strip the IDENTICAL set — build-prod.sh
+  # previously stripped only top-level $PLANS/CANARY_*.md + CANARY_*.md, so
+  # docs/plans/archive/canaries/*.md shipped via build-prod but were stripped
+  # by build-plugin-release.sh. Matches any path whose basename contains
+  # `CANARY` (CANARY_*.md, CANARYNN_*.md, *_CANARY.md, the monitor fixture
+  # CANARY42.md, …). The deliberately-broken canary*-bad.sh hooks use a
+  # lowercase basename and are stripped by the explicit rule above.
+  _fpt_log "stripping CANARY*-named plans / fixtures from $tree (recursive)"
+  find "$tree" -type f -name '*CANARY*' -print -delete 2>/dev/null || true
+
+  # ── 3. Dev→prod URL rewrite (#1002) — TREE WALK, run AFTER all strips ─────
+  # Walk docs/, skills/, README.md, CHANGELOG.md AND the .claude/ legacy-lane
+  # mirror (.md/.html/.js/.json) and rewrite every dev Pages/repo URL to the
+  # prod equivalent. The .claude/ mirror is included because the prod tree
+  # ships it for the /update-zskills lane, so its copies of run-plan/SKILL.md
+  # and the dashboard index.html would otherwise carry the dev URLs even after
+  # the source copies are rewritten. Run LAST so files about to be deleted by
+  # the strip steps above are never processed. rewrite_dev_urls is idempotent
+  # (grep-guarded) and honors the `zskills-dev-url-allow` marker, so files
+  # without a dev URL — or allow-listed prose like CHANGELOG.md — are untouched.
+  _fpt_log "rewriting dev→prod URLs across $tree (docs, skills, .claude mirror, README, CHANGELOG)"
+  local _f
+  while IFS= read -r -d '' _f; do
+    rewrite_dev_urls "$_f"
+  done < <(cd "$tree" && find docs skills .claude README.md CHANGELOG.md \
+                \( -name '*.md' -o -name '*.html' -o -name '*.js' -o -name '*.json' \) \
+                -type f -print0 2>/dev/null | while IFS= read -r -d '' rel; do printf '%s\0' "$tree/$rel"; done)
 
   # If the caller is build-prod.sh finalizing IN-PLACE, its own running
   # script matched the build-*.sh strip above and is already gone. The
