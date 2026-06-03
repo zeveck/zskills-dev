@@ -1,11 +1,11 @@
 ---
 name: briefing
-argument-hint: "[report [period]] | verify | current | worktrees | [summary] | stop | next"
+argument-hint: "[report [period]] | verify | current | worktrees | [summary] | [every SCHEDULE] | stop | next"
 description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.06.03+d7f19f"
+  version: "2026.06.03+feab1d"
 ---
 
 # /briefing — Project Status Briefing

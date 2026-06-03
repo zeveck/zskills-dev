@@ -1,16 +1,16 @@
 ---
 name: investigate
 disable-model-invocation: false
-argument-hint: "<description or #issue>"
+argument-hint: "<description> | #<issue>"
 description: >-
   Deep debugging for one complex bug at a time. Disciplined workflow:
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
   root-cause understanding before writing a fix.
 metadata:
-  version: "2026.06.03+e8151e"
+  version: "2026.06.03+ce9bb4"
 ---
 
-# /investigate \<description or #issue> — Root-Cause Debugging
+# /investigate \<description> | #<issue> — Root-Cause Debugging
 
 Systematic investigation of a single bug that's too complex for batch
 fixing. Enforces discipline: you must SEE the bug, TRACE the cause,

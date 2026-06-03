@@ -1,17 +1,17 @@
 ---
 name: fix-issues
 disable-model-invocation: true
-argument-hint: "N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
+argument-hint: "N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next"
 description: >-
   Orchestrate a batch bug-fixing sprint: dispatch implementers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.03+bd2e69"
+  version: "2026.06.03+8fdd72"
 ---
 
-# /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
+# /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
 
 Orchestrates large-scale bug fixing. Syncs trackers, prioritizes issues,
 dispatches agent teams in worktrees, verifies fixes, writes a persistent
