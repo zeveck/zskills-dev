@@ -16,8 +16,8 @@ updated: 2026-06-03
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Rip run-status pill + trigger plumbing + queue POST preserve-by-default | ✅ Done | 9ecd939 | 18 files; +457 / −1997; 7397/7397 tests pass |
-| 2 — Plans chip three-state + mode-conflict skip + SKIP chip × dismiss | ⬚ Pending | | Scheduled for next cron fire |
-| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ⬚ Pending | | After Phase 2 |
+| 2 — Plans chip three-state + mode-conflict skip + SKIP chip × dismiss | ✅ Done | f6f134e | 25 files; +2571 / −67; 7464/7464 tests pass; 6/6 playwright |
+| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ⬚ Pending | | Scheduled for next cron fire |
 
 ## Phase 1 — what landed
 
@@ -46,5 +46,35 @@ PASS on all ACs + invariants. Commit landed cleanly (no skill-version hook deny)
 `#1005` (`run-plan.dashboard-runstatus-cleanup-plan`) — held for plan lifetime.
 `#1006` (`run-plan.dashboard-runstatus-cleanup-plan`) — held for plan lifetime.
 
+## Phase 2 — what landed
+
+Commit `f6f134e` on `feat/dashboard-runstatus-cleanup-plan`:
+
+- **Plans chip three-state INHERIT / PHASE / FINISH** with explicit `"inherit"` label rendered (no more collapse to literal `"finish"`).
+- **FINISH-claim chip lock anchored on `claim.dispatch_mode`** (NOT `batch_mode` — the #930 trap explicitly avoided). PHASE claims stay togglable; FINISH claims render `aria-disabled=true` + `state=running-finish`.
+- **`/work-on-plans` mode-conflict skip filter** via `skills/work-on-plans/scripts/filter-mode-mismatch-plans.sh` — writes `plans.skipped[slug] = {code:"mode-mismatch", reason:"<batch>≠<pin>", sprint_id, at}` via atomic-write (NamedTemporaryFile + os.replace under flock).
+- **SKIP chip × dismiss button** rendered on plan cards in `plans.skipped` state, with new `/api/plan-skip-dismiss` endpoint → `_handle_plan_skip_dismiss_post`.
+- **Three clear paths** converging on `monitor-state.json:plans.skipped[slug]`:
+  - (a) **claim-acquire** — `clear_plan_skip_if_present` in `claim-plan.sh` (inline hot-path bash, idempotent, NON-ABORTING — confirmed by smoking corrupt monitor-state.json against acquire and getting exit 0).
+  - (b) **pin-toggle** — server-side `_flatten_modes` diff in `_handle_queue_post` pops only on pin change OR slug disappearance, layered ADDITIVELY on Phase 1's deep-copy base.
+  - (c) **× click** — `/api/plan-skip-dismiss` endpoint atomic-writes the pop.
+- **Direct `/run-plan <slug> finish` bypasses the pin** — `cmd_acquire` does NOT consult `monitor-state.json:plans.ready[].mode`; only batch-dispatched `/work-on-plans` honors the pin via the new filter.
+- **Tests:** `test-mode-chip-three-state.sh` extended (66 cases); new `test-plans-skip-chip.sh` (25 cases) + `test-plan-skip-clear-paths.sh` (17 cases); `test-work-on-plans-dispatch-seam.sh` +6 mm-cases (37 total).
+- **Skill bumps:** `zskills-dashboard`, `work-on-plans`, `run-plan`. Mirror parity verified.
+
+## Test tally
+```
+Overall: 7464/7464 passed, 0 failed
+```
+
+## Playwright verification (Phase 2)
+6/6 dashboard render checks executed end-to-end on a worktree-spawned dashboard server (port 8092):
+1. INHERIT chip — text=inherit, state=queued, source=inherit
+2. Explicit `phase` pin — text=phase, source=explicit
+3. FINISH-claim lock — innerHTML-finish=true, state=running-finish, disabled=disabled, aria-disabled=true
+4. PHASE-claim (not locked) — text=phase, state=running-phase, clickable
+5. SKIP chip with × button — chip + `<button aria-label="Dismiss skip for …">` rendered
+6. × click clears via next poll — DOM `.skip-chip` count 1→0; server state `plans.skipped == {}`
+
 ## Next
-Phase 2 (Plans chip three-state + mode-conflict skip + SKIP chip × dismiss with three clear paths) — scheduled via one-shot cron, ~5 min after Phase 1's landing checkpoint.
+Phase 3 (Issues × dismiss + activity-feed SKIP pill + CHANGELOG + final mirror sync) — scheduled via one-shot cron.
