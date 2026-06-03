@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.02+7a73dc"
+  version: "2026.06.03+ff9b8e"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -72,15 +72,17 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   immediately AND schedules. Without `every`, `now` is the default behavior.
 - **--force** (optional) — bypass triage redirect and review reject. Persists
   into the cron prompt verbatim when used with `every`.
-- **--no-claim** (optional) — treat every bare `#N` in the description as a
-  mere mention. Suppresses the stray-`#N` pre-flight check (#959): /do
-  normally STOPS when the description references an issue currently held
-  in-flight by a foreign pipeline (to prevent duplicating its work — the
-  closed-PR-#888-vs-landed-#901 footgun), and warns on any other stray `#N`.
-  Pass `--no-claim` when the reference is deliberate ("fix tooltip, related
-  to #340") and you do NOT want /do to halt or warn on it. Claim-positioned
-  `#N` (a leading `#N` or `Fix #N …`) are unaffected — they still acquire
-  their claim through the mode files' normal acquire-or-decline.
+- **--no-claim** (optional) — claim absolutely NOTHING; treat every `#N` in
+  the description as a mere mention. This now suppresses ALL claims (#1032),
+  not just the stray-ref warning: the pre-flight forces `ISSUE_NUMS` empty so
+  the mode files acquire no claims AND skips the stray-`#N` check (#959). The
+  stray-`#N` check normally STOPS when the description references an issue
+  currently held in-flight by a foreign pipeline (to prevent duplicating its
+  work — the closed-PR-#888-vs-landed-#901 footgun), and warns on any other
+  stray `#N`. Pass `--no-claim` when you do NOT want /do to claim, halt, or
+  warn on any referenced issue — including claim-positioned ones. Concretely
+  `Fix #5 / #6 --no-claim` acquires neither #5 nor #6: under `--no-claim`
+  even a leading `#N` or `Fix #N …` is a pure mention.
 - **--rounds N** (optional) — max review/refine cycles (default 1; `0` skips
   review with stderr WARN).
 - **stop** — cancel `/do` cron(s). Bare `/do stop` → all crons.
@@ -283,21 +285,42 @@ _DO_ISSUE_FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
 # Leading anchored match (optional close-keyword, optional leading quote,
 # optional `issue[s]?:?` filler between kw and `#N`). BASH_REMATCH groups
 # (kw branch): 1=kw outer, 2=kw inner, 3=optional filler, 4=digit capture.
+# `_DO_CHAIN_SUFFIX` records the description text IMMEDIATELY AFTER the
+# leading ref, and `_DO_HAS_ANCHOR` records whether the leading match
+# populated ISSUE_NUMS. The strong-separator loop below anchors on this
+# leading ref: a strong-separator `#N` is captured ONLY when it is
+# contiguously chained to the already-claimed leading ref (#1032). Without
+# a leading anchor (description starts mid-prose, no claim-positioned
+# leading `#N`), the chain captures nothing — so a slash-separated citation
+# like `supersedes #999/#1004` or a bare-cited `#960/#967` claims nothing.
+_DO_HAS_ANCHOR=0
+_DO_CHAIN_SUFFIX=""
 if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER}#([0-9]+) ]]; then
   ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+  _DO_HAS_ANCHOR=1
+  _DO_CHAIN_SUFFIX="${ARGUMENTS#*"${BASH_REMATCH[0]}"}"
 elif [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
   ISSUE_NUMS+=("${BASH_REMATCH[1]}")
+  _DO_HAS_ANCHOR=1
+  _DO_CHAIN_SUFFIX="${ARGUMENTS#*"${BASH_REMATCH[0]}"}"
 fi
 # Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK; if
 # the keyword is present, the optional `issue[s]?:?` filler is also
-# permitted between the kw and `#N`. BASH_REMATCH groups: 1=outer kw+
-# filler wrapper, 2=kw outer, 3=kw inner, 4=optional filler, 5=digit
-# capture.
-_DO_REMAINING="$ARGUMENTS"
-while [[ "$_DO_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER})?#([0-9]+) ]]; do
-  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
-  _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
-done
+# permitted between the kw and `#N`. The regex is `^`-ANCHORED and runs
+# against `_DO_CHAIN_SUFFIX` (the text right after the previous captured
+# ref), so it consumes ONLY a contiguous `(<sep> #N)+` chain starting
+# immediately after the leading claimed ref — arbitrary prose between the
+# anchor and a `<sep> #N` breaks the chain and stops the loop (#1032).
+# When there is no leading anchor, the loop body never runs. BASH_REMATCH
+# groups: 1=outer kw+filler wrapper, 2=kw outer, 3=kw inner, 4=optional
+# filler, 5=digit capture.
+if [ "$_DO_HAS_ANCHOR" -eq 1 ]; then
+  while [[ "$_DO_CHAIN_SUFFIX" =~ ^[[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER})?#([0-9]+) ]]; do
+    ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+    _DO_CHAIN_SUFFIX="${_DO_CHAIN_SUFFIX#*"${BASH_REMATCH[0]}"}"
+  done
+fi
+unset _DO_HAS_ANCHOR _DO_CHAIN_SUFFIX
 # Subsequent weak-separator matches (`,`, `;`, ` and `, ` or `): require
 # close-keyword before `#N` so prose like "Closes #N, see also #M" doesn't
 # over-capture #M. Optional `issue[s]?:?` filler is allowed between kw and
@@ -322,6 +345,18 @@ unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _DO_ISSUE_FILLER _n
 # files still reference $ISSUE_NUM in skip-empty guards; new fan-out code
 # iterates "${ISSUE_NUMS[@]}".
 ISSUE_NUM="${ISSUE_NUMS[0]:-}"
+# `--no-claim` (#1032) means "claim absolutely nothing." Reset the populated
+# ISSUE_NUMS (and the back-compat scalar) to empty so the mode files' claim
+# fan-out acquires NOTHING — even for claim-positioned refs like `Fix #5 / #6`.
+# This is the deterministic escape hatch: any future parser edge case can be
+# neutralized with --no-claim. The stray-ref check below is still guarded by
+# the same NO_CLAIM flag, so an emptied ISSUE_NUMS does not cause a
+# contradictory STOP/warn (the whole stray-ref block is skipped when
+# NO_CLAIM=1).
+if [ "$NO_CLAIM" -eq 1 ]; then
+  ISSUE_NUMS=()
+  ISSUE_NUM=""
+fi
 # Unclaimed-reference check (#907 warn + #959 foreign-held STOP). If the
 # description contains a `#N` token that the claim-position rules above did
 # NOT capture into ISSUE_NUMS, the reference is real but UN-claimed by this
@@ -360,7 +395,9 @@ ISSUE_NUM="${ISSUE_NUMS[0]:-}"
 # "fails → duplicates silently" to "fails → halts with a clear message".
 #
 # `--no-claim` (NO_CLAIM=1, parsed in the pre-parse above) suppresses BOTH
-# the STOP and the warn — every bare `#N` is then a pure mention.
+# the STOP and the warn — every bare `#N` is then a pure mention. It ALSO
+# forces ISSUE_NUMS empty above (#1032), so claim-positioned refs are not
+# acquired either; --no-claim means "claim absolutely nothing."
 #
 # Resolve MAIN_ROOT the same way block-fix-issue-unclaimed.sh does:
 # `git rev-parse --git-common-dir` parent, falling back to
