@@ -15,6 +15,16 @@ __pycache__/
 .claude/agents/canary-readonly.md
 DOC_PARTY_COMPARISON.md
 
+# test-create-worktree.sh case 17 synthetic-root backstop (#1036). The cwd-
+# invariance case deliberately resolves a relative --root that canonicalises
+# back INTO the repo root (cwdinv-root-cw-smoke-<pid>/...). Cleanup is now
+# trap-guarded, but ignore the slug stems at repo root as a belt-and-braces
+# backstop so an interrupted run's stray dir can never be committed. Anchored
+# to repo root (leading /) so these never shadow files in subdirectories; no
+# tracked file matches either stem.
+/cwdinv-*
+/cw-smoke-*
+
 # Playwright runtime artifacts (snapshots, console logs, video, traces).
 # Track only the cli.config.json that .devcontainer/setup.sh writes.
 .playwright/*
