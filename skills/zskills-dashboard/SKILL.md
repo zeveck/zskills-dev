@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.03+71fa39"
+  version: "2026.06.03+32f5f0"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -88,13 +88,13 @@ PKG_PARENT="$MAIN_ROOT/skills/zskills-dashboard/scripts"
 # Dual-lane resolution: plugin install (${CLAUDE_PLUGIN_ROOT}) first, then
 # .claude/skills/... mirror (legacy /update-zskills install lane), then
 # source-tree fallback (zskills repo + tests).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh" ]; then
+if [ -x "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh" ]; then
   PORT_SCRIPT="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh"
 else
   PORT_SCRIPT="$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh"
   [ -x "$PORT_SCRIPT" ] || PORT_SCRIPT="$MAIN_ROOT/skills/update-zskills/scripts/port.sh"
 fi
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/skills/create-worktree/scripts/sanitize-pipeline-id.sh" ]; then
+if [ -x "${CLAUDE_PLUGIN_ROOT}/skills/create-worktree/scripts/sanitize-pipeline-id.sh" ]; then
   SANITIZE_SCRIPT="${CLAUDE_PLUGIN_ROOT}/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
 else
   SANITIZE_SCRIPT="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
@@ -179,7 +179,8 @@ read-only and writes nothing (per Phase 8 spec — avoids flooding
 tracking with one subdir per status check).
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

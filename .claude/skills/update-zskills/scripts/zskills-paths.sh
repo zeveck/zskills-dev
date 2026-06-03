@@ -48,14 +48,14 @@ if [ -z "$_ZSK_PATHS_ROOT" ]; then
   fi
 fi
 
-# Lane-portable skills root. Plugin: the plugin tree (never a worktree). Legacy: the consumer
-# mirror under $CLAUDE_PROJECT_DIR — anchored on CLAUDE_PROJECT_DIR (NOT ZSKILLS_PATHS_ROOT),
-# matching today's hardcoded `$CLAUDE_PROJECT_DIR/.claude/skills/...` invocation behavior.
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills" ]; then
-  ZSKILLS_SKILLS_ROOT="${CLAUDE_PLUGIN_ROOT}/skills"
-else
-  ZSKILLS_SKILLS_ROOT="${CLAUDE_PROJECT_DIR:-}/.claude/skills"
-fi
+# Lane-portable skills root via env-independent self-location. This script
+# lives at <skills_root>/update-zskills/scripts/ on BOTH lanes (plugin:
+# ${CLAUDE_PLUGIN_ROOT}/skills/...; legacy: $CLAUDE_PROJECT_DIR/.claude/skills/...),
+# so resolving its own dir is lane-agnostic, env-independent, cwd-independent,
+# worktree-safe, and symlink-safe (readlink -f). Replaces the broken
+# ${CLAUDE_PLUGIN_ROOT:-} guard (the :- form is never harness-substituted and
+# is empty in the script env on the plugin lane → mis-resolved mirror-less).
+ZSKILLS_SKILLS_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
 export ZSKILLS_SKILLS_ROOT
 
 # Pre-init vars to empty (empty-pattern-guard from DRIFT_ARCH_FIX). NOT export.

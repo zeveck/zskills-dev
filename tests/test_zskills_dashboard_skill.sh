@@ -322,6 +322,12 @@ run_mode() {
     # so we run exactly ONE mode body, as a single skill invocation does.
     ARGUMENTS="$sub"
     SUB="$sub"
+    # Legacy-lane faithful under the file-level `set -u`: production fences run
+    # WITHOUT `set -u`, so the new resolution idiom's bare ${CLAUDE_PLUGIN_ROOT}
+    # token expands empty → else/legacy branch. Bind it EMPTY (not a real path)
+    # so the same legacy else-branch is exercised without an unbound-variable
+    # abort under the inherited `set -u`.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     eval "$STEP0_FENCE"
     eval "$VERIFY_FENCE"
     eval "$MARKER_FENCE"

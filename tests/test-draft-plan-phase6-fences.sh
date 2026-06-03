@@ -130,7 +130,14 @@ run_commit_fence() {
     set +e
     set -u
     export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
-    unset CLAUDE_PLUGIN_ROOT
+    # Legacy-lane faithful under `set -u`: production fences run WITHOUT
+    # `set -u`, so the new idiom's bare ${CLAUDE_PLUGIN_ROOT} token expands
+    # empty → else/legacy branch. Bind the token EMPTY (not `unset`) so the
+    # same legacy else-branch runs without an unbound-variable abort under the
+    # harness's `set -u`. Binding empty is behaviorally identical to unset for
+    # the fence's `-f "${CLAUDE_PLUGIN_ROOT}/…"` test (empty path → false →
+    # else), but survives `set -u`.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     cd "$WT"
     WT_PATH="$WT"
     OUTPUT_FILE="$out_file"
@@ -221,7 +228,14 @@ run_landpr_fence() { # $1 = stage-result (1/0); remaining = result kvs
     set +e
     set -u
     export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
-    unset CLAUDE_PLUGIN_ROOT
+    # Legacy-lane faithful under `set -u`: production fences run WITHOUT
+    # `set -u`, so the new idiom's bare ${CLAUDE_PLUGIN_ROOT} token expands
+    # empty → else/legacy branch. Bind the token EMPTY (not `unset`) so the
+    # same legacy else-branch runs without an unbound-variable abort under the
+    # harness's `set -u`. Binding empty is behaviorally identical to unset for
+    # the fence's `-f "${CLAUDE_PLUGIN_ROOT}/…"` test (empty path → false →
+    # else), but survives `set -u`.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     cd "$WT"
     AUTO_FLAG=1
     TOPLEVEL="$WT"

@@ -67,11 +67,10 @@ fi
 # idempotent. CLAUDE_PROJECT_DIR is resolved above before this runs, so the
 # legacy branch anchors on the same project root as the rest of this helper.
 if [ -z "${ZSKILLS_SKILLS_ROOT:-}" ]; then
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
-  else
-    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-  fi
+  # zskills-paths.sh is a sibling in this same scripts/ dir on both lanes —
+  # source it env-independently (the ${CLAUDE_PLUGIN_ROOT:-} guard was broken
+  # mirror-less: empty in the script env → fell to the absent legacy mirror).
+  . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/zskills-paths.sh"
 fi
 
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"

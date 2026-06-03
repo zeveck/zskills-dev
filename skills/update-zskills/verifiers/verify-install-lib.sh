@@ -64,20 +64,43 @@ vi_emit() {
 #
 # vi_detect_lane <project_dir> → prints one of: plugin | legacy | dual | none
 #
-#   ${CLAUDE_PLUGIN_ROOT} set            → plugin signal present
+#   materialised sentinels present in $proj/.claude → plugin signal present
 #   .claude/skills/ AND .claude/settings.json present → legacy signal present
 #   both signals                         → dual (UNSUPPORTED — flagged)
 #   neither                              → none (no install detected)
 #
-# The plugin signal is the environment variable (a loaded plugin always sets
-# CLAUDE_PLUGIN_ROOT); the legacy signal is the on-disk mirror + settings.
-# This is exactly the consumer-visible state, matching the issue spec.
+# F2 (#1026): the plugin signal is keyed on the CONSUMER project dir's on-disk
+# MATERIALISED SENTINELS — the 5 artifacts the plugin SessionStart materialiser
+# writes into $proj/.claude (each carrying a `zskills-materialised:` sentinel) —
+# NOT on the ${CLAUDE_PLUGIN_ROOT} environment variable. On a real mirror-less
+# plugin consumer the verifier runs as a launched/sourced script whose env does
+# NOT carry CLAUDE_PLUGIN_ROOT (the harness substitutes only the bare token in
+# markdown; it is absent from the script env), so keying on it false-classified
+# a working plugin install as `none` (the #1026 `lane=none` false-FAIL). Lane is
+# a property of the CONSUMER dir, not of the env var and NOT of where this lib
+# happens to live (we deliberately do NOT key on the lib's own BASH_SOURCE —
+# that would false-classify legacy/none as plugin whenever the lib is sourced
+# from the dev tree / an env-unset run, breaking the legacy regression cases).
 # ───────────────────────────────────────────────────────────────────────────
 vi_detect_lane() {
   local proj="$1"
   local plugin_sig=0 legacy_sig=0
 
-  [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && plugin_sig=1
+  # Plugin signal: at least one of the 5 materialised artifacts present in the
+  # consumer dir carrying a `zskills-materialised:` sentinel. Reuses the exact
+  # sentinel detection (vi_has_materialiser_sentinel) the plugin-lane checks use.
+  local art
+  for art in \
+    "agents/verifier.md" \
+    "agents/implementer.md" \
+    "hooks/inject-bash-timeout.sh" \
+    "hooks/verify-response-validate.sh" \
+    "rules/zskills/managed.md"; do
+    if vi_has_materialiser_sentinel "$proj/.claude/$art"; then
+      plugin_sig=1
+      break
+    fi
+  done
 
   if [ -d "$proj/.claude/skills" ] \
      && [ -n "$(ls -A "$proj/.claude/skills" 2>/dev/null)" ] \
@@ -425,12 +448,24 @@ vi_check_plugin() {
   # Reached only on the plugin lane (vi_detect_lane returned `plugin`, which
   # requires CLAUDE_PLUGIN_ROOT set), so a healthy plugin install always has
   # these — never a false positive.
+  # Resolve the plugin root. Prefer ${CLAUDE_PLUGIN_ROOT} when the env carries
+  # it; otherwise fall back to env-independent self-location from this lib's own
+  # BASH_SOURCE (this lib ships at <plugin-root>/skills/update-zskills/verifiers/,
+  # so dirname/../../.. == <plugin-root>). F2 (#1026): the env var is ABSENT from
+  # a launched/sourced script's env on a real mirror-less plugin consumer, so the
+  # old "empty → FAIL" path false-FAILed a healthy install. This BASH_SOURCE
+  # fallback is consumed ONLY here, and vi_check_plugin is dispatched ONLY after
+  # vi_detect_lane established lane==plugin from the consumer's materialised
+  # sentinels — so it is never reached off the plugin lane.
   local proot="${CLAUDE_PLUGIN_ROOT:-}"
+  if [ -z "$proot" ]; then
+    proot="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." 2>/dev/null && pwd)"
+  fi
   local pmissing=""
   if [ -z "$proot" ]; then
-    # Defensive: vi_check_plugin is only dispatched when CLAUDE_PLUGIN_ROOT is
-    # set, so an empty value here is itself broken.
-    vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} is empty on the plugin lane"
+    # Defensive: lane==plugin is established AND a BASH_SOURCE fallback exists,
+    # so an empty value here means neither resolved — genuinely broken.
+    vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} unset and plugin root unresolvable from BASH_SOURCE"
   else
     [ -f "$proot/.claude-plugin/plugin.json" ] || pmissing="$pmissing .claude-plugin/plugin.json"
     [ -f "$proot/hooks/hooks.json" ]           || pmissing="$pmissing hooks/hooks.json"

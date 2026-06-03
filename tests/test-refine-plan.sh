@@ -128,7 +128,12 @@ run_commit_fence() {
     set +e
     set -u
     export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
-    unset CLAUDE_PLUGIN_ROOT
+    # Legacy-lane faithful under `set -u`: production fences run WITHOUT
+    # `set -u`, so the new idiom's bare ${CLAUDE_PLUGIN_ROOT} token expands
+    # empty → else/legacy branch. Bind the token EMPTY (not `unset`) so the
+    # same legacy else-branch runs without an unbound-variable abort under the
+    # harness's `set -u`.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     cd "$WT"
     WT_PATH="$WT"
     PLAN_FILE="$plan_file"
@@ -199,7 +204,12 @@ run_landpr_fence() { # $1 = stage-result (1/0); remaining = result kvs
     set +e
     set -u
     export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
-    unset CLAUDE_PLUGIN_ROOT
+    # Legacy-lane faithful under `set -u`: production fences run WITHOUT
+    # `set -u`, so the new idiom's bare ${CLAUDE_PLUGIN_ROOT} token expands
+    # empty → else/legacy branch. Bind the token EMPTY (not `unset`) so the
+    # same legacy else-branch runs without an unbound-variable abort under the
+    # harness's `set -u`.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     cd "$WT"
     AUTO_FLAG=1
     TOPLEVEL="$WT"
@@ -241,7 +251,12 @@ ML_ERR="$TMP/ml.stderr"; : > "$ML_ERR"
   set +e
   set -u
   export CLAUDE_PROJECT_DIR="$FAKE_PROJECT"
-  unset CLAUDE_PLUGIN_ROOT ZSKILLS_PIPELINE_ID
+  # Legacy-lane faithful under `set -u`: bind CLAUDE_PLUGIN_ROOT EMPTY (not
+  # `unset`) so the new idiom's bare token expands empty → else/legacy branch
+  # without an unbound-variable abort. (ZSKILLS_PIPELINE_ID is still unset to
+  # exercise the no-env fallback.)
+  unset ZSKILLS_PIPELINE_ID
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
   export ZSKILLS_SKILLS_ROOT="$REPO_ROOT/skills"
   cd "$WT"
   TRACKING_ID="execution-modes"

@@ -186,6 +186,16 @@ seed_caller_loop_inputs() {
   # ── config-derived ──
   : "${TIMEZONE:=UTC}"
 
+  # ── Legacy-lane faithful resolution-fence input (root-resolution-fix) ──
+  # The new lane-portable resolution idiom (`if [ -f "${CLAUDE_PLUGIN_ROOT}/…" ]`)
+  # references a BARE ${CLAUDE_PLUGIN_ROOT} token. Production fences run WITHOUT
+  # `set -u`, so on the legacy lane the unset token expands empty → the `-f`
+  # test is false → else-branch (which `patch_caller_loop` neuters) → harness
+  # pre-set env wins. Under the harness's `set -u`, BIND the token EMPTY (not a
+  # real path) so the same legacy else path is taken without an unbound-variable
+  # abort. Empty is the legacy-faithful value; a real path would mask the else.
+  : "${CLAUDE_PLUGIN_ROOT:=}"
+
   # ── Merge/state — Step 6/7 ──
   : "${MERGE_REQUESTED:=false}"
   : "${PR_STATE:=not-checked}"
@@ -201,7 +211,7 @@ seed_caller_loop_inputs() {
   export STATUS CI_STATUS AUTO_FLAG PR_NUMBER PR_URL PR_EXISTING \
          BRANCH BRANCH_SLUG BASE_BRANCH WORKTREE_PATH CI_TIMEOUT TRACKING_ID \
          TITLE LANDED_SOURCE NO_MONITOR PR_RESUME ISSUE_NUM \
-         MAIN_ROOT COPY_MAIN_ROOT TIMEZONE \
+         MAIN_ROOT COPY_MAIN_ROOT TIMEZONE CLAUDE_PLUGIN_ROOT \
          MERGE_REQUESTED PR_STATE REASON \
          REBASE_STDERR_FILE UNKNOWN_POLL_MAX TW_ITER
 }

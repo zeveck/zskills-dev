@@ -14,7 +14,7 @@ $CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config
 
 Both install lanes are first-class and PERMANENT (decision D23) — neither is
 deprecated. New code should source the helper via the lane-portable
-**two-line dual-path form** documented in §1 so it works under either lane.
+**bare-token `-f` fence** documented in §1 so it works under either lane.
 
 It resolves the following six shell vars by reading
 `.claude/zskills-config.json` from `$CLAUDE_PROJECT_DIR`:
@@ -34,18 +34,16 @@ empty vars.
 
 ## 1. Sourcing pattern
 
-### Preferred: lane-portable two-line dual-path form (D6)
+### Preferred: lane-portable bare-token `-f` fence
 
-Drop this **two-line dual-path** block at the top of any skill bash fence
-that needs config values. It is the PREFERRED form for all new code because
-it resolves correctly on **both** install lanes — the plugin lane (where
-`${CLAUDE_PLUGIN_ROOT}` is set and the helper lives at
-`${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/`) and the
-`/update-zskills` lane (where the helper lives under
-`.claude/skills/update-zskills/scripts/`):
+Drop this block at the top of any skill bash fence that needs config values.
+It is the PREFERRED form for all new code because it selects the install lane
+**correctly on a mirror-less plugin consumer** (the normal plugin install),
+which the older `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]`-guarded form did NOT:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -54,15 +52,36 @@ fi
 #               + $ZSKILLS_SKILLS_ROOT (sourced transitively via zskills-paths.sh)
 ```
 
-The plugin branch is preferred when `${CLAUDE_PLUGIN_ROOT}` is set AND the
-helper file exists there; otherwise the block falls back to the legacy
-`/update-zskills`-lane path. The same existence-test pattern applies to the
-sibling helper `zskills-stub-lib.sh`. Note that `zskills-resolve-config.sh`
-itself sources `zskills-paths.sh` (via this same corrected dual-path form), so
-sourcing the config helper transitively exports `$ZSKILLS_SKILLS_ROOT` — the
-lane-portable absolute path to the installed skills tree
-(`${CLAUDE_PLUGIN_ROOT}/skills` under the plugin lane,
-`$CLAUDE_PROJECT_DIR/.claude/skills` under the `/update-zskills` lane).
+**Why the bare token, NOT a `"${X:-}"` guard.** The Claude Code harness
+substitutes the **bare** `${CLAUDE_PLUGIN_ROOT}` token in plugin-skill
+**markdown** with the plugin's absolute root path; it does **NOT** substitute
+the `${CLAUDE_PLUGIN_ROOT:-}` form, and the variable is **absent from the env**
+of any script a skill launches or sources. The old "preferred" form opened with
+`[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&` — that first conjunct is the never-
+substituted form, so it is **always empty/false on the plugin lane**, which
+short-circuited away the (working, bare-token) `-f` test and dropped every
+mirror-less plugin consumer onto the absent legacy `.claude/skills` path. The
+new fence uses ONLY the bare-token `-f` test: it substitutes to a real path on
+the plugin lane (true → plugin branch) and to a missing path on the legacy lane
+(false → else branch). The `export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"`
+line (bare RHS) propagates the substituted value to any child the plugin branch
+launches.
+
+**`set -u`-unsafe by necessity.** Because the bare `${CLAUDE_PLUGIN_ROOT}` token
+is genuinely unbound on the legacy lane, this fence MUST NOT run under `set -u`
+(`set -euo pipefail`) — substitution and `:-`-safety are mutually exclusive for
+this token. Skill `.md` fences do not run under `set -u`, so this is safe; do
+NOT add `set -u`/`set -euo` above a resolution fence.
+
+The same bare-token `-f` test applies to the sibling helper
+`zskills-stub-lib.sh`. Note that `zskills-resolve-config.sh` itself sources
+`zskills-paths.sh` — but it does so via env-independent **`BASH_SOURCE`-relative
+self-location** (a launched/sourced script's env has no `${CLAUDE_PLUGIN_ROOT}`),
+and `zskills-paths.sh` derives `$ZSKILLS_SKILLS_ROOT` the same way — so sourcing
+the config helper transitively exports `$ZSKILLS_SKILLS_ROOT`, the lane-portable
+absolute path to the installed skills tree (`${CLAUDE_PLUGIN_ROOT}/skills` under
+the plugin lane, `$CLAUDE_PROJECT_DIR/.claude/skills` under the `/update-zskills`
+lane).
 
 ### Family 2: bundled-script invocations use `$ZSKILLS_SKILLS_ROOT`
 
