@@ -704,6 +704,200 @@ else
   fail "cron orchestration reference missing (expected every/stop glue)"
 fi
 
+# ─────────────────────────────────────────────────────────────────────
+# Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — mode-mismatch skip filter.
+# Invokes the standalone shell script directly with env vars (NOT a
+# markdown-embedded fence — no extract-fence helper used here).
+# Mirror of tests/test-fix-issues-skip-persistence.sh pattern.
+# ─────────────────────────────────────────────────────────────────────
+MM_FILTER="$REPO_ROOT/skills/work-on-plans/scripts/filter-mode-mismatch-plans.sh"
+
+# Helper: build a minimal MAIN_ROOT with a git repo so the script's
+# environment matches production.
+mm_make_root() {
+  local d="$1"
+  mkdir -p "$d/.zskills"
+  ( cd "$d" && git init -q && git config user.email t@t && git config user.name t \
+      && git commit --allow-empty -q -m init ) >/dev/null 2>&1 || true
+}
+
+mm_read_skipped() {
+  local file="$1"
+  python3 -c "
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    print(json.dumps(data.get('plans', {}).get('skipped', {}), sort_keys=True))
+except Exception:
+    print('{}')
+" "$file"
+}
+
+mm_count_step_markers() {
+  local pipeline_dir="$1" slug="$2"
+  # Count step.work-on-plans.*.${slug} markers.
+  ls "$pipeline_dir"/step.work-on-plans.*."${slug}" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Case 1: mode_mismatch_pin_phase_batch_finish_skips
+{
+  d="$TEST_TMPDIR/mm-1"
+  mm_make_root "$d"
+  PD="$d/.zskills/tracking/work-on-plans.S1"
+  out=$(printf 'p1\tphase\np2\t\n' | \
+    MODE_OVERRIDE=finish SPRINT_ID=S1 PIPELINE_ID=work-on-plans.S1 MAIN_ROOT="$d" \
+    bash "$MM_FILTER")
+  # Stdout: only p2 (p1 dropped as mismatch).
+  if [ "$out" = "p2"$'\t' ] || [ "$out" = $'p2\t' ] || [ "$out" = "p2"$'\t\n' ] || [ "$out" = $'p2\t' ]; then
+    pass "mm-1: p2 passes (INHERIT), p1 dropped"
+  elif printf '%s' "$out" | grep -q '^p2' && ! printf '%s' "$out" | grep -q '^p1'; then
+    pass "mm-1: p2 passes (INHERIT), p1 dropped"
+  else
+    fail "mm-1: filter stdout: $out"
+  fi
+  skipped=$(mm_read_skipped "$d/.zskills/monitor-state.json")
+  if printf '%s' "$skipped" | grep -q '"p1"' && printf '%s' "$skipped" | grep -q 'mode-mismatch'; then
+    pass "mm-1: plans.skipped[p1] = mode-mismatch"
+  else
+    fail "mm-1: plans.skipped[p1] = mode-mismatch (got: $skipped)"
+  fi
+}
+
+# Case 2: mode_mismatch_pin_finish_batch_phase_skips (reversed)
+{
+  d="$TEST_TMPDIR/mm-2"
+  mm_make_root "$d"
+  out=$(printf 'p1\tfinish\np2\tphase\n' | \
+    MODE_OVERRIDE=phase SPRINT_ID=S2 PIPELINE_ID=work-on-plans.S2 MAIN_ROOT="$d" \
+    bash "$MM_FILTER")
+  if printf '%s' "$out" | grep -q '^p2' && ! printf '%s' "$out" | grep -q '^p1'; then
+    pass "mm-2: reversed pin/batch (finish pin vs phase batch) drops p1"
+  else
+    fail "mm-2: filter stdout: $out"
+  fi
+}
+
+# Case 3: mode_match_pin_phase_batch_phase_dispatches (both pass; no skip)
+{
+  d="$TEST_TMPDIR/mm-3"
+  mm_make_root "$d"
+  out=$(printf 'p1\tphase\np2\tphase\n' | \
+    MODE_OVERRIDE=phase SPRINT_ID=S3 PIPELINE_ID=work-on-plans.S3 MAIN_ROOT="$d" \
+    bash "$MM_FILTER")
+  if printf '%s' "$out" | grep -q '^p1' && printf '%s' "$out" | grep -q '^p2'; then
+    pass "mm-3: matching pin+batch passes both through"
+  else
+    fail "mm-3: filter stdout: $out"
+  fi
+  if [ ! -f "$d/.zskills/monitor-state.json" ]; then
+    pass "mm-3: matching pin writes no state file"
+  else
+    sk=$(mm_read_skipped "$d/.zskills/monitor-state.json")
+    if [ "$sk" = "{}" ]; then
+      pass "mm-3: matching pin writes no plans.skipped entries"
+    else
+      fail "mm-3: matching pin unexpectedly wrote skipped: $sk"
+    fi
+  fi
+}
+
+# Case 4: bare_invocation_no_skip — MODE_OVERRIDE="" → passthrough.
+{
+  d="$TEST_TMPDIR/mm-4"
+  mm_make_root "$d"
+  out=$(printf 'p1\tphase\np2\tfinish\n' | \
+    MODE_OVERRIDE="" SPRINT_ID=S4 PIPELINE_ID=work-on-plans.S4 MAIN_ROOT="$d" \
+    bash "$MM_FILTER")
+  if printf '%s' "$out" | grep -q '^p1' && printf '%s' "$out" | grep -q '^p2'; then
+    pass "mm-4: bare invocation (MODE_OVERRIDE='') passes everything through"
+  else
+    fail "mm-4: filter stdout: $out"
+  fi
+  if [ ! -f "$d/.zskills/monitor-state.json" ]; then
+    pass "mm-4: bare invocation writes no state file"
+  else
+    sk=$(mm_read_skipped "$d/.zskills/monitor-state.json")
+    if [ "$sk" = "{}" ]; then
+      pass "mm-4: bare invocation writes no plans.skipped entries"
+    else
+      fail "mm-4: bare invocation unexpectedly wrote skipped: $sk"
+    fi
+  fi
+}
+
+# Case 5: inherit_pin_never_skipped — INHERIT pin matches any batch.
+{
+  d="$TEST_TMPDIR/mm-5"
+  mm_make_root "$d"
+  out=$(printf 'p1\t\n' | \
+    MODE_OVERRIDE=finish SPRINT_ID=S5 PIPELINE_ID=work-on-plans.S5 MAIN_ROOT="$d" \
+    bash "$MM_FILTER")
+  if printf '%s' "$out" | grep -q '^p1'; then
+    pass "mm-5: INHERIT pin (empty) passes through under finish batch"
+  else
+    fail "mm-5: filter stdout: $out"
+  fi
+}
+
+# Case 6: idempotency — mode_mismatch_twice_produces_one_step_marker.
+{
+  d="$TEST_TMPDIR/mm-6"
+  mm_make_root "$d"
+  state="$d/.zskills/monitor-state.json"
+  # First fire under SPRINT=S6a.
+  printf 'p1\tphase\n' | \
+    MODE_OVERRIDE=finish SPRINT_ID=S6a PIPELINE_ID=work-on-plans.S6a MAIN_ROOT="$d" \
+    bash "$MM_FILTER" >/dev/null 2>&1
+  AT_FIRST=$(python3 -c "
+import json
+print(json.load(open('$state'))['plans']['skipped']['p1']['at'])
+")
+  # Second fire under SPRINT=S6b.
+  printf 'p1\tphase\n' | \
+    MODE_OVERRIDE=finish SPRINT_ID=S6b PIPELINE_ID=work-on-plans.S6b MAIN_ROOT="$d" \
+    bash "$MM_FILTER" >/dev/null 2>&1
+  AT_SECOND=$(python3 -c "
+import json
+print(json.load(open('$state'))['plans']['skipped']['p1']['at'])
+")
+  SPRINT_NOW=$(python3 -c "
+import json
+print(json.load(open('$state'))['plans']['skipped']['p1']['sprint_id'])
+")
+  # Step-marker count: exactly ONE marker overall (the second fire is
+  # STALE and skips marker write).
+  total_markers=$(ls "$d/.zskills/tracking/work-on-plans.S6a"/step.* 2>/dev/null | wc -l)
+  total_markers_b=$(ls "$d/.zskills/tracking/work-on-plans.S6b"/step.* 2>/dev/null | wc -l)
+  total=$((total_markers + total_markers_b))
+  if [ "$total" -eq 1 ]; then
+    pass "mm-6: idempotent — exactly one step marker across re-fires"
+  else
+    fail "mm-6: expected 1 step marker across re-fires, got $total"
+  fi
+  if [ "$AT_FIRST" = "$AT_SECOND" ]; then
+    pass "mm-6: 'at' field PRESERVED across re-fires"
+  else
+    fail "mm-6: 'at' field PRESERVED across re-fires" "first=$AT_FIRST second=$AT_SECOND"
+  fi
+  if [ "$SPRINT_NOW" = "S6b" ]; then
+    pass "mm-6: 'sprint_id' REFRESHED to most-recent triggering sprint"
+  else
+    fail "mm-6: 'sprint_id' REFRESHED to most-recent" "got: $SPRINT_NOW"
+  fi
+}
+
+# Static-grep checks for execute.md wiring.
+if grep -q 'filter-mode-mismatch-plans' "$EXEC_MD"; then
+  pass "execute.md wires filter-mode-mismatch-plans.sh"
+else
+  fail "execute.md missing filter-mode-mismatch-plans.sh wiring"
+fi
+if grep -q 'plans\.skipped\|plans.skipped' "$REPO_ROOT/skills/work-on-plans/SKILL.md"; then
+  pass "work-on-plans SKILL.md documents plans.skipped"
+else
+  fail "work-on-plans SKILL.md documents plans.skipped"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' \

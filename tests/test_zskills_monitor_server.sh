@@ -835,7 +835,7 @@ except Exception as e:
   pass "#281: ctx['main_root'] is the single source of truth for POST + GET"
 
   ###############################################################################
-  # Phase 5 — /api/work-state + /api/work-state/reset
+  # Phase 5 — /api/work-state GET (per-plan chip resolution chain)
   ###############################################################################
   echo ""
   echo "=== Phase 5 AC: work-state endpoints ==="
@@ -879,201 +879,6 @@ EOF
     pass "/api/work-state: unparseable → idle"
   else
     fail "/api/work-state unparseable: $WS"
-  fi
-
-  # POST /api/work-state/reset
-  cat >"$MR5/.zskills/work-on-plans-state.json" <<'EOF'
-{"state":"sprint","sprint_id":"x","updated_at":"2026-04-29T00:00:00+00:00"}
-EOF
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://127.0.0.1:$PORT_D" \
-    "http://127.0.0.1:$PORT_D/api/work-state/reset")
-  if [ "$CODE" = "200" ]; then
-    pass "POST /api/work-state/reset → 200"
-  else
-    fail "POST /api/work-state/reset → $CODE"
-  fi
-  if grep -q '"state":[[:space:]]*"idle"' "$MR5/.zskills/work-on-plans-state.json"; then
-    pass "/api/work-state/reset writes idle"
-  else
-    fail "/api/work-state/reset did not write idle"
-  fi
-
-  # CSRF: reset without Origin → 200 (Phase 5b: relaxed policy accepts
-  # empty Origin via _origin_ok; reset endpoint reuses _origin_ok).
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    "http://127.0.0.1:$PORT_D/api/work-state/reset")
-  if [ "$CODE" = "200" ]; then
-    pass "POST /api/work-state/reset without Origin → 200 (relaxed in Phase 5b)"
-  else
-    fail "POST /api/work-state/reset no-origin → $CODE (expected 200 per Phase 5b)"
-  fi
-
-  # CSRF defense: reset with cross-origin Origin → 403 (invariant preserved)
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://evil.example.com" \
-    "http://127.0.0.1:$PORT_D/api/work-state/reset")
-  if [ "$CODE" = "403" ]; then
-    pass "POST /api/work-state/reset with cross-origin → 403 (invariant)"
-  else
-    fail "POST /api/work-state/reset cross-origin → $CODE (expected 403)"
-  fi
-
-  ###############################################################################
-  # Phase 6 — /api/trigger security contract
-  ###############################################################################
-  echo ""
-  echo "=== Phase 5 AC: /api/trigger security contract ==="
-
-  # Empty trigger → 501 + {command}
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://127.0.0.1:$PORT_D" \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"/work-on-plans 1 phase"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "501" ]; then
-    pass "/api/trigger empty config → 501"
-  else
-    fail "/api/trigger empty config → $CODE"
-  fi
-
-  # Bad command (not /work-on-plans) → 400
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://127.0.0.1:$PORT_D" \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"rm -rf /"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "400" ]; then
-    pass "/api/trigger non-/work-on-plans command → 400"
-  else
-    fail "/api/trigger bad command → $CODE"
-  fi
-
-  # CSRF: trigger without Origin → 501 (Phase 5b: _origin_ok accepts
-  # empty Origin; trigger config remains empty for this MR so the
-  # response is 501 — proving the Origin check no longer short-circuits
-  # to 403 for missing Origin).
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"/work-on-plans 1"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "501" ]; then
-    pass "/api/trigger without Origin → 501 (relaxed CSRF in Phase 5b; empty trigger config)"
-  else
-    fail "/api/trigger no-origin → $CODE (expected 501 per Phase 5b + empty trigger config)"
-  fi
-
-  # CSRF defense: trigger with cross-origin Origin → 403 (invariant preserved)
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://evil.example.com" \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"/work-on-plans 1"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "403" ]; then
-    pass "/api/trigger with cross-origin → 403 (invariant)"
-  else
-    fail "/api/trigger cross-origin → $CODE (expected 403)"
-  fi
-
-  # Configure a real trigger script that echos argv + env + pwd
-  TRIG="$MR5/scripts/trig.sh"
-  mkdir -p "$MR5/scripts"
-  cat >"$TRIG" <<'EOF'
-#!/bin/bash
-echo "argv0=$0"
-echo "argv1=$1"
-echo "pwd=$(pwd)"
-echo "PATH_set=$([ -n "$PATH" ] && echo yes || echo no)"
-echo "HOME_set=$([ -n "$HOME" ] && echo yes || echo no)"
-echo "ZSKILLS_PIPELINE_ID=$ZSKILLS_PIPELINE_ID"
-EOF
-  chmod +x "$TRIG"
-  # Update config (rewrite)
-  cat >"$MR5/.claude/zskills-config.json" <<EOF
-{
-  "dev_server": { "default_port": $PORT_D },
-  "dashboard": { "work_on_plans_trigger": "scripts/trig.sh" }
-}
-EOF
-
-  TRIG_RES=$(ZSKILLS_PIPELINE_ID="should-be-scrubbed" curl -sf -m 5 -X POST \
-    -H "Origin: http://127.0.0.1:$PORT_D" \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"/work-on-plans 3 phase"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if printf '%s' "$TRIG_RES" | grep -q '"status":[[:space:]]*"triggered"'; then
-    pass "/api/trigger configured script → triggered status"
-  else
-    fail "/api/trigger result: $TRIG_RES"
-  fi
-  # argv1 must be the literal command (shell=False guarantees this)
-  if printf '%s' "$TRIG_RES" | grep -q 'argv1=/work-on-plans 3 phase'; then
-    pass "/api/trigger argv[1] is literal command (shell=False)"
-  else
-    fail "/api/trigger argv[1] check: $TRIG_RES"
-  fi
-  # No ZSKILLS_PIPELINE_ID in env
-  if printf '%s' "$TRIG_RES" | grep -q 'ZSKILLS_PIPELINE_ID=$' \
-     || ! printf '%s' "$TRIG_RES" | grep -q 'ZSKILLS_PIPELINE_ID=should-be-scrubbed'; then
-    pass "/api/trigger env scrubbed (ZSKILLS_PIPELINE_ID gone)"
-  else
-    fail "/api/trigger env not scrubbed: $TRIG_RES"
-  fi
-  # pwd is MAIN_ROOT
-  if printf '%s' "$TRIG_RES" | grep -q "pwd=$MR5"; then
-    pass "/api/trigger pwd=MAIN_ROOT"
-  else
-    fail "/api/trigger pwd: $TRIG_RES"
-  fi
-  # PATH/HOME present
-  if printf '%s' "$TRIG_RES" | grep -q 'PATH_set=yes' \
-     && printf '%s' "$TRIG_RES" | grep -q 'HOME_set=yes'; then
-    pass "/api/trigger PATH/HOME passed through"
-  else
-    fail "/api/trigger PATH/HOME: $TRIG_RES"
-  fi
-  # Server source: shell=False (no shell=True string)
-  if grep -nE 'shell=True' "$SERVER_PY" >/dev/null; then
-    fail "server.py contains shell=True"
-  else
-    pass "server.py has no shell=True"
-  fi
-
-  # Path-escape: trigger pointing outside MAIN_ROOT
-  cat >"$MR5/.claude/zskills-config.json" <<EOF
-{
-  "dev_server": { "default_port": $PORT_D },
-  "dashboard": { "work_on_plans_trigger": "../../../tmp/evil.sh" }
-}
-EOF
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    -H "Origin: http://127.0.0.1:$PORT_D" \
-    -H 'Content-Type: application/json' \
-    -d '{"command":"/work-on-plans 1"}' \
-    "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "500" ]; then
-    pass "/api/trigger ../../../tmp/evil.sh → 500 (path escape)"
-  else
-    fail "/api/trigger path-escape → $CODE"
-  fi
-
-  ###############################################################################
-  # Phase 7 — Trigger config validation surfaces in /api/state errors[]
-  ###############################################################################
-  echo ""
-  echo "=== Phase 5 AC: trigger config validation in /api/state errors[] ==="
-
-  cat >"$MR5/.claude/zskills-config.json" <<EOF
-{
-  "dev_server": { "default_port": $PORT_D },
-  "dashboard": { "work_on_plans_trigger": "scripts/does-not-exist.sh" }
-}
-EOF
-  STATE_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT_D/api/state")
-  if printf '%s' "$STATE_BODY" | grep -q 'work_on_plans_trigger'; then
-    pass "/api/state errors[] surfaces trigger-config issue"
-  else
-    fail "/api/state did not surface trigger-config error"
   fi
 
   # Stop server
@@ -1267,16 +1072,21 @@ echo ""
 echo "=== Phase 2: state_file_version_bumped_all_sites ==="
 
 V11_COUNT=$(grep -c '"version": "1.1"' "$SERVER_PY" || true)
-V12_COUNT=$(grep -c '"version": "1.2"' "$SERVER_PY" || true)
+# Count both dict-literal (`"version": "1.2"`) and assignment-form
+# (`new_doc["version"] = "1.2"`) — the Phase-1 queue-POST refactor uses
+# the assignment form because the new doc is now built by deep-copy +
+# overlay rather than dict-literal construction. Both forms are
+# semantically equivalent writes; this counter is shape-agnostic.
+V12_COUNT=$(grep -cE '"version": "1\.2"|\["version"\][[:space:]]*=[[:space:]]*"1\.2"' "$SERVER_PY" || true)
 if [ "$V11_COUNT" = "0" ]; then
   pass "state_file_version_bumped_all_sites: zero \"version\": \"1.1\" literals in server.py"
 else
   fail "state_file_version_bumped_all_sites: $V11_COUNT \"version\": \"1.1\" literals still present"
 fi
 if [ "$V12_COUNT" -ge 4 ]; then
-  pass "state_file_version_bumped_all_sites: $V12_COUNT \"version\": \"1.2\" literals present (>= 4)"
+  pass "state_file_version_bumped_all_sites: $V12_COUNT \"version\":\"1.2\" writes present (>= 4)"
 else
-  fail "state_file_version_bumped_all_sites: only $V12_COUNT \"version\": \"1.2\" literals (expected >= 4)"
+  fail "state_file_version_bumped_all_sites: only $V12_COUNT \"version\":\"1.2\" writes (expected >= 4)"
 fi
 
 print_summary_and_exit

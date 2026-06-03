@@ -446,6 +446,39 @@ code, pre, .mono {
   color: var(--text);
 }
 
+/* Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans-side skip chip.
+   Ephemeral (cleared by claim-acquire / pin-toggle / × dismiss).
+   The plan's skip chip wraps two children — a label span and a × button —
+   so override the base inline-block to inline-flex for vertical centering.
+   Code-specific variant for mode-mismatch reuses the magenta palette
+   (visual idiom continuity with the issues-side needs-decision chip). */
+.skip-chip--mode-mismatch {
+  background: rgba(247, 120, 186, 0.14);
+  border-color: var(--pink);
+  color: var(--pink);
+}
+.skip-chip:has(> .skip-dismiss-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding-right: 6px;
+}
+.skip-chip-label { display: inline-block; }
+.skip-dismiss-btn {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 0 6px;
+  margin: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.skip-dismiss-btn svg { width: 12px; height: 12px; }
+.skip-dismiss-btn:hover,
+.skip-dismiss-btn:focus { opacity: 0.7; outline: none; }
+
 /* Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
    Green to read as "active healthy work happening"; matches skip-chip's
    bordered-pill + tinted-background aesthetic so the palette feels
@@ -538,6 +571,10 @@ code, pre, .mono {
 .activity-row .a-status-pass    { color: var(--green); border-color: var(--green); }
 .activity-row .a-status-fail    { color: var(--red); border-color: var(--red); }
 .activity-row .a-status-running { color: var(--orange); border-color: var(--orange); }
+/* Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip pill. Pink matches the
+   per-card .skip-chip's magenta so the activity-feed entry reads as the
+   same semantic family as the chip on the corresponding ready card. */
+.activity-row .a-status-skip    { color: var(--pink); border-color: var(--pink); }
 .activity-row .a-parent { color: var(--text-dim); font-style: italic; margin-left: 6px; }
 .activity-row .a-subject { color: var(--text); }
 .activity-row .a-time { color: var(--text-dim); }
@@ -713,41 +750,7 @@ code, pre, .mono {
   padding-bottom: 0;
 }
 
-.run-status {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-}
-
-/* Issue #995 — explicit hide so `display: flex` above doesn't defeat
-   the [hidden] attribute set by renderRunStatus when no run-state pill
-   content was rendered (idle + no trigger + no warning). */
-.run-status[hidden] {
-  display: none;
-}
-
-.run-status.run-status-stale {
-  border-color: var(--orange);
-}
-
-.run-status .run-label {
-  color: var(--text-dim);
-}
-
-.run-status .run-text {
-  color: var(--text);
-}
-
-.run-btn,
 .copy-btn,
-.run-stop-btn,
-.clear-stale-btn,
 .add-mini-btn {
   background: var(--surface);
   color: var(--text-dim);
@@ -760,35 +763,12 @@ code, pre, .mono {
 }
 .copy-btn { margin-left: auto; }
 
-.run-btn:hover,
-.run-btn:focus-visible,
 .copy-btn:hover,
 .copy-btn:focus-visible,
-.run-stop-btn:hover,
-.run-stop-btn:focus-visible,
-.clear-stale-btn:hover,
-.clear-stale-btn:focus-visible,
 .add-mini-btn:hover,
 .add-mini-btn:focus-visible {
   border-color: var(--accent);
   outline: none;
-}
-
-.run-btn.primary {
-  background: var(--accent);
-  color: #0d1117;
-  border-color: var(--accent);
-}
-
-.run-n-input {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  width: 56px;
-  font-size: 0.8rem;
-  font-family: inherit;
 }
 
 /* Columns layout */

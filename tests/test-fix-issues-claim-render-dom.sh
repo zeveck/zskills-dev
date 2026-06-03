@@ -478,7 +478,13 @@ function findByClass(root, cls) {
   const chip = findByClass(card, "skip-chip");
   expectTrue(chip, "skip chip renders when no claim present (#862 negative control)");
   if (chip) {
-    expectTrue(chip.textContent.indexOf("author A/B/C scope decision") >= 0,
+    // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — the chip body moved into a
+    // .skip-chip-label child span when the × dismiss button was added.
+    // The label child is the source-of-truth for the chip text; assert
+    // against IT, not the wrapper's textContent (the test stub's
+    // appendChild does not propagate textContent up to the parent).
+    const label = findByClass(card, "skip-chip-label");
+    expectTrue(label && label.textContent.indexOf("author A/B/C scope decision") >= 0,
       "skip chip label surfaces the monitor-state override reason (#862)");
   }
   expect(findByClass(card, "claim-chip"), null,

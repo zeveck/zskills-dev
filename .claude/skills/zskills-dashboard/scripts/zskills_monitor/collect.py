@@ -1692,6 +1692,21 @@ def _read_state_file(
             # else: ignore
         plans_out[col] = normalized
 
+    # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — surface plans.skipped through
+    # the state reader. `plans.skipped` is a DICT (slug→record), so the
+    # per-column list-iteration loop above silently filters it out. Extract
+    # explicitly, tolerating absent / non-dict shapes (defaults to {}).
+    # This is a separate dict on the returned `plans` mapping; downstream
+    # consumers in collect.py (`_annotate_plans_queue`) iterate over the
+    # explicit PLAN_COLUMNS set, not `plans.items()`, so the new "skipped"
+    # key does NOT pollute column iteration.
+    plans_skipped_raw = plans_raw.get("skipped") if isinstance(plans_raw, dict) else None
+    plans_skipped: Dict[str, Dict[str, Any]] = {}
+    if isinstance(plans_skipped_raw, dict):
+        for k, v in plans_skipped_raw.items():
+            if isinstance(k, str) and isinstance(v, dict):
+                plans_skipped[k] = dict(v)
+
     issues_out: Dict[str, List[Any]] = {}
     for col, entries in issues_raw.items():
         if isinstance(entries, list):
@@ -1708,6 +1723,7 @@ def _read_state_file(
         "version": version,
         "default_mode": default_mode,
         "plans": plans_out,
+        "plans_skipped": plans_skipped,
         "issues": issues_out,
         "updated_at": raw.get("updated_at", ""),
     }
@@ -1753,6 +1769,15 @@ def _annotate_plans_queue(
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
     state_plans: Dict[str, List[Dict[str, Any]]] = state.get("plans", {})
+    # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — read the surfaced
+    # `plans_skipped` map from the state reader's return (set by
+    # `_read_state_file`). Tolerate absent / non-dict by defaulting to {}.
+    monitor_plans_skipped_raw = state.get("plans_skipped")
+    monitor_plans_skipped: Dict[str, Dict[str, Any]] = (
+        monitor_plans_skipped_raw
+        if isinstance(monitor_plans_skipped_raw, dict)
+        else {}
+    )
     # state-file column iteration — picks up new columns from PLAN_COLUMNS / ISSUE_COLUMNS dynamically; conformance: tests/test-skill-conformance.sh
     # Build slug → (column, index, mode) lookup.
     # Auto-prune orphan slugs (#671): derive the set of known slugs from
@@ -1830,6 +1855,16 @@ def _annotate_plans_queue(
                 # affordance for dead-pipeline claims.
                 "stale":          bool(c.get("stale")),
             }
+        # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — plans.skipped[slug]
+        # surfaces as plan.skip_reason for the dashboard SKIP chip render.
+        # Mirror of the issue-side `_resolve_effective_skip_reason` pattern;
+        # the data shape stays uniform (skip_reason is a dict, None if
+        # absent). Mutual exclusion with the claim is enforced client-side
+        # in buildPlanCard's hasLiveClaim guard.
+        if isinstance(slug, str):
+            mark = monitor_plans_skipped.get(slug)
+            if isinstance(mark, dict) and mark.get("code"):
+                plan["skip_reason"] = dict(mark)
 
 
 def _annotate_issues_queue(

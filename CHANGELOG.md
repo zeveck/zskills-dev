@@ -8,6 +8,37 @@
 
 ## Unreleased
 
+### Dashboard run-status cleanup (#1005 + #1006)
+
+- Removed the top-level run-status pill and all trigger-script plumbing
+  (`#run-status` div, `renderRunStatus`, `/api/trigger`,
+  `/api/work-state/reset`, `dashboard.work_on_plans_trigger` config field,
+  and the `/update-zskills` backfill). The pill's empty-state bug (#995/#997)
+  is subsumed.
+- Per-plan mode chip is now a true three-state UI: explicit `INHERIT`
+  label replaces the silent fallthrough-to-`finish`. PHASE / FINISH labels
+  unchanged. The chip locks (disabled toggle) when an in-flight FINISH
+  claim is held; PHASE claims remain togglable for the next inter-phase
+  dispatch.
+- `/work-on-plans` now treats an explicit batch-mode + explicit per-plan
+  pin mismatch as a SKIP (not an override). Skipped plans record a
+  `plans.skipped[<slug>]` marker in `monitor-state.json`, flow into the
+  activity feed via a new `a-status-skip` pill, and surface a SKIP chip
+  on the dashboard ready card. The skip auto-clears on three paths:
+  `claim-plan.sh acquire`, pin-toggle via the chip, or × dismiss on the
+  SKIP chip itself (new `/api/plan-skip-dismiss` endpoint).
+- Issues SKIP chips now carry a × dismiss button that POSTs to
+  `/api/issue-reconsider`, mirroring the existing `/fix-issues reconsider
+  <N>` CLI semantics. Issues skip stays sticky (clears on next
+  `/fix-issues` fire); the toast confirms the click was received.
+- Side-benefit: the dashboard's queue POST handler now preserves
+  unknown / nested keys by default (deep-copy base + writable-column
+  overlay), closing a pre-existing latent bug that wiped
+  `issues.skipped` and `issues.reconsider` on every drag-drop
+  (#813/#733).
+
+Closes #1005. Closes #1006.
+
 ### Fixed — dashboard idle-state phantom pill (#995)
 
 - **Dashboard:** `renderRunStatus` now hides the `.run-status` container

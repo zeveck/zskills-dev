@@ -212,20 +212,13 @@ fi
 don't break. Empty filter output rebuilds `READY_LINES` as an empty
 array rather than a one-element array with an empty string.)
 
-```bash
-TOTAL_READY="${#READY_LINES[@]}"
-if [ "$ALL_MODE" = "1" ]; then
-  N="$TOTAL_READY"
-fi
-DISPATCH_COUNT=$(( N < TOTAL_READY ? N : TOTAL_READY ))
-
-if [ "$DISPATCH_COUNT" -eq 0 ]; then
-  echo "Ready queue is empty; nothing to dispatch."
-  exit 0
-fi
-```
-
 ### Sprint ID + pipeline ID
+
+The sprint identifier is computed BEFORE the mode-mismatch skip filter
+runs so the filter can write `step.work-on-plans.${SPRINT_ID}.${SLUG}`
+activity-feed markers under `$PIPELINE_DIR`. (Plain `filter-in-flight-
+plan-claims.sh` does not need `SPRINT_ID`; only the mode-mismatch
+filter does.)
 
 ```bash
 SPRINT_ID="sprint-$(date -u +%Y%m%d-%H%M%S)-$(printf '%s' "$$" | tr -cd '0-9' | head -c 8)"
@@ -248,6 +241,60 @@ fi
 
 The PID-derived suffix keeps concurrent invocations on the same host
 (distinct shell processes) from colliding on the same `SPRINT_ID`.
+
+### Selection filter (Phase 2) — drop mode-pin mismatches
+
+Pipe the post-in-flight-filter `READY_LINES` through
+`filter-mode-mismatch-plans.sh` to drop slugs whose per-plan mode pin
+conflicts with the explicit CLI `MODE_OVERRIDE`. Selection-time
+discipline: this runs AFTER the in-flight-claim filter (an in-flight
+claim wins over a queued mode-mismatch) and BEFORE dispatch.
+
+The skip-check fires ONLY when `MODE_OVERRIDE` is non-empty. A bare
+`/work-on-plans 3` (no explicit mode) → passthrough.
+
+```bash
+MM_FILTER="$ZSKILLS_SKILLS_ROOT/work-on-plans/scripts/filter-mode-mismatch-plans.sh"
+if [ -x "$MM_FILTER" ] && [ -n "${MODE_OVERRIDE:-}" ]; then
+  MM_FILTERED=$(
+    MODE_OVERRIDE="$MODE_OVERRIDE" \
+    SPRINT_ID="$SPRINT_ID" \
+    PIPELINE_ID="$PIPELINE_ID" \
+    MAIN_ROOT="$MAIN_ROOT" \
+    printf '%s\n' "${READY_LINES[@]}" | bash "$MM_FILTER"
+  )
+  if [ -n "$MM_FILTERED" ]; then
+    mapfile -t READY_LINES <<< "$MM_FILTERED"
+  else
+    READY_LINES=()
+  fi
+fi
+
+# Re-read TOTAL_READY after the mode-mismatch filter so DISPATCH_COUNT
+# reflects the post-skip count. Without this re-read, plans skipped at
+# selection-time inflate DISPATCH_COUNT and the dispatch loop's
+# bounds-check silently truncates the remaining queue.
+TOTAL_READY="${#READY_LINES[@]}"
+if [ "$ALL_MODE" = "1" ]; then
+  N="$TOTAL_READY"
+fi
+DISPATCH_COUNT=$(( N < TOTAL_READY ? N : TOTAL_READY ))
+
+# Status-line: surface the count to the user. The filter writes the
+# count as a sentinel in $PIPELINE_DIR/.mode-mismatch-count.
+MM_SKIP_COUNT=0
+if [ -f "$PIPELINE_DIR/.mode-mismatch-count" ]; then
+  MM_SKIP_COUNT=$(cat "$PIPELINE_DIR/.mode-mismatch-count" 2>/dev/null || echo 0)
+fi
+if [ "${MM_SKIP_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+  echo "Mode-mismatch skipped: $MM_SKIP_COUNT plan(s)"
+fi
+
+if [ "$DISPATCH_COUNT" -eq 0 ]; then
+  echo "Ready queue is empty; nothing to dispatch."
+  exit 0
+fi
+```
 
 ### Build slug→file resolver (Phase 1 self-implementation)
 

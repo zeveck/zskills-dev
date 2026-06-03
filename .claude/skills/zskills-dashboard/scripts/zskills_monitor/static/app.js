@@ -10,8 +10,8 @@
 //
 // Phase 7 adds drag-and-drop columns for Plans (Drafted/Proposed/Accepted)
 // and Issues (Triage/Ready), POSTs the full queue back to /api/queue
-// on every reorder, polls /api/work-state for the Run/Status widget,
-// and POSTs to /api/trigger and /api/work-state/reset.
+// on every reorder, and polls /api/work-state GET for the per-plan chip
+// resolution chain.
 
 const POLL_INTERVAL_MS = 2000;
 // While the tab is hidden we keep polling, just much more slowly. The
@@ -21,16 +21,13 @@ const POLL_INTERVAL_MS = 2000;
 // 2s-cadence collection cost while nobody is watching. Tunable.
 const HIDDEN_POLL_INTERVAL_MS = 60000;
 // Reschedule delay for the recursive poll loops: fast when visible, slow
-// heartbeat when hidden. The loop is NEVER torn down — see pollOnce /
-// pollWorkOnce, which reschedule via this on every tick.
+// heartbeat when hidden. The loop is NEVER torn down — see pollOnce, which
+// reschedules via this on every tick.
 function nextPollDelay() {
   return document.hidden ? HIDDEN_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
 }
 const STATE_URL = "/api/state";
-const WORK_STATE_URL = "/api/work-state";
 const QUEUE_URL = "/api/queue";
-const TRIGGER_URL = "/api/trigger";
-const WORK_STATE_RESET_URL = "/api/work-state/reset";
 
 // After a successful POST, suppress the next /api/state poll to avoid
 // flicker from a stale GET that started before the POST landed.
@@ -410,7 +407,6 @@ function formatLocalTime(iso) {
 // --------------------------------------------------------------- snapshot
 
 let lastSnapshot = null;
-let lastWorkState = null;
 // Repo URL ("https://github.com/<owner>/<repo>") for entry-link
 // construction. Populated from /api/state.repo_url; empty when origin
 // is missing, unparseable, or running in fixture mode.
@@ -421,7 +417,6 @@ const lastFingerprint = {
   branches: null,
   issues: null,
   activity: null,
-  workState: null,
 };
 
 // Issue #802 — unread-dot indicator. lastViewed[tab] holds the per-tab
@@ -449,8 +444,6 @@ const currentTabFingerprint = {
 let activeTab = "plans";
 let pollTimer = null;
 let pollAbort = null;
-let workPollTimer = null;
-let workPollAbort = null;
 let suppressNextStatePollUntil = 0;
 // updated_at (ISO string) returned by the most recent successful POST
 // /api/queue. Used by applySnapshot to discard stale GET snapshots that
@@ -515,31 +508,9 @@ async function fetchState() {
   }
 }
 
-async function fetchWorkState() {
-  const ctrl = new AbortController();
-  workPollAbort = ctrl;
-  try {
-    const res = await fetch(WORK_STATE_URL, {
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (_err) {
-    return null;
-  } finally {
-    if (workPollAbort === ctrl) workPollAbort = null;
-  }
-}
-
 function schedulePoll(delay) {
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = setTimeout(pollOnce, delay);
-}
-
-function scheduleWorkPoll(delay) {
-  if (workPollTimer) clearTimeout(workPollTimer);
-  workPollTimer = setTimeout(pollWorkOnce, delay);
 }
 
 async function pollOnce() {
@@ -559,29 +530,6 @@ async function pollOnce() {
   // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
   // visible (POLL_INTERVAL_MS). The loop is never stopped.
   schedulePoll(nextPollDelay());
-}
-
-async function pollWorkOnce() {
-  const ws = await fetchWorkState();
-  if (ws) {
-    lastWorkState = ws;
-    applyWorkState(ws);
-  } else {
-    // Issue #892 — fail OPEN, not stuck-locked. A null fetch (network
-    // error / server restart / abort) used to leave lastWorkState stale
-    // at state==="sprint". Clearing to null lets every lastWorkState
-    // consumer (per-plan chip lock, run-status panel) short-circuit on a
-    // falsy work-state. Only re-apply if the state actually changes (it
-    // was previously a sprint), so a transient failure during idle is a
-    // no-op.
-    if (lastWorkState) {
-      lastWorkState = null;
-      applyWorkState(null);
-    }
-  }
-  // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
-  // visible (POLL_INTERVAL_MS). The loop is never stopped.
-  scheduleWorkPoll(nextPollDelay());
 }
 
 function applySnapshot(snap) {
@@ -713,14 +661,6 @@ function updateTabDots() {
       if (unread) sr.removeAttribute("hidden");
       else sr.setAttribute("hidden", "");
     }
-  }
-}
-
-function applyWorkState(ws) {
-  const fp = JSON.stringify(ws);
-  if (fp !== lastFingerprint.workState) {
-    lastFingerprint.workState = fp;
-    renderRunStatus(ws);
   }
 }
 
@@ -926,6 +866,11 @@ function fingerprintPlans(plans, queues) {
       // pipeline_id changes when a new pipeline claims; current_phase
       // changes at each phase boundary; both null when no claim.
       p.claim ? [p.claim.pipeline_id || null, p.claim.current_phase || null] : null,
+      // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — skip_reason tuple.
+      // Without this, × clicks and pin-toggle clears mutate the state
+      // but the next poll's diff-suppression hides the change for one
+      // cycle, producing a visibly stuck chip.
+      p.skip_reason ? [p.skip_reason.code || null, p.skip_reason.reason || null] : null,
     ]),
   });
 }
@@ -978,6 +923,13 @@ function fingerprintIssues(issues, queues) {
       // pipeline claims, started_at changes per-claim, and both are null
       // when no claim is held.
       i.claim ? [i.claim.pipeline_id || null, i.claim.started_at || null] : null,
+      // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip_reason tuple symmetric
+      // with fingerprintPlans. Without this, the next /fix-issues fire
+      // clears the issue from issues.skipped (consuming issues.reconsider)
+      // but the dashboard's diff-suppression keeps the chip until some
+      // OTHER row property changes. Include code + label so a code-only
+      // change (rare but possible) also triggers re-render.
+      i.skip_reason ? [i.skip_reason.code || null, i.skip_reason.label || null] : null,
     ]),
   });
 }
@@ -1198,6 +1150,49 @@ function buildPlanCard(plan, slug, col) {
     }
   }
 
+  // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP chip with × dismiss.
+  // Renders on a Ready-column plan card carrying a `skip_reason` dict
+  // (server-side: monitor-state.json:plans.skipped[slug]). Mutual exclusion
+  // (mirror #862/#898 for issue side): a live claim suppresses the skip
+  // chip — the claim won; the skip mark is stale and gets cleared on the
+  // next acquire-side best-effort sweep.
+  //
+  // Three clear paths converge on plans.skipped[slug]:
+  //   (a) claim-acquire — server-side, idempotent best-effort.
+  //   (b) pin-toggle    — server-side, queue-POST selective pop.
+  //   (c) × click       — user-driven, /api/plan-skip-dismiss.
+  {
+    const hasLiveClaim = !!(plan && plan.claim);
+    const skipReason = (!hasLiveClaim && plan && plan.skip_reason) ? plan.skip_reason : null;
+    if (skipReason && col === "ready") {
+      const row = el("div", { cls: "card-sub" });
+      const chip = el("span", {
+        cls: "skip-chip skip-chip--" + String(skipReason.code || ""),
+        attrs: { title: String(skipReason.reason || "") },
+      });
+      const label = el("span", {
+        cls: "skip-chip-label",
+        text: "skip: " + String(skipReason.code || "") +
+              (skipReason.reason ? " — " + String(skipReason.reason) : ""),
+      });
+      const dismiss = el("button", {
+        cls: "skip-dismiss-btn",
+        attrs: {
+          type: "button",
+          "data-action": "plan-skip-dismiss",
+          "data-slug": slug,
+          "aria-label": "Dismiss skip for " + slug,
+          title: "Dismiss",
+        },
+        html: SVG_ICONS.x,  // chrome-only SVG carveout, not literal × char.
+      });
+      chip.appendChild(label);
+      chip.appendChild(dismiss);
+      row.appendChild(chip);
+      card.appendChild(row);
+    }
+  }
+
   // Per-row mode chip on Ready cards (issue #814 + follow-up).
   // Two effective states keyed on claim + effective dispatch mode:
   //   - running-finish  → LOCKED. /run-plan finish-auto holds the claim
@@ -1226,33 +1221,54 @@ function buildPlanCard(plan, slug, col) {
   // step 1 falls through to step 2 + step 3 unchanged. Back-compat is
   // structural, not flag-gated.
   if (col === "ready") {
+    // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Three-state chip with
+    // explicit INHERIT label. Derivation:
+    //   - pinSource     : "inherit" when entryMode === null, else "explicit".
+    //   - displayMode   : claim.dispatch_mode if a claim is present, else
+    //                     entryMode (which may be null).
+    //   - chipText      : the lowercase string "inherit" when displayMode
+    //                     is null, else displayMode itself.
+    //   - effectiveMode : displayMode || "finish" — used by the lock
+    //                     condition ONLY (anchored on claim.dispatch_mode,
+    //                     never on ws.batch_mode — see #930).
+    //
+    // FINISH-claim lock invariant: `isClaimed && effectiveMode === "finish"`
+    // sources from claim.dispatch_mode (dispatch-lifetime), NOT
+    // ws.batch_mode (wrapper-lifetime). The wrapper finishing its sprint
+    // while a claim is in flight must NOT silently unlock the chip.
     const entryMode = currentEntryMode(slug);
-    const isOverride = entryMode === "phase" || entryMode === "finish";
+    const pinSource = (entryMode === null || typeof entryMode === "undefined")
+      ? "inherit" : "explicit";
     const claimDispatchMode =
       (plan && plan.claim && plan.claim.dispatch_mode) || null;
-    const effectiveMode =
-      claimDispatchMode || (isOverride ? entryMode : "finish");
+    const displayMode = claimDispatchMode || (
+      (entryMode === null || typeof entryMode === "undefined") ? null : entryMode
+    );
+    const chipText = (displayMode === null) ? "inherit" : displayMode;
+    const effectiveMode = displayMode || "finish";
     const isClaimed = !!(plan && plan.claim);
     const locked = isClaimed && effectiveMode === "finish";
     let state, ariaLabel;
     if (locked) {
       state = "running-finish";
-      ariaLabel = "Mode: finish (locked while running).";
+      ariaLabel = "Mode: finish (locked while finish-mode /run-plan is in flight; releases on completion).";
     } else if (isClaimed) {
       state = "running-phase";
-      ariaLabel = "Mode: " + effectiveMode
+      ariaLabel = "Mode: " + chipText
         + " (running). Click to cycle inherit, phase, finish.";
+    } else if (pinSource === "explicit") {
+      state = "queued";
+      ariaLabel = "Mode: " + chipText
+        + " (pinned). Click to cycle inherit, phase, finish.";
     } else {
       state = "queued";
-      ariaLabel = isOverride
-        ? ("Mode: " + effectiveMode + " (override). Click to cycle inherit, phase, finish.")
-        : ("Mode: " + effectiveMode + " (inherits default). Click to cycle inherit, phase, finish.");
+      ariaLabel = "Mode: inherit (inherits batch). Click to cycle inherit, phase, finish.";
     }
     const chipAttrs = {
       type: "button",
       "data-slug": slug,
       "data-state": state,
-      "data-source": isOverride ? "explicit" : "inherit",
+      "data-source": pinSource,
       "aria-label": ariaLabel,
     };
     if (locked) {
@@ -1263,10 +1279,14 @@ function buildPlanCard(plan, slug, col) {
     }
     const chipOpts = { cls: "mode-chip", attrs: chipAttrs };
     if (locked) {
+      // Locked branch embeds chipText (resolved string, lowercase) — the
+      // leading space artifact (e.g. " finish") between the SVG span and
+      // the text is INTENTIONAL spacing; tests must use .textContent.trim()
+      // to absorb it.
       chipOpts.html = '<span class="mode-chip-lock" aria-hidden="true">'
-        + SVG_ICONS.lock + '</span> ' + effectiveMode;
+        + SVG_ICONS.lock + '</span> ' + chipText;
     } else {
-      chipOpts.text = effectiveMode;
+      chipOpts.text = chipText;
     }
     const chip = el("button", chipOpts);
     card.appendChild(chip);
@@ -1893,11 +1913,37 @@ function buildIssueCard(issue, num, col) {
     const label = String(sr.label || code || "");
     const source = String(sr.source || "");
     const row = el("div", { cls: "card-sub" });
-    row.appendChild(el("span", {
+    // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — × dismiss button.
+    // Sticky semantics: the click POSTs to /api/issue-reconsider, which
+    // appends to issues.reconsider[]. It does NOT clear issues.skipped[N].
+    // The chip stays visible until the next /fix-issues fire re-triages.
+    // The toast (in postIssueReconsider) tells the user the click was
+    // received and explains the chip will not immediately disappear.
+    // This is asymmetric with the Plans SKIP chip's × (which clears
+    // immediately via /api/plan-skip-dismiss) — the asymmetry is
+    // intentional. See plan "Design asymmetry to PRESERVE".
+    const chip = el("span", {
       cls: "skip-chip skip-chip--" + code,
       attrs: { title: source },
+    });
+    const labelSpan = el("span", {
+      cls: "skip-chip-label",
       text: "skip: " + code + " — " + label,
-    }));
+    });
+    const dismiss = el("button", {
+      cls: "skip-dismiss-btn",
+      attrs: {
+        type: "button",
+        "data-action": "issue-skip-dismiss",
+        "data-issue-number": String(issue.number),
+        "aria-label": "Reconsider issue #" + issue.number,
+        title: "Reconsider (re-triage on next /fix-issues fire)",
+      },
+      html: SVG_ICONS.x,  // chrome-only SVG carveout, not literal × char.
+    });
+    chip.appendChild(labelSpan);
+    chip.appendChild(dismiss);
+    row.appendChild(chip);
     card.appendChild(row);
   }
   // Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
@@ -2303,6 +2349,11 @@ function activityStatusClass(status) {
   if (s === "pass" || s === "ok" || s === "complete" || s === "completed") return "a-status-pass";
   if (s === "fail" || s === "failed" || s === "error") return "a-status-fail";
   if (s === "running" || s === "started" || s === "in-progress") return "a-status-running";
+  // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip-class pill. Source is the
+  // step.* marker `status: skip` field written by Phase 2's
+  // filter-mode-mismatch-plans.sh. Same semantic family as the per-card
+  // .skip-chip (var(--pink)) so the user reads them as one event.
+  if (s === "skip" || s === "skipped") return "a-status-skip";
   return "";
 }
 
@@ -2360,125 +2411,6 @@ function renderActivity(activity) {
       row.appendChild(el("span", { cls: "a-time", text: relativeTime(a.timestamp) }));
     }
     body.appendChild(row);
-  }
-}
-
-// ----------------------------------------------------------- run-status
-
-function renderRunStatus(ws) {
-  const root = $("run-status");
-  if (!root) return;
-  clear(root);
-  root.classList.remove("run-status-stale");
-  // Issue #995 — clear() removes children but does NOT reset `hidden`,
-  // so we must unhide on every render. The end-of-function guard below
-  // re-hides only when no children were appended (idle + no trigger + no
-  // warning — the demo's case). Without this top-level unhide, a state
-  // transition from idle-empty to scheduled would leave hidden=true and
-  // the scheduled pill invisible.
-  root.hidden = false;
-  const state = (ws && ws.state) || "idle";
-  const warning = ws && ws.warning;
-
-  if (state === "scheduled") {
-    const sched = ws.schedule || "every ?h";
-    const next = ws.next_fire_at ? formatLocalTime(ws.next_fire_at) : "?";
-    root.appendChild(el("span", { cls: "run-label", text: "Schedule:" }));
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Running " + sched + " · next fire " + next,
-    }));
-    // Issue #930 — only render Stop when a /work-on-plans trigger is
-    // configured. Without trigger_configured, POST /api/trigger returns
-    // 501 and the click is dead UI (symmetric with the idle Run controls
-    // gate below).
-    if (ws && ws.trigger_configured) {
-      const stop = el("button", {
-        cls: "run-stop-btn",
-        attrs: { type: "button", "data-action": "run-stop" },
-        text: "Stop",
-      });
-      root.appendChild(stop);
-    }
-    return;
-  }
-  if (state === "sprint") {
-    const prog = ws.progress || {};
-    const done = (prog.done != null) ? prog.done : 0;
-    const total = (prog.total != null) ? prog.total : 0;
-    const cur = prog.current_slug || "?";
-    root.appendChild(el("span", { cls: "run-label", text: "Sprint:" }));
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "in progress: " + done + "/" + total + " plans done · current: " + cur,
-    }));
-    return;
-  }
-  if (state === "stale-scheduled") {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Schedule appears stale — restart with /work-on-plans every 4h",
-    }));
-    return;
-  }
-  if (state === "stale-sprint") {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Sprint appears abandoned (last update " + (ws.updated_at ? relativeTime(ws.updated_at) : "?") + ")",
-    }));
-    const clearBtn = el("button", {
-      cls: "clear-stale-btn",
-      attrs: { type: "button", "data-action": "clear-stale-sprint" },
-      text: "Clear stale sprint state",
-    });
-    root.appendChild(clearBtn);
-    return;
-  }
-
-  // idle (default)
-  if (warning) {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", { cls: "run-text", text: warning }));
-  }
-  const triggerConfigured = !!(ws && ws.trigger_configured);
-  if (triggerConfigured) {
-    root.appendChild(el("span", { cls: "run-label", text: "Idle:" }));
-    const nInput = el("input", {
-      cls: "run-n-input",
-      attrs: {
-        type: "number",
-        min: "1",
-        max: "99",
-        value: "3",
-        id: "run-n",
-        "aria-label": "Number of plans to run",
-      },
-    });
-    root.appendChild(nInput);
-    const runBtn = el("button", {
-      cls: "run-btn primary",
-      attrs: { type: "button", "data-action": "run-top-n" },
-      text: "▶ Run top N",
-    });
-    root.appendChild(runBtn);
-  }
-  // Issue #988 — the "Copy and run:" snippet that previously rendered on
-  // the no-trigger branch is gone. Idle dashboard renders nothing here
-  // when no /work-on-plans trigger is configured; the docs explain how
-  // to feed the queue (matching the Issues / Branches columns, which
-  // have always been state-only with no inline how-to).
-
-  // Issue #995 — fall-through reaches here when state===idle and
-  // trigger_configured is false (and no warning) — no children were
-  // appended. Hide the empty container so its border + padding don't
-  // draw a visible "phantom pill" (the demo's case). The early-return
-  // arms above all append children and skip this guard; root.hidden
-  // was unhidden at the top of the function so those paths render
-  // normally.
-  if (!root.firstChild) {
-    root.hidden = true;
   }
 }
 
@@ -2570,9 +2502,28 @@ async function postQueue(queues, opts) {
     }
     return out;
   };
-  const plansForPayload = allowPlansCompleted
+  // Server-owned key strip: `plans.skipped` (and any other future
+  // server-owned key) is OWNED by the server (#813 / #733 / Phase-1
+  // queue-POST preserve-by-default refactor). The client must never echo
+  // a stale snapshot of it back, or the server's three clear-paths
+  // compete with the client's stale view and × clicks visually fail.
+  // deepCloneQueues today only populates PLAN_COLUMNS keys (no `skipped`
+  // key), so this is belt-and-suspenders — but pin the contract so a
+  // future refactor that extends queues.plans cannot accidentally start
+  // echoing the key.
+  const stripServerOwnedPlanKeys = (obj) => {
+    const out = {};
+    const SERVER_OWNED = new Set(["skipped"]);
+    for (const k of Object.keys(obj || {})) {
+      if (SERVER_OWNED.has(k)) continue;
+      out[k] = obj[k];
+    }
+    return out;
+  };
+  const plansAfterCompletedRule = allowPlansCompleted
     ? Object.assign({}, queues.plans)  // pass `completed` through
     : stripCompleted(queues.plans);
+  const plansForPayload = stripServerOwnedPlanKeys(plansAfterCompletedRule);
   const payload = {
     default_mode: queues.default_mode || "phase",
     plans: plansForPayload,
@@ -2826,71 +2777,61 @@ async function togglePlanMode(slug) {
 // Escalate a running (claimed) plan's mode to finish. One-way: never sets
 // back to phase or inherit. Issue #814. /work-on-plans re-reads the chip
 // each round, so this takes effect at the next phase dispatch.
-// -------------------------------------------------------------- trigger
 
-async function postTrigger(command) {
-  let res;
+// Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP-chip × dismiss.
+// POSTs {slug} to /api/plan-skip-dismiss; on 2xx the next poll observes
+// plans.skipped[slug] cleared and re-renders (gated by the skip_reason
+// tuple in fingerprintPlans). Idempotent: server returns 200 even when
+// the slug is absent (no spurious updated_at bump in that case).
+async function postPlanSkipDismiss(slug) {
   try {
-    res = await fetch(TRIGGER_URL, {
+    const resp = await fetch("/api/plan-skip-dismiss", {
       method: "POST",
-      cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command }),
+      body: JSON.stringify({ slug: slug }),
     });
-  } catch (err) {
-    showToast("Trigger failed: " + (err && err.message ? err.message : err), "err");
-    return false;
-  }
-  if (res.status === 501) {
-    showToast(
-      "No /work-on-plans trigger configured — set dashboard.work_on_plans_trigger in zskills-config.json.",
-      "info"
-    );
-    return false;
-  }
-  if (!res.ok) {
-    let body = "";
-    try {
-      const data = await res.json();
-      body = (data && (data.stderr || data.error)) || "";
-    } catch (_e) {
-      try { body = await res.text(); } catch (_ignore) { /* */ }
+    if (!resp.ok) {
+      showToast("Dismiss failed: " + resp.status, "err");
+      return;
     }
-    showToast("Trigger error (" + res.status + "): " + body.slice(0, 240), "err");
-    return false;
+    // On 2xx, the next poll will see plans.skipped[slug] gone and re-render.
+  } catch (err) {
+    showToast(
+      "Dismiss error: " + (err && err.message ? err.message : err), "err",
+    );
   }
-  let data = null;
-  try { data = await res.json(); } catch (_e) { /* */ }
-  if (data && data.status === "error") {
-    showToast("Trigger script error: " + (data.stderr || "(no stderr)").slice(0, 240), "err");
-    return false;
-  }
-  showToast("Triggered.", "info");
-  // Force a fresh work-state poll so the widget updates.
-  scheduleWorkPoll(0);
-  return true;
 }
 
-async function postWorkStateReset() {
-  let res;
+// Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues SKIP chip × dismiss.
+// POSTs {number} to /api/issue-reconsider. Server appends the integer to
+// issues.reconsider[] (dedup) and DOES NOT clear issues.skipped[N] —
+// sticky-by-design. The next /fix-issues fire reads the reconsider list
+// and re-triages. The toast tells the user the click was received so
+// they understand the chip-still-present is correct (not a bug). Mirrors
+// /fix-issues reconsider <N> CLI semantics.
+async function postIssueReconsider(number) {
   try {
-    res = await fetch(WORK_STATE_RESET_URL, {
+    const resp = await fetch("/api/issue-reconsider", {
       method: "POST",
-      cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ number: number }),
     });
+    if (!resp.ok) {
+      showToast("Reconsider failed: " + resp.status, "err");
+      return;
+    }
+    // Sticky semantics: chip stays until next /fix-issues fire re-triages.
+    // Surface a toast so the user understands the click was received but
+    // the chip will not immediately disappear.
+    showToast(
+      "Issue #" + number + " queued for re-triage on next /fix-issues fire",
+      "info",
+    );
   } catch (err) {
-    showToast("Reset failed: " + (err && err.message ? err.message : err), "err");
-    return false;
+    showToast(
+      "Reconsider error: " + (err && err.message ? err.message : err), "err",
+    );
   }
-  if (!res.ok) {
-    showToast("Reset failed (" + res.status + ")", "err");
-    return false;
-  }
-  showToast("Sprint state cleared.", "info");
-  scheduleWorkPoll(0);
-  return true;
 }
 
 // -------------------------------------------------------- drag-and-drop
@@ -3419,6 +3360,15 @@ async function handleAction(action, target) {
   if (action === "plan-right") return movePlan(slug, "right");
   if (action === "plan-discard") return discardPlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
+  // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP-chip × dismiss.
+  // The click may bubble from a child SVG path; walk up to the button to
+  // get data-slug.
+  if (action === "plan-skip-dismiss") {
+    const btn = target.closest('[data-action="plan-skip-dismiss"]') || target;
+    const s = btn.getAttribute("data-slug");
+    if (s) return postPlanSkipDismiss(s);
+    return;
+  }
 
   // Column-header chevron: move-all in column, adjacent column only.
   if (action === "plan-move-all-left" || action === "plan-move-all-right" ||
@@ -3468,25 +3418,14 @@ async function handleAction(action, target) {
   if (action === "issue-left") return moveIssue(num, "left");
   if (action === "issue-right") return moveIssue(num, "right");
   if (action === "issue-remove") return removeIssue(num);
-
-  if (action === "run-top-n") {
-    const input = $("run-n");
-    let n = 3;
-    if (input) {
-      const v = parseInt(input.value, 10);
-      if (Number.isFinite(v) && v >= 1 && v <= 99) n = v;
-    }
-    // Issue #988 — the dashboard no longer carries a default-mode chip.
-    // Trigger fires the bare `/work-on-plans N`; the skill resolves its
-    // own default (`finish` post-#988) at dispatch time.
-    const cmd = "/work-on-plans " + n;
-    return postTrigger(cmd);
-  }
-  if (action === "run-stop") {
-    return postTrigger("/work-on-plans stop");
-  }
-  if (action === "clear-stale-sprint") {
-    return postWorkStateReset();
+  // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues SKIP-chip × dismiss.
+  // The click may bubble from the inner SVG path; walk up to the button
+  // to read data-issue-number.
+  if (action === "issue-skip-dismiss") {
+    const btn = target.closest('[data-action="issue-skip-dismiss"]') || target;
+    const n = parseInt(btn.getAttribute("data-issue-number"), 10);
+    if (Number.isInteger(n) && n > 0) return postIssueReconsider(n);
+    return;
   }
 
   // Issue #675 — Section-nav pill: scroll to the target section. If the
@@ -3712,7 +3651,6 @@ function onCardActivate(card) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     schedulePoll(0);
-    scheduleWorkPoll(0);
   }
 });
 
@@ -3785,7 +3723,6 @@ function boot() {
   bindTabEvents();                                       // NEW
   setActiveTab(readTabFromHash(), { pushHash: false });  // NEW
   schedulePoll(0);
-  scheduleWorkPoll(0);
 
   // Persist activity-strip resize height across reloads.
   var actStrip = document.getElementById("activity-strip");
