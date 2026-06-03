@@ -131,7 +131,7 @@ _Status: ✅ Done._ The plan-authoring family; cross-references between them mus
 
 ## Phase 3 — Backlog/decompose peers: fix-issues, fix-report, work-on-plans, research-and-plan, research-and-go
 
-_Status: pending._ The "drive a backlog / decompose a goal" family.
+_Status: ✅ Done._ The "drive a backlog / decompose a goal" family.
 
 - [ ] Run the per-doc pipeline on `fix-issues.md`, `fix-report.md`, `work-on-plans.md`, `research-and-plan.md`, `research-and-go.md`.
 - [ ] `research-and-plan` ↔ `research-and-go`: present as the stop-after-draft vs. continue-into-execution pair, uniformly.
