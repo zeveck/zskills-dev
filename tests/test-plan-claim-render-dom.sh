@@ -515,7 +515,9 @@ function collectText(node) {
   expectTrue(chip && /claim-chip--stale/.test(chip.className),
     "#912: stale chip carries claim-chip--stale modifier");
   expectTrue(chip && chip.textContent.indexOf("stale") >= 0,
-    "#912: stale chip text reads as stale (dead pipeline)");
+    "#912/#1029: stale chip text reads as stale (no progress in 6h+)");
+  expectTrue(chip && chip.textContent.indexOf("no progress in 6h+") >= 0,
+    "#1029: stale chip text uses the literal 'no progress in 6h+' (not 'dead pipeline')");
   expectTrue(chip && /click to release/.test(chip.getAttribute("title") || ""),
     "#912: stale chip tooltip offers 'click to release'");
   // X is re-enabled with the existing plan-discard action.
@@ -564,6 +566,75 @@ function collectText(node) {
     expect(rmBtn.getAttribute("data-action"), null,
       "#912: fresh claim X has NO data-action (hard-lock unchanged)");
   }
+}
+
+// ------------------------------------------------------------------
+// T3.11.#1029.a — Healthy long-running pipeline: started_at >6h old,
+// last_progress_at <6h ago (recent set-phase). Stale rule keys on
+// last_progress_at, so the chip MUST render in the live framing, the
+// card MUST stay hard-locked (live claim semantics — no in-UI release),
+// and the chip MUST NOT carry the claim-chip--stale modifier.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "longrun", title: "Long-running pipeline", status: "active",
+    phase_count: 4, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.longrun",
+      started_at: new Date(Date.now() - 10 * 3600 * 1000).toISOString(),
+      last_progress_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 10 * 3600,
+      pipeline_short: "lr-abc",
+      // Collector emits stale=false because last_progress_at is fresh.
+      stale: false,
+    },
+  };
+  const card = buildPlanCard(plan, "longrun", "ready", "phase");
+  expect(card.getAttribute("aria-disabled"), "true",
+    "#1029: long-but-healthy claim card stays aria-disabled (live, hard-locked)");
+  expectTrue(/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#1029: long-but-healthy claim card retains claim-locked class");
+  const chip = findByClass(card, "claim-chip");
+  expectTrue(chip, "#1029: claim chip rendered for long-but-healthy claim");
+  expectTrue(chip && chip.textContent.indexOf("stale") < 0,
+    "#1029: long-but-healthy claim chip does NOT include 'stale'");
+  expectTrue(chip && !/claim-chip--stale/.test(chip.className),
+    "#1029: long-but-healthy claim chip does NOT carry claim-chip--stale modifier");
+}
+
+// ------------------------------------------------------------------
+// T3.11.#1029.b — Dead pipeline: BOTH started_at AND last_progress_at
+// >6h ago. Stale rule fires → chip MUST render with the "no progress
+// in 6h+" framing; card MUST stay draggable (no hard-lock); X MUST be
+// enabled. This is the post-#1029 framing of the dead-pipeline case
+// that previously fired purely on started_at age.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "bothold", title: "Both-old dead pipeline", status: "active",
+    phase_count: 5, phases_done: 1,
+    claim: {
+      pipeline_id: "run-plan.bothold",
+      started_at: new Date(Date.now() - 10 * 3600 * 1000).toISOString(),
+      last_progress_at: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
+      current_phase: "Phase 1",
+      age_seconds: 10 * 3600,
+      pipeline_short: "bo-abc",
+      stale: true,
+    },
+  };
+  const card = buildPlanCard(plan, "bothold", "ready", "phase");
+  expect(card.getAttribute("aria-disabled"), null,
+    "#1029: both-old dead claim card is NOT aria-disabled (recovery enabled)");
+  expectTrue(!/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#1029: both-old dead claim card has NO claim-locked class");
+  const chip = findByClass(card, "claim-chip");
+  expectTrue(chip, "#1029: claim chip rendered for both-old dead claim");
+  expectTrue(chip && /claim-chip--stale/.test(chip.className),
+    "#1029: both-old dead claim chip carries claim-chip--stale modifier");
+  expectTrue(chip && chip.textContent.indexOf("no progress in 6h+") >= 0,
+    "#1029: both-old dead claim chip text reads 'no progress in 6h+'");
 }
 
 // ------------------------------------------------------------------

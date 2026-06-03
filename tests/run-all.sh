@@ -238,6 +238,7 @@ run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handlea
 run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.sh"
 run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
 run_suite "test-plan-claim-conformance.sh" "tests/test-plan-claim-conformance.sh"
+run_suite "test-claim-plan-heartbeat.sh" "tests/test-claim-plan-heartbeat.sh"
 run_suite "test-claim-self-reentry.sh" "tests/test-claim-self-reentry.sh"
 run_suite "test-inflight-batch-guard.sh" "tests/test-inflight-batch-guard.sh"
 run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"

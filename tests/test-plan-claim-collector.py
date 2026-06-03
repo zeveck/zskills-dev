@@ -143,13 +143,18 @@ class ReadPlanClaimsTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short", "dispatch_mode", "stale"},
+             "age_seconds", "pipeline_short", "dispatch_mode", "stale",
+             "last_progress_at"},
         )
         # dispatch_mode (#874) is on the allow-list. Absent in the
         # source claim → surfaces as None.
         self.assertIsNone(c["dispatch_mode"])
         # stale (#912) is on the allow-list. A fresh claim → not stale.
         self.assertFalse(c["stale"])
+        # last_progress_at (#1029) is on the allow-list. Absent in the
+        # source claim → surfaces as None (back-compat: stale rule then
+        # falls back to started_at).
+        self.assertIsNone(c["last_progress_at"])
 
     def test_dispatch_mode_finish_persists(self) -> None:
         # #874: claim.json carrying dispatch_mode="finish" must surface
@@ -410,10 +415,14 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short", "dispatch_mode", "stale"},
+             "age_seconds", "pipeline_short", "dispatch_mode", "stale",
+             "last_progress_at"},
         )
         # stale (#912) threads through onto plan["claim"] from the collector.
         self.assertIn("stale", c)
+        # last_progress_at (#1029) threads through onto plan["claim"]
+        # so the renderer fingerprint can include heartbeat bumps.
+        self.assertIn("last_progress_at", c)
         # Plan beta has no claim attached.
         self.assertNotIn("claim", plans[1])
 
