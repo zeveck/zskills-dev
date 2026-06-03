@@ -923,6 +923,13 @@ function fingerprintIssues(issues, queues) {
       // pipeline claims, started_at changes per-claim, and both are null
       // when no claim is held.
       i.claim ? [i.claim.pipeline_id || null, i.claim.started_at || null] : null,
+      // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip_reason tuple symmetric
+      // with fingerprintPlans. Without this, the next /fix-issues fire
+      // clears the issue from issues.skipped (consuming issues.reconsider)
+      // but the dashboard's diff-suppression keeps the chip until some
+      // OTHER row property changes. Include code + label so a code-only
+      // change (rare but possible) also triggers re-render.
+      i.skip_reason ? [i.skip_reason.code || null, i.skip_reason.label || null] : null,
     ]),
   });
 }
@@ -1906,11 +1913,37 @@ function buildIssueCard(issue, num, col) {
     const label = String(sr.label || code || "");
     const source = String(sr.source || "");
     const row = el("div", { cls: "card-sub" });
-    row.appendChild(el("span", {
+    // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — × dismiss button.
+    // Sticky semantics: the click POSTs to /api/issue-reconsider, which
+    // appends to issues.reconsider[]. It does NOT clear issues.skipped[N].
+    // The chip stays visible until the next /fix-issues fire re-triages.
+    // The toast (in postIssueReconsider) tells the user the click was
+    // received and explains the chip will not immediately disappear.
+    // This is asymmetric with the Plans SKIP chip's × (which clears
+    // immediately via /api/plan-skip-dismiss) — the asymmetry is
+    // intentional. See plan "Design asymmetry to PRESERVE".
+    const chip = el("span", {
       cls: "skip-chip skip-chip--" + code,
       attrs: { title: source },
+    });
+    const labelSpan = el("span", {
+      cls: "skip-chip-label",
       text: "skip: " + code + " — " + label,
-    }));
+    });
+    const dismiss = el("button", {
+      cls: "skip-dismiss-btn",
+      attrs: {
+        type: "button",
+        "data-action": "issue-skip-dismiss",
+        "data-issue-number": String(issue.number),
+        "aria-label": "Reconsider issue #" + issue.number,
+        title: "Reconsider (re-triage on next /fix-issues fire)",
+      },
+      html: SVG_ICONS.x,  // chrome-only SVG carveout, not literal × char.
+    });
+    chip.appendChild(labelSpan);
+    chip.appendChild(dismiss);
+    row.appendChild(chip);
     card.appendChild(row);
   }
   // Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
@@ -2316,6 +2349,11 @@ function activityStatusClass(status) {
   if (s === "pass" || s === "ok" || s === "complete" || s === "completed") return "a-status-pass";
   if (s === "fail" || s === "failed" || s === "error") return "a-status-fail";
   if (s === "running" || s === "started" || s === "in-progress") return "a-status-running";
+  // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip-class pill. Source is the
+  // step.* marker `status: skip` field written by Phase 2's
+  // filter-mode-mismatch-plans.sh. Same semantic family as the per-card
+  // .skip-chip (var(--pink)) so the user reads them as one event.
+  if (s === "skip" || s === "skipped") return "a-status-skip";
   return "";
 }
 
@@ -2760,6 +2798,38 @@ async function postPlanSkipDismiss(slug) {
   } catch (err) {
     showToast(
       "Dismiss error: " + (err && err.message ? err.message : err), "err",
+    );
+  }
+}
+
+// Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues SKIP chip × dismiss.
+// POSTs {number} to /api/issue-reconsider. Server appends the integer to
+// issues.reconsider[] (dedup) and DOES NOT clear issues.skipped[N] —
+// sticky-by-design. The next /fix-issues fire reads the reconsider list
+// and re-triages. The toast tells the user the click was received so
+// they understand the chip-still-present is correct (not a bug). Mirrors
+// /fix-issues reconsider <N> CLI semantics.
+async function postIssueReconsider(number) {
+  try {
+    const resp = await fetch("/api/issue-reconsider", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ number: number }),
+    });
+    if (!resp.ok) {
+      showToast("Reconsider failed: " + resp.status, "err");
+      return;
+    }
+    // Sticky semantics: chip stays until next /fix-issues fire re-triages.
+    // Surface a toast so the user understands the click was received but
+    // the chip will not immediately disappear.
+    showToast(
+      "Issue #" + number + " queued for re-triage on next /fix-issues fire",
+      "info",
+    );
+  } catch (err) {
+    showToast(
+      "Reconsider error: " + (err && err.message ? err.message : err), "err",
     );
   }
 }
@@ -3348,6 +3418,15 @@ async function handleAction(action, target) {
   if (action === "issue-left") return moveIssue(num, "left");
   if (action === "issue-right") return moveIssue(num, "right");
   if (action === "issue-remove") return removeIssue(num);
+  // Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues SKIP-chip × dismiss.
+  // The click may bubble from the inner SVG path; walk up to the button
+  // to read data-issue-number.
+  if (action === "issue-skip-dismiss") {
+    const btn = target.closest('[data-action="issue-skip-dismiss"]') || target;
+    const n = parseInt(btn.getAttribute("data-issue-number"), 10);
+    if (Number.isInteger(n) && n > 0) return postIssueReconsider(n);
+    return;
+  }
 
   // Issue #675 — Section-nav pill: scroll to the target section. If the
   // target column is collapsed, expand it first via applyCollapseStateToColumn.

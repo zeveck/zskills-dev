@@ -794,6 +794,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if decoded_path == "/api/plan-skip-dismiss":
             self._handle_plan_skip_dismiss_post()
             return
+        # Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues SKIP chip × dismiss.
+        if decoded_path == "/api/issue-reconsider":
+            self._handle_issue_reconsider_post()
+            return
         self._send_json(404, {"error": f"unknown POST path: {decoded_path}"})
 
     # ------------------------------------------------------------- handlers
@@ -1148,6 +1152,96 @@ class MonitorHandler(BaseHTTPRequestHandler):
             _atomic_write_json(target, new_doc)
             self._send_json(200, {
                 "ok": True, "slug": slug,
+                "updated_at": new_doc["updated_at"],
+            })
+
+    def _handle_issue_reconsider_post(self) -> None:
+        """Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — Issues × reconsider endpoint.
+
+        Sticky semantics: appends `number` to `issues.reconsider[]` and
+        DOES NOT clear `issues.skipped[<N>]`. The next /fix-issues fire
+        reads the reconsider list and re-triages the issue (consuming
+        issues.reconsider). The chip stays visible until that fire
+        happens. Asymmetric with `/api/plan-skip-dismiss` (Phase 2)
+        which clears immediately — the asymmetry is intentional.
+
+        Mirrors the canonical CLI logic in
+        `skills/fix-issues/subcommands/reconsider.md`'s python embed (the
+        ~5-line append-with-dedup): if either fence changes meaningfully
+        in semantics, BOTH sites must be updated. (Not refactored to a
+        shared helper — the 5-line duplication is cheaper than the
+        plumbing for a network-reachable + CLI-reachable split.)
+
+        Idempotent: re-POSTing the same number produces a second 200 but
+        does NOT duplicate the integer in `issues.reconsider`. updated_at
+        is NOT bumped on the no-op dedup path (mirrors plan-skip-dismiss
+        idempotency for symmetry of UX feedback).
+
+        CSRF: gated on `_origin_ok()` (the CLI bypasses this because it
+        is not network-reachable; the server endpoint MUST gate).
+        """
+        if not self._origin_ok():
+            self._send_json(403, {"error": "Origin check failed"})
+            return
+        body_bytes, err = self._read_request_body()
+        if err is not None or body_bytes is None:
+            self._send_json(400, {"error": err or "unreadable body"})
+            return
+        try:
+            payload = json.loads(body_bytes.decode("utf-8") or "null")
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as exc:
+            self._send_json(400, {"error": f"json parse: {exc}"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "body is not an object"})
+            return
+        number = payload.get("number")
+        # Strict int: bools are isinstance(int) in Python; exclude them
+        # so {"number": true} fails fast.
+        if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+            self._send_json(400, {"error": "missing or invalid number"})
+            return
+        ctx = self._ctx()
+        main_root: pathlib.Path = ctx["main_root"]
+        with _state_lock(main_root):
+            existing = _read_monitor_state(main_root)
+            issues_section = existing.get("issues")
+            if not isinstance(issues_section, dict):
+                # Build a fresh issues section + reconsider list.
+                new_doc = copy.deepcopy(existing)
+                new_doc["issues"] = {"reconsider": [number]}
+                new_doc["updated_at"] = _now_iso()
+                target = main_root / ".zskills" / "monitor-state.json"
+                _atomic_write_json(target, new_doc)
+                self._send_json(200, {
+                    "ok": True, "number": number,
+                    "reconsider": [number],
+                    "updated_at": new_doc["updated_at"],
+                })
+                return
+            reconsider = issues_section.get("reconsider")
+            if not isinstance(reconsider, list):
+                reconsider = []
+            if number in reconsider:
+                # Idempotent: dedup → no write, return existing updated_at.
+                self._send_json(200, {
+                    "ok": True, "number": number,
+                    "reconsider": list(reconsider),
+                    "updated_at": existing.get("updated_at", ""),
+                })
+                return
+            # Append + bump + atomic-write.
+            new_doc = copy.deepcopy(existing)
+            new_issues = new_doc.setdefault("issues", {})
+            new_list = list(reconsider)
+            new_list.append(number)
+            new_issues["reconsider"] = new_list
+            new_doc["updated_at"] = _now_iso()
+            target = main_root / ".zskills" / "monitor-state.json"
+            _atomic_write_json(target, new_doc)
+            self._send_json(200, {
+                "ok": True, "number": number,
+                "reconsider": new_list,
                 "updated_at": new_doc["updated_at"],
             })
 

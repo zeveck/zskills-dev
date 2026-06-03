@@ -571,6 +571,10 @@ code, pre, .mono {
 .activity-row .a-status-pass    { color: var(--green); border-color: var(--green); }
 .activity-row .a-status-fail    { color: var(--red); border-color: var(--red); }
 .activity-row .a-status-running { color: var(--orange); border-color: var(--orange); }
+/* Phase 3 (DASHBOARD_RUNSTATUS_CLEANUP) — skip pill. Pink matches the
+   per-card .skip-chip's magenta so the activity-feed entry reads as the
+   same semantic family as the chip on the corresponding ready card. */
+.activity-row .a-status-skip    { color: var(--pink); border-color: var(--pink); }
 .activity-row .a-parent { color: var(--text-dim); font-style: italic; margin-left: 6px; }
 .activity-row .a-subject { color: var(--text); }
 .activity-row .a-time { color: var(--text-dim); }
