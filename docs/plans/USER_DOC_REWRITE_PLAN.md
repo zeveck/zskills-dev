@@ -153,7 +153,7 @@ _Status: ✅ Done._
 
 ## Phase 5 — Infra/meta peers: update-zskills, create-worktree, briefing, zskills-dashboard, doc
 
-_Status: pending._ (`manual-testing.md` excluded — owned by #1012.) This phase also picks up **`doc.md`** — the 25th skill doc, which earlier drafts left unassigned.
+_Status: ✅ Done._ (`manual-testing.md` excluded — owned by #1012.) This phase also picks up **`doc.md`** — the 25th skill doc, which earlier drafts left unassigned.
 
 - [ ] Run the per-doc pipeline on `update-zskills.md`, `create-worktree.md`, `briefing.md`, `zskills-dashboard.md`, `doc.md`.
 - [ ] `create-worktree.md`: drop the made-up "Two-Tier Contract / Tier 1 / Tier 2" terminology.

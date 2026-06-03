@@ -1,59 +1,70 @@
 # /create-worktree
 
-> Create a git worktree for agent work. Thin wrapper around `create-worktree.sh` -- owns prefix-derived path, optional branch-name override, pre-flight prune+fetch+ff-merge, safe worktree-add, and sanitized tracking writes.
+> Create a git worktree for agent work, on a fresh branch off `main`. Most of the time another skill runs this for you; you rarely call it by hand.
+
+## What it does
+
+`/create-worktree` sets up a fresh [git worktree](https://git-scm.com/docs/git-worktree) — a separate checkout of the repository in its own directory — so an agent can work on a change in isolation, without disturbing your main checkout. You give it a short slug; it picks a directory and a branch name from that slug, creates the worktree there, and prints the worktree's absolute path so the caller can `cd` into it and start working.
+
+By default it first tidies up: it prunes stale worktree entries, fetches `main` from the remote, and fast-forwards your local `main` to match, so the new worktree starts from current code. You can skip this tidy-up with `--no-preflight` when the caller has already refreshed `main`.
+
+This is the shared building block that every isolation-using skill relies on. `/do`, `/run-plan`, `/fix-issues`, and others call it to get a clean worktree before they make changes — which is why you seldom type `/create-worktree` yourself. It is still a normal command you *can* run directly when you want a worktree to experiment in.
 
 ## Usage
 
 ```
 /create-worktree <slug> [--prefix P] [--branch-name REF] [--from B] [--root R]
-                 [--purpose TEXT] [--pipeline-id ID] [--allow-resume] [--no-preflight]
+                 [--purpose TEXT] [--allow-resume] [--no-preflight]
 ```
+
+The simplest form is just a slug:
+
+```
+/create-worktree my-feature
+```
+
+That creates a worktree directory named after your project and the slug (for example `/tmp/zskills-my-feature`), on a new branch `wt-my-feature`, branched from `main`. It prints the path; you `cd` there and work.
+
+## Typical usage
+
+When you run it by hand, you almost always want only the slug — and optionally a purpose note so it's clear later what the worktree was for:
+
+```
+/create-worktree my-feature
+/create-worktree spike-dark-mode --purpose "Experimenting with a dark theme"
+/create-worktree fix-login --from release-2.0
+```
+
+Add `--from B` to branch off something other than `main`. Add `--allow-resume` to reuse an existing branch that's already ahead of the base instead of failing. The other flags (`--prefix`, `--branch-name`, `--root`) are mostly used by the skills that call `/create-worktree` internally, to control exactly where the worktree lands and what its branch is named.
+
+## Companion skills
+
+`/create-worktree` is the worktree-setup primitive the rest of the catalog builds on, so its companions are the skills that call it before they begin work:
+
+- **[`/do`](do.md)** — opens a worktree through `/create-worktree` when it isolates a single change.
+- **[`/run-plan`](run-plan.md)** — creates a worktree per plan execution so each plan's work stays isolated.
+- **[`/fix-issues`](fix-issues.md)** — creates a worktree when working a backlog of issues in isolation.
+- **[`/commit`](commit.md)** — lands the work done inside a worktree back onto `main`; it also refuses to clean up a worktree whose tracking files were accidentally committed.
+- **[`/update-zskills`](update-zskills.md)** — installs and configures the worktree machinery (including where worktrees are created).
 
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `slug` | Yes | Short identifier for the worktree |
-| `--prefix P` | No | Prefix for the worktree path (e.g., `fix-issue`, `add-block`) |
-| `--branch-name REF` | No | Override the auto-generated branch name |
-| `--from B` | No | Base branch to create the worktree from |
-| `--root R` | No | Root directory for the worktree |
-| `--purpose TEXT` | No | Human-readable purpose description |
-| `--pipeline-id ID` | No | Pipeline ID for tracking (required for Tier 1 callers) |
-| `--allow-resume` | No | Allow resuming an existing worktree |
-| `--no-preflight` | No | Skip the prune+fetch+ff-merge preflight |
+| `slug` | Yes | A short name for the worktree (letters, digits, `.`, `_`, `-`). It becomes part of the directory name and the branch name. |
+| `--prefix P` | No | Adds `P-` to both the branch name and the directory name (no slashes allowed). |
+| `--branch-name REF` | No | Use this exact branch name instead of the auto-generated `wt-<slug>`. |
+| `--from B` | No | Base branch to create the worktree from. Defaults to `main`. |
+| `--root R` | No | Put the worktree under directory `R` instead of the default location. |
+| `--purpose TEXT` | No | Record a human-readable note describing what the worktree is for. Without it, no note is written. |
+| `--allow-resume` | No | Attach to an existing branch that's already ahead of the base, instead of treating that as an error. |
+| `--no-preflight` | No | Skip the prune + fetch + fast-forward step. Use when `main` is already up to date. |
 
-## Two-Tier Contract
+Where worktrees are created is set by `execution.worktree_root` in `.claude/zskills-config.json` (default `/tmp`); the directory leaf combines your project name, any prefix, and the slug.
 
-### Tier 1 -- Bash callers inside other skills
+The command exits with an error (rather than silently doing the wrong thing) when the slug is malformed, when the target directory already exists, or when the branch is in a state that needs your decision — for example, a branch that's behind the base, or one that's ahead of the base without `--allow-resume`.
 
-Skills like `/run-plan`, `/fix-issues`, `/do` know their pipeline ID and **must pass it via `--pipeline-id`**. The script rejects invocations without the flag.
+## See also
 
-### Tier 2 -- User / Claude slash command
-
-Users don't need to know about pipeline IDs. When omitted, Claude synthesizes `create-worktree.<slug>` automatically.
-
-## Examples
-
-```
-/create-worktree my-feature
-/create-worktree my-feature --prefix fix-issue --pipeline-id fix-issues.sprint-123
-/create-worktree my-feature --branch-name custom/branch-name
-/create-worktree my-feature --from develop --purpose "Experimental feature work"
-/create-worktree my-feature --allow-resume
-```
-
-## Common Patterns
-
-- **User worktree:** `/create-worktree my-feature` -- creates a worktree with auto-generated pipeline ID
-- **Skill integration:** called internally by `/run-plan`, `/fix-issues`, `/do`, `/add-block`, etc. with `--pipeline-id`
-- **Resume existing:** `/create-worktree my-feature --allow-resume` -- reuse an existing worktree if present
-
-## Tips & Gotchas
-
-- Prints the worktree path on stdout -- callers capture it to `cd` into
-- The script handles pre-flight (prune, fetch, ff-merge), worktree creation, and `.zskills-tracked` write
-- `--pipeline-id` is required for Tier 1 (skill) callers; script exits with rc 5 without it
-- `--no-preflight` skips the fetch/prune/ff-merge for speed when the caller has already done it
-- Worktrees are created under `/tmp/<project>-<prefix>-<slug>/` by default
-- The underlying script is at `.claude/skills/create-worktree/scripts/create-worktree.sh`
+- [`/do`](do.md) — the most common skill that opens a worktree for you.
+- [Workflows](../guides/workflows.md) — how worktrees fit into the landing modes.

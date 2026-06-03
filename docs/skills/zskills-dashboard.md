@@ -1,6 +1,14 @@
 # /zskills-dashboard
 
-> Local web dashboard -- plans, issues, worktrees, branches, tracking activity, drag-and-drop priority queue. Starts a detached Python HTTP server; stop sends SIGTERM; restart = stop+start.
+> Local web dashboard for plan, issue, and run status — plans, issues, worktrees, branches, tracking activity, and a drag-and-drop priority queue. `start` launches it, `stop` shuts it down, `status` reports whether it's running, `restart` picks up code changes.
+
+## What it does
+
+`/zskills-dashboard` runs a small web dashboard on your own machine that gives you one place to see what's in flight: your plan files, open issues, worktrees, branches, and the tracking activity of running pipelines. It serves a page you open in a browser at a `http://127.0.0.1:<port>/` URL the skill prints when it starts.
+
+The dashboard is a live view, not a report. From it you can see which plans are ready, in progress, or done, and you can reorder the priority queue by dragging entries — the dashboard is the interactive place to prioritize work, the counterpart to the read-only `/plans` listing. If you have wired up the optional trigger script (see Arguments), the dashboard also shows a "Run" button that kicks off a `/work-on-plans` run for the plans you've queued.
+
+The server keeps running in the background after the command returns, so the dashboard stays up across sessions; one dashboard serves all your sessions from the main checkout. You start it once and leave it running, check on it with `status`, and shut it down with `stop` when you're done.
 
 ## Usage
 
@@ -8,39 +16,56 @@
 /zskills-dashboard [start|stop|status|restart]
 ```
 
-## Arguments
+With no argument, `/zskills-dashboard` reports status.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `start` | No | Launch detached server, write PID file |
-| `stop` | No | SIGTERM the server, remove PID file |
-| `status` | No | Report PID, port, uptime, log path (default when no args) |
-| `restart` | No | Stop then start (pick up Python code changes) |
+## Typical usage
 
-## Examples
+You start the dashboard once and leave it up:
 
 ```
-/zskills-dashboard
 /zskills-dashboard start
-/zskills-dashboard stop
+```
+
+That prints the URL to open in your browser. Later, check whether it's still running and how long it's been up:
+
+```
 /zskills-dashboard status
+```
+
+When you're done, shut it down cleanly:
+
+```
+/zskills-dashboard stop
+```
+
+If you've changed the dashboard's own code and want the running server to pick up the change, restart it:
+
+```
 /zskills-dashboard restart
 ```
 
-## Common Patterns
+## Companion skills
 
-- **Start the dashboard:** `/zskills-dashboard start` -- launch the web dashboard
-- **Check status:** `/zskills-dashboard status` (or just `/zskills-dashboard`) -- see if the server is running
-- **After code changes:** `/zskills-dashboard restart` -- pick up Python changes
-- **Clean shutdown:** `/zskills-dashboard stop` -- SIGTERM the server
+- **`/work-on-plans`** runs the ready plans in a batch. The dashboard's priority queue is where you decide their order; its optional "Run" button hands the chosen run off to `/work-on-plans`.
+- **`/plans`** is the read-only command-line listing of the same plan status the dashboard shows. Use `/plans` for a quick text survey; open `/zskills-dashboard` when you want to drag entries and reprioritize interactively.
+- **`/run-plan`** executes a single plan. The dashboard shows you which plans are ready so you can pick one to run.
 
-## Tips & Gotchas
+## Arguments
 
-- The server is a stdlib-only Python HTTP server, localhost-bound
-- State is stored in `.zskills/monitor-state.json` with atomic writes
-- PID file is at `.zskills/dashboard-server.pid`
-- Port resolution uses `DEV_PORT` env var, `dev_server.default_port` from config, or `port.sh`
-- Stop uses SIGTERM only -- never escalates to SIGKILL (per CLAUDE.md process-kill rules)
-- Process identity checks verify both command name AND cwd to avoid killing wrong processes
-- The dashboard survives the parent shell (runs detached)
-- `ZSKILLS_DASHBOARD_ROOT` env var overrides the default main-checkout anchor
+`/zskills-dashboard` takes one optional positional argument naming the action. With no argument it reports status.
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `start` | No | Launch the dashboard server in the background and print the URL |
+| `stop` | No | Shut the dashboard server down cleanly |
+| `status` | No | Report whether the server is running, with its URL and uptime (the default when you give no argument) |
+| `restart` | No | Stop and start again, to pick up code changes to the dashboard |
+
+Anything other than `start`, `stop`, `status`, `restart`, or nothing is a usage error.
+
+Two optional settings affect the dashboard, both read from `.claude/zskills-config.json` (the dashboard never writes your config):
+
+- The port the dashboard listens on comes from the `DEV_PORT` environment variable if set, otherwise the `dev_server.default_port` config field, otherwise a default. `start` prints the resulting URL.
+- The "Run" button is shown only when you set `dashboard.work_on_plans_trigger` to a small trigger script you provide. No script ships by default; until you wire one, the button is hidden.
+
+If you're working in a worktree and want the dashboard to show that worktree's files instead of the main checkout, set the `ZSKILLS_DASHBOARD_ROOT` environment variable to the worktree path before running `/zskills-dashboard start`. Left unset, the dashboard serves the main checkout, which is the usual case.
