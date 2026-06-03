@@ -1,7 +1,7 @@
 ---
 name: draft-tests
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [auto] [guidance...]"
+argument-hint: "<plan-file> [rounds N] [auto] [<guidance>]"
 description: >-
   Draft test specifications into an existing plan through iterative
   adversarial review. Appends a `### Tests` subsection per pending phase
@@ -9,10 +9,10 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.06.03+fd8ce9"
+  version: "2026.06.03+a3e088"
 ---
 
-# /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
+# /draft-tests \<plan-file> [rounds N] [<guidance>] — Adversarial Test-Spec Drafter
 
 Sister skill to `/draft-plan`: same drafting + adversarial-review
 machinery, scoped to test specifications. Given the path to an existing
