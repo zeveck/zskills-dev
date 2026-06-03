@@ -49,9 +49,9 @@ assert_absent() {
 
 # ── 1. Markdown: Pages URL rewritten ─────────────────────────────────────────
 MD="$TMP/page.md"
-printf 'See <https://zeveck.github.io/zskills-dev/demo/> for the demo.\n' > "$MD"
+printf 'See <https://zeveck.github.io/zskills-dev/dashboard-demo/> for the demo.\n' > "$MD"
 rewrite_dev_urls "$MD"
-assert_contains "1a. .md: Pages host rewritten to prod" "$MD" "zskills.synapticnoise.com/demo/"
+assert_contains "1a. .md: Pages host rewritten to prod" "$MD" "zskills.synapticnoise.com/dashboard-demo/"
 assert_absent   "1b. .md: dev Pages host gone"          "$MD" "zeveck.github.io/zskills-dev"
 
 # ── 2. HTML: href Pages URL rewritten ────────────────────────────────────────
