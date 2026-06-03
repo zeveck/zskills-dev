@@ -3,9 +3,7 @@
 
 This file is the **maintainer-facing manual dev-quality checklist** for
 zskills. It holds the five manual install scenarios a human runs to
-accept a release across both distribution lanes. (The autonomous
-`scripts/dogfood-plugin-install.sh` install dogfood is documented separately
-in `RELEASING.md`.)
+accept a release across both distribution lanes.
 
 Like `RELEASING.md`, this is **dev-maintainer-only and prod-stripped**: its
 entire content sits inside `<!-- prod-strip:start --> … <!-- prod-strip:end
@@ -21,7 +19,7 @@ wrap and the `for f in RELEASING.md DEV-QUAL.md; do … done` removal loops in
 
 These are **manual** acceptance scenarios — a human runs them, by hand,
 against a release candidate. They complement, not replace, the automated
-gate (`bash tests/run-all.sh`) and the autonomous install dogfood (`bash scripts/dogfood-plugin-install.sh` — see RELEASING.md).
+gate (`bash tests/run-all.sh`).
 Each scenario states its **purpose**, **preconditions**, **step-by-step
 commands** (traced to the real install machinery — no invented commands),
 and **expected observable results** (what to check to call it a PASS).
@@ -109,10 +107,9 @@ writing the 5 consumer artifacts, and **no `.claude/skills/` mirror**.
   Scenario 5 for that.)
 - For the **real consumer path**: a marketplace install
   (`/plugin marketplace add zeveck/zskills` → `/plugin install zs@zskills`)
-  in a clean consumer repo. The install-lane half of that path is dogfooded
-  autonomously by `scripts/dogfood-plugin-install.sh` (documented in RELEASING.md) — run that
-  first to confirm clone + marketplace-resolution + cache before doing a
-  manual marketplace install.
+  in a clean consumer repo — the marketplace install resolves, clones, and
+  caches the plugin tree, then the SessionStart materialiser seeds the
+  consumer artifacts.
 
 **Steps.**
 1. Launch the plugin-loaded session:
@@ -253,8 +250,8 @@ without deadlocking on Step 0.7's hard-refuse.
 ## Scenario 5 — Mirror-less `claude --plugin-dir <built-tree>` BEHAVIOR run
 
 **Purpose.** Accept plugin **RUNTIME** behavior in a CLEAN, mirror-less
-consumer dir — the half neither the install dogfood (`scripts/dogfood-plugin-install.sh` — see RELEASING.md) nor any
-non-interactive run proves: skills actually resolving under
+consumer dir — the half no non-interactive run proves: skills actually
+resolving under
 `${CLAUDE_PLUGIN_ROOT}`, hooks actually firing, `/zs:` slash dispatch
 working, and the materialiser writing its 5 artifacts.
 
@@ -271,8 +268,9 @@ authed `claude` session) and it guards the exact regression class that
 shipped two broken plugin lanes.
 
 **Preconditions.**
-- A built, prod-stripped plugin tree (the build from `scripts/dogfood-plugin-install.sh` (see RELEASING.md), or a manual
-  `bash scripts/build-plugin-release.sh` producing local `prod/main`).
+- A built, prod-stripped plugin tree, produced via
+  `bash scripts/build-plugin-release.sh` (creates local `prod/main`) and
+  checked out with `git worktree add <dir> prod/main`.
 - A CLEAN consumer dir with NO `.claude/skills/` mirror — **never run
   `--plugin-dir .` from inside zskills-dev** (that reproduces the
   dogfood-mask).
@@ -312,10 +310,4 @@ shipped two broken plugin lanes.
 - Clean up afterward: `git worktree remove /tmp/zs-prod-tree`, remove the
   local prod refs (`git update-ref -d refs/heads/prod/main` and the
   `prod/<version>` tag), and remove `/tmp/zs-consumer`.
-
----
-
-## Part 3 — Autonomous install dogfood
-
-Documented in `RELEASING.md` under "## Repeatable plugin-install dogfood" and "## Dogfooding lanes". Run `bash scripts/dogfood-plugin-install.sh` for the end-to-end install probe (sandboxed under an isolated `HOME` in `/tmp`, leaves zero cruft in real `~/.claude`). Per #990 this section is intentionally a pointer — the substantive content lives in RELEASING.md and was previously duplicated here.
 <!-- prod-strip:end -->
