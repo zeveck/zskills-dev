@@ -61,6 +61,14 @@ else
   fail "fingerprintPlans missing claim.pipeline_id reference"
 fi
 
+# #1029: fingerprintPlans must include last_progress_at so heartbeat
+# bumps (set-phase between phase boundaries) re-render the chip.
+if grep -A 30 "function fingerprintPlans" "$APP_JS" | grep -q 'last_progress_at'; then
+  pass "#1029: fingerprintPlans includes claim.last_progress_at (heartbeat re-renders)"
+else
+  fail "#1029: fingerprintPlans missing claim.last_progress_at — heartbeat is invisible to renderer"
+fi
+
 if ! command -v node >/dev/null 2>&1; then
   skip "node not available — fingerprint dispatch test skipped"
   print_summary_and_exit
@@ -160,11 +168,27 @@ const fullClaimPhaseAdvanced = {
     pipeline_short: "foo-abc",
   },
 };
+// #1029: a heartbeat-only bump (last_progress_at moves; current_phase
+// unchanged) must ALSO change the fingerprint so the chip re-renders.
+// Otherwise a long-running pipeline's heartbeat is invisible to the
+// renderer between phase boundaries.
+const fullClaimHeartbeatBumped = {
+  ...base,
+  claim: {
+    pipeline_id: "run-plan.foo",
+    started_at: "2026-05-22T01:00:00+00:00",
+    current_phase: "Phase 2",
+    age_seconds: 60,
+    pipeline_short: "foo-abc",
+    last_progress_at: "2026-05-22T01:30:00+00:00",
+  },
+};
 
 const fpNo      = fingerprintPlans([noClaim],                 queues, "phase");
 const fpPending = fingerprintPlans([pendingClaim],            queues, "phase");
 const fpFull    = fingerprintPlans([fullClaim],               queues, "phase");
 const fpFullAdv = fingerprintPlans([fullClaimPhaseAdvanced],  queues, "phase");
+const fpFullHb  = fingerprintPlans([fullClaimHeartbeatBumped], queues, "phase");
 
 expectTrue(fpNo !== fpPending,
   "fingerprint differs between no-claim and pending-claim");
@@ -174,6 +198,8 @@ expectTrue(fpNo !== fpFull,
   "fingerprint differs between no-claim and full-claim");
 expectTrue(fpFull !== fpFullAdv,
   "fingerprint differs after phase advance (chip re-renders so phase N/M updates)");
+expectTrue(fpFull !== fpFullHb,
+  "#1029: fingerprint differs after heartbeat-only bump (chip re-renders on set-phase even if current_phase string unchanged)");
 
 // Stability: same input shape → same fingerprint.
 const fpFull2 = fingerprintPlans([fullClaim], queues, "phase");

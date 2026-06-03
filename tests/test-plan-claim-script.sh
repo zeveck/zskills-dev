@@ -80,11 +80,12 @@ import json
 d=json.load(open('$CLAIM_FILE'))
 print(','.join(sorted(d.keys())))
 ")
-    EXPECTED="current_phase,kind,pipeline_id,schema_version,slug,started_at"
+    # #1029: last_progress_at is now part of the D5 schema (7 fields).
+    EXPECTED="current_phase,kind,last_progress_at,pipeline_id,schema_version,slug,started_at"
     if [ "$KEYS" = "$EXPECTED" ]; then
-      pass "acquire writes 6-field D5 schema (sorted keys)"
+      pass "acquire writes 7-field D5 schema (sorted keys; includes last_progress_at #1029)"
     else
-      fail "acquire 6-field schema" "expected=$EXPECTED got=$KEYS"
+      fail "acquire 7-field schema" "expected=$EXPECTED got=$KEYS"
     fi
     # Spot-check fields.
     KIND=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['kind'])")

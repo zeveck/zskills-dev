@@ -50,12 +50,19 @@
 #       <slug>\t<pipeline_id>\t<age_seconds>
 #
 # Schema (claim.json, D5):
-#   {schema_version, kind, slug, pipeline_id, started_at, current_phase
-#    [, dispatch_mode]}
+#   {schema_version, kind, slug, pipeline_id, started_at, current_phase,
+#    last_progress_at [, dispatch_mode]}
 #   sorted-keys, schema_version=1.
 #   current_phase is initialised to "Phase 0 — acquired" at acquire and
 #   updated by the `set-phase` subcommand. age_seconds is derived from
 #   started_at.
+#   last_progress_at (#1029): heartbeat-style progress signal. Initialised
+#   to the same ISO timestamp as started_at on acquire; bumped to "now"
+#   on every successful set-phase. The dashboard's staleness rule uses
+#   this field (not started_at) — answering "has the pipeline made
+#   progress recently?" instead of the wrong "how old is the
+#   acquisition?". Pre-#1029 claims missing the field fall back to
+#   started_at on the reader side.
 #   dispatch_mode is OPTIONAL (#874). When --dispatch-mode is `phase` or
 #   `finish`, the field is set verbatim. When omitted or `inherit`, the
 #   field is NOT written — pre-#874 callers and back-compat readers see
@@ -299,6 +306,9 @@ body = {
     "pipeline_id":        pipeline_id,
     "started_at":         now,
     "current_phase":      "Phase 0 — acquired",
+    # #1029 heartbeat: on initial acquire, last_progress_at == started_at
+    # (same instant). Bumped to "now" on every set-phase call.
+    "last_progress_at":   now,
 }
 if dispatch_mode and dispatch_mode != "inherit":
     body["dispatch_mode"] = dispatch_mode
@@ -482,7 +492,7 @@ cmd_set_phase() {
   fi
 
   "$_CLAIM_PYTHON" - "$claim_file" "$claim_tmp" "$require_pipeline" "$current_phase" <<'PY'
-import json, os, sys
+import json, os, sys, datetime
 claim_file, tmp_path, required, new_phase = sys.argv[1:5]
 with open(claim_file) as f:
     body = json.load(f)
@@ -493,6 +503,14 @@ if stored != required:
     )
     sys.exit(12)
 body["current_phase"] = new_phase
+# #1029 heartbeat: every successful set-phase is a "pipeline made
+# progress" signal — bump last_progress_at to now. The dashboard's
+# staleness rule reads this field, so a long-but-healthy pipeline that
+# crosses the 6h threshold but is still actively calling set-phase
+# stays correctly tagged not-stale.
+body["last_progress_at"] = datetime.datetime.now(
+    datetime.timezone.utc
+).isoformat(timespec="seconds")
 with open(tmp_path, "w") as f:
     json.dump(body, f, sort_keys=True)
     f.write("\n")

@@ -858,14 +858,12 @@ function fingerprintPlans(plans, queues) {
         -1,
         null,
       ],
-      // Claim state — symmetric to fingerprintIssues' claim tuple.
-      // We track `current_phase` (post-#684 cleanup removed
-      // `last_heartbeat_at` as a duplicate of `started_at`). Phase
-      // changes drive re-renders so the chip's `phase N/M` segment
-      // updates as the pipeline progresses. The 2-tuple is enough —
-      // pipeline_id changes when a new pipeline claims; current_phase
-      // changes at each phase boundary; both null when no claim.
-      p.claim ? [p.claim.pipeline_id || null, p.claim.current_phase || null] : null,
+      // Claim state — symmetric to fingerprintIssues. current_phase
+      // (#684 dropped last_heartbeat_at) drives phase-boundary
+      // re-renders. last_progress_at (#1029) is the heartbeat: a
+      // long-running pipeline bumps it on every set-phase call, so
+      // the chip's stale state re-renders between phase boundaries.
+      p.claim ? [p.claim.pipeline_id || null, p.claim.current_phase || null, p.claim.last_progress_at || null] : null,
       // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — skip_reason tuple.
       // Without this, × clicks and pin-toggle clears mutate the state
       // but the next poll's diff-suppression hides the change for one
@@ -1023,7 +1021,7 @@ function buildPlanCard(plan, slug, col) {
     ? "Locked while plan is being worked (pipeline " + claimLockPidShort + ")."
     : null;
   const claimStaleTip = isClaimStale
-    ? "Pipeline appears dead (claim >6h old, pipeline " + claimLockPidShort +
+    ? "No progress signalled in 6h+ (pipeline " + claimLockPidShort +
       ") — click to release."
     : null;
   const card = el("li", { cls: "card", attrs: cardAttrs });
@@ -1107,9 +1105,12 @@ function buildPlanCard(plan, slug, col) {
       const m = cp.match(/Phase\s+(\d+)/i);
       phaseFragment = m ? "working on phase " + m[1] : "working on " + cp;
     }
-    // Issue #912 — stale claims read as "stale (dead pipeline)" rather
+    // Issue #912 — stale claims read with a no-progress framing rather
     // than the live "working on phase N" framing, and carry the release
     // hint as their chip tooltip.
+    // Issue #1029 — the stale label dropped the "(dead pipeline)" guess
+    // (the rule observes lack of heartbeat, not actual death) in favour
+    // of the literal "no progress in 6h+".
     const tip = isClaimStale
       ? claimStaleTip
       : (c.pipeline_id
@@ -1118,7 +1119,7 @@ function buildPlanCard(plan, slug, col) {
           " current_phase=" + (c.current_phase || "?")
         : "claim metadata pending");
     const chipText = isClaimStale
-      ? "stale (dead pipeline) · " + pidShort + " · " + ageStr
+      ? "stale (no progress in 6h+) · " + pidShort + " · " + ageStr
       : phaseFragment + " · " + pidShort + " · " + ageStr;
     const row = el("div", { cls: "card-sub" });
     row.appendChild(el("span", {

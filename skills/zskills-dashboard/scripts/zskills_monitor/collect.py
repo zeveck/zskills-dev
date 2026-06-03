@@ -1854,6 +1854,9 @@ def _annotate_plans_queue(
                 # stale (#912): drives the client's in-UI release
                 # affordance for dead-pipeline claims.
                 "stale":          bool(c.get("stale")),
+                # #1029: heartbeat field — used by app.js fingerprint
+                # so re-renders fire when only the heartbeat bumps.
+                "last_progress_at": c.get("last_progress_at"),
             }
         # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — plans.skipped[slug]
         # surfaces as plan.skip_reason for the dashboard SKIP chip render.
@@ -2350,15 +2353,27 @@ def _resolve_effective_skip_reason(
 _CLAIM_DIR_RE = re.compile(r"^issue-(\d+)$")
 _PLAN_CLAIM_DIR_RE = re.compile(r"^plan-(.+)$")
 
-# Staleness threshold for plan claims (#912). A `/run-plan` pipeline that
-# died mid-flight (kill -9, OOM, container restart) leaves claim.json on
-# disk indefinitely, which the dashboard renders as a permanently
-# claim-locked card with no in-UI recovery. A claim older than this is
-# tagged `stale: true` so the renderer can offer a release affordance
-# (it is NOT filtered out — the card must still render so the user sees
-# and can dismiss it). 6h is comfortably longer than any healthy phase or
-# inter-phase idle gap. Fail toward NOT stale: a claim whose age cannot be
-# computed (missing/malformed started_at) is never tagged stale, so a live
+# Staleness threshold for plan claims (#912, refined by #1029). A
+# `/run-plan` pipeline that died mid-flight (kill -9, OOM, container
+# restart) leaves claim.json on disk indefinitely, which the dashboard
+# renders as a permanently claim-locked card with no in-UI recovery.
+#
+# #1029 — the staleness rule asks "has the pipeline made progress
+# recently?" not "how old is the acquisition?". The check therefore
+# uses `last_progress_at` (the heartbeat bumped on every claim-plan.sh
+# set-phase call) rather than `started_at` (fixed at acquire time). A
+# long-but-healthy `/run-plan finish auto` run that legitimately needs
+# >6h of wall-clock keeps bumping last_progress_at at each phase
+# boundary and stays correctly tagged not-stale.
+#
+# Backward-compat: claims missing `last_progress_at` (pre-#1029
+# acquires) fall back to `started_at`. The chip is now labelled
+# "no progress in 6h+" rather than "dead pipeline" — accurate to the
+# rule and not a guess about cause.
+#
+# 6h is comfortably longer than any healthy inter-set-phase gap.
+# Fail toward NOT stale: a claim whose age cannot be computed
+# (missing/malformed both fields) is never tagged stale, so a live
 # claim is never wrongly offered for release.
 PLAN_CLAIM_STALE_SECONDS = 21600  # 6h
 
@@ -2492,7 +2507,7 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
 
     Returns `{slug: claim_dict}` keyed by string slug. Each dict carries:
         pipeline_id, started_at, current_phase, age_seconds,
-        pipeline_short, dispatch_mode, stale
+        pipeline_short, dispatch_mode, stale, last_progress_at
 
     `stale` (#912) is `True` when `age_seconds` exceeds
     `PLAN_CLAIM_STALE_SECONDS` (6h) — the signal that the owning pipeline
@@ -2557,6 +2572,9 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
                 # Null-metadata sweep-race entry has no age → fail toward
                 # not-stale (#912).
                 "stale": False,
+                # #1029: keep the field on the allow-list even when null
+                # so the renderer's fingerprint shape is consistent.
+                "last_progress_at": None,
             }
             continue
         try:
@@ -2577,6 +2595,9 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
         pipeline_id = body.get("pipeline_id")
         started_at = body.get("started_at")
         current_phase = body.get("current_phase")
+        # last_progress_at (#1029): heartbeat field bumped by every
+        # claim-plan.sh set-phase. Drives the staleness rule below.
+        last_progress_at = body.get("last_progress_at")
         # dispatch_mode (#874): persisted by claim-plan.sh acquire
         # --dispatch-mode. Only `phase` / `finish` are valid persisted
         # values; anything else (including absence) surfaces as None and
@@ -2602,12 +2623,36 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
         pipeline_short: Optional[str] = None
         if isinstance(pipeline_id, str) and pipeline_id:
             pipeline_short = _derive_pipeline_short(pipeline_id)
-        # Staleness (#912): fail toward NOT stale — only a successfully
-        # computed age that exceeds the threshold marks the claim stale.
-        # A None age (missing/malformed/unparseable started_at) leaves a
-        # live claim hard-locked rather than wrongly offering it for
-        # release.
-        stale = isinstance(age_seconds, (int, float)) and age_seconds > PLAN_CLAIM_STALE_SECONDS
+        # Staleness (#912, refined #1029): the rule asks "has the
+        # pipeline made progress recently?" — check the age of
+        # last_progress_at, not started_at. Pre-#1029 claims missing
+        # the heartbeat field fall back to started_at-based check
+        # (graceful migration; behaviour identical to the original
+        # #912 rule for those claims).
+        #
+        # Fail toward NOT stale: if both fields are missing/malformed
+        # the claim is NEVER marked stale, so a live claim is never
+        # wrongly offered for release.
+        progress_for_stale: Optional[str]
+        if isinstance(last_progress_at, str) and last_progress_at:
+            progress_for_stale = last_progress_at
+        elif isinstance(started_at, str) and started_at:
+            progress_for_stale = started_at
+        else:
+            progress_for_stale = None
+        stale_age_seconds: Optional[float] = None
+        if progress_for_stale:
+            try:
+                parsed_p = datetime.fromisoformat(progress_for_stale)
+                if parsed_p.tzinfo is None:
+                    parsed_p = parsed_p.replace(tzinfo=timezone.utc)
+                stale_age_seconds = (now - parsed_p).total_seconds()
+            except ValueError:
+                stale_age_seconds = None
+        stale = (
+            isinstance(stale_age_seconds, (int, float))
+            and stale_age_seconds > PLAN_CLAIM_STALE_SECONDS
+        )
         out[slug] = {
             "pipeline_id": pipeline_id if isinstance(pipeline_id, str) else None,
             "started_at": started_at if isinstance(started_at, str) else None,
@@ -2616,6 +2661,10 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
             "pipeline_short": pipeline_short,
             "dispatch_mode": dispatch_mode,
             "stale": bool(stale),
+            # #1029: surface last_progress_at to the renderer so the
+            # chip fingerprint can include it (re-render on heartbeat
+            # bumps). None when the source claim.json is pre-#1029.
+            "last_progress_at": last_progress_at if isinstance(last_progress_at, str) else None,
         }
     return out
 
