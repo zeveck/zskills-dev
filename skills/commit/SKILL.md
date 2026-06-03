@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.05.31+52f837"
+  version: "2026.06.03+b6d062"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -274,7 +274,8 @@ For every file classified as "related":
    the canonical capture idiom:
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -368,7 +369,8 @@ For every file classified as "related":
    (no Co-Authored-By trailer):
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -385,7 +387,8 @@ For every file classified as "related":
    is non-empty:
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

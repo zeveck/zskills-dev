@@ -142,6 +142,12 @@ STUB
 # `( ... )` by each test case with $ZSKILLS_ISSUES_DIR + $CLAUDE_PROJECT_DIR
 # + PATH (gh shim) exported.
 run_real_sync() {
+  # Legacy-lane faithful under the caller's `set -u`: production fences run
+  # WITHOUT `set -u`, so the new resolution idiom's bare ${CLAUDE_PLUGIN_ROOT}
+  # token expands empty → else/legacy branch. Bind it EMPTY (not a real path)
+  # so the same legacy else-branch is exercised without an unbound-variable
+  # abort under the `( set -u ... )` subshell each case wraps this in.
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
   eval "$FETCH_FENCE"
   eval "$BOOTSTRAP_FENCE"
   eval "$ROWWRITER_FENCE"

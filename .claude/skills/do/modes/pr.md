@@ -41,7 +41,8 @@ ages out, the next fire proceeds AND the collision check still
 suffixes around the stale worktree on disk.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -91,7 +92,8 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 
 **Step A4 — Sanitize TASK_SLUG + construct PIPELINE_ID (BEFORE worktree creation):**
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -107,7 +109,8 @@ PIPELINE_ID="do.${TASK_SLUG}"
 
 **Step A5 — Worktree creation (pre-flight prune+fetch+ff-merge is owned by create-worktree.sh):**
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -151,7 +154,8 @@ on issue K, release issues 1..K-1 (acquired earlier in this loop) before
 declining. Same rollback applies on rc=11/2/* failures.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -217,7 +221,8 @@ any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
 
 Wait for the implementation agent to complete. If the agent reports failure or exits without committing:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -294,7 +299,8 @@ Do NOT push and do NOT dispatch `/land-pr`. Write the `.landed` marker
 exiting, reusing Step A6's failure shape:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -339,7 +345,8 @@ exhausted `gh pr view` retries). `/do pr` is responsible only for the
 title/body composition and the fix-cycle agent's task-context slot.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -426,7 +433,8 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 # invocations → variables do NOT survive across fences). $TASK_SLUG and
 # $BRANCH_NAME were model-substituted at fence emission per /do's
 # existing convention (Step A1 + Step A3).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

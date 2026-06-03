@@ -103,7 +103,8 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    plan (#110). MAIN_ROOT and TRACKING_ID are not yet in scope here, so
    compute them inline:
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -131,7 +132,8 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    — those claims belong to other in-flight runs (or to /fix-issues, which
    owns its own `issue-*/` claims) and must not be clobbered.
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

@@ -246,6 +246,14 @@ run_block() {
     set +e
     set -u
     export PATH="$shim_bin:$PATH"
+    # Legacy-lane faithful under `set -u`: the patched block retains the new
+    # resolution idiom's `if [ -f "${CLAUDE_PLUGIN_ROOT}/…" ]` wrapper (only the
+    # else-branch `. "$CLAUDE_PROJECT_DIR/…"` source line is patched out). In
+    # production that fence runs WITHOUT `set -u`; the bare ${CLAUDE_PLUGIN_ROOT}
+    # token expands empty → the `-f` test is false → else (patched-out) →
+    # env-pre-set vars win. Bind the token EMPTY (not a real path) so that same
+    # legacy else path is taken without an unbound-variable abort.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     # shellcheck disable=SC1090
     source "$patched"
   ) >"$TMP_ROOT/$tag.out" 2>"$TMP_ROOT/$tag.err"

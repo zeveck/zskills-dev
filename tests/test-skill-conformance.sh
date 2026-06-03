@@ -2656,15 +2656,25 @@ cat > "$POS_FIXTURE_DIR/skills/syn-pass/SKILL.md" <<'PASS_FIXTURE'
 echo "$FULL_TEST_CMD"
 ```
 PASS_FIXTURE
-# Phase 3 W3.5 (D6): the new lane-portable two-line dual-path source form
-# MUST be accepted by the per-fence sourcing-discipline check just like the
-# legacy one-liner. Both branches reference zskills-resolve-config.sh, so the
-# fence-local preamble detector (substring match) recognizes it.
+# Phase 3 W3.5 (D6) / PLUGIN_LANE_ROOT_RESOLUTION_FIX Phase 3: the lane-portable
+# dual-path source form MUST be accepted by the per-fence sourcing-discipline
+# check just like the legacy one-liner. Both branches reference
+# zskills-resolve-config.sh, so the fence-local preamble detector (substring
+# match) recognizes it.
+#
+# Root-resolution-fix rewrite: this fixture previously carried the OLD
+# `:-`-guarded form (`[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f ... ]`). That
+# form is now FORBIDDEN by the resolution-fence-form assertion added below
+# (it never substitutes mirror-less: the `${CLAUDE_PLUGIN_ROOT:-}` guard
+# expands empty and short-circuits the working `-f` test). Rewritten to the
+# NEW idiom — a bare `${CLAUDE_PLUGIN_ROOT}` `-f` test, NO `:-` guard. It still
+# passes the positive-side scan because both branches retain the
+# `zskills-resolve-config.sh` substring the preamble detector keys on.
 cat > "$POS_FIXTURE_DIR/skills/syn-pass-dualpath/SKILL.md" <<'PASS_DUALPATH_FIXTURE'
 # syn-pass-dualpath
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -2727,6 +2737,210 @@ if [ "$REAL_POS_FAIL" -eq 0 ]; then
 else
   fail "positive-side real-tree: ${#REAL_POS_HITS[@]} fence(s) reference config-vars without preamble" "see hits below"
   for h in "${REAL_POS_HITS[@]}"; do
+    printf '    %s\n' "$h" >&2
+  done
+fi
+
+# ════════════════════════════════════════════════════════════════════════
+# PLUGIN_LANE_ROOT_RESOLUTION_FIX Phase 3 — resolution-fence-form lock-in.
+#
+# Two invariants the new lane-portable resolution idiom DEPENDS ON, codified
+# so a future reflex cannot silently re-break the plugin lane mirror-less:
+#
+#   F-form: skill `.md` resolution fences must NOT use the `:-`-GUARDED form
+#           (`[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f ... ]`) NOR the
+#           `:-`-DEFAULT form (`${CLAUDE_PLUGIN_ROOT:-$...}`) around the
+#           zskills-resolve-config.sh / zskills-paths.sh source. Both are
+#           the BROKEN pre-fix forms: the `:-` guard expands to empty on the
+#           legacy lane AND mirror-less it never substitutes the plugin path,
+#           so the `-f` test short-circuits and resolution falls to an absent
+#           mirror. The correct form is a BARE `${CLAUDE_PLUGIN_ROOT}` `-f`
+#           test (no `:-`), which substitutes to the shipped path on the
+#           plugin lane and expands empty→else-branch on the legacy lane.
+#
+#   F1 (set -u): a resolution fence must NOT be preceded by `set -u` /
+#           `set -euo pipefail` on the line(s) immediately above it. The new
+#           idiom's bare `${CLAUDE_PLUGIN_ROOT}` token is UNBOUND on the
+#           legacy lane; under `set -u` it aborts ("unbound variable"). Prod
+#           skill fences never run under `set -u`, so this is safe — this
+#           assertion is the guardrail that keeps it so.
+#
+# SCOPE: skill `.md` SOURCE ONLY (skills/**, block-diagram/**). Deliberately
+# NOT `.sh` scripts (verify-install.sh etc. legitimately keep `:-` defaults)
+# and NOT hooks/** (hooks legitimately branch on `${CLAUDE_PLUGIN_ROOT:-}`).
+#
+# F5 honesty: these are STATIC source assertions over the rendered `.md`. They
+# lock the FORM of the fence; the runtime FAIL→PASS proof of mirror-less
+# resolution lives in tests/test-plugin-mirrorless-resolution.sh (shell
+# self-bootstrap) and the attended tests/test-plugin-live-load.sh (harness
+# substitution) — neither of which a static scan can substitute for.
+# ════════════════════════════════════════════════════════════════════════
+
+# scan_resolution_fence_forms <root> <fail-var> <hits-var> [extra-root]
+#   For each *.md under <root> (+ optional <extra-root>), flag:
+#     (a) a `${CLAUDE_PLUGIN_ROOT:-` occurrence (guard OR default) on a line
+#         that also references zskills-resolve-config.sh or zskills-paths.sh
+#         (i.e. a RESOLUTION fence, not an incidental token);
+#     (b) a `set -u` / `set -euo` line that appears within 3 lines ABOVE a
+#         line containing a bare-`${CLAUDE_PLUGIN_ROOT}` resolution `-f` test.
+scan_resolution_fence_forms() {
+  local target_root="$1" fail_var_name="$2" hits_var_name="$3" extra_root="${4:-}"
+  local local_fail=0
+  local -a local_hits=()
+  local skill_file rel
+  while IFS= read -r skill_file; do
+    [ -f "$skill_file" ] || continue
+    rel="${skill_file#$REPO_ROOT/}"
+    # (a) `:-`-guarded / `:-`-default resolution form.
+    #     Line carries BOTH `${CLAUDE_PLUGIN_ROOT:-` AND a resolver script name.
+    while IFS=: read -r ln content; do
+      [ -n "$ln" ] || continue
+      local_hits+=("RESOLUTION-FENCE-FORM (\`:-\`): $rel:$ln uses a \`\${CLAUDE_PLUGIN_ROOT:-...}\` guard/default on a resolution-source line. This is the BROKEN pre-fix form (never substitutes mirror-less). Use a bare \`\${CLAUDE_PLUGIN_ROOT}\` \`-f\` test with NO \`:-\`. → $content")
+      local_fail=1
+    done < <(grep -nE '\$\{CLAUDE_PLUGIN_ROOT:-' "$skill_file" \
+             | grep -E 'zskills-resolve-config\.sh|zskills-paths\.sh' || true)
+    # (b) `set -u` / `set -euo` immediately above a bare-token resolution fence.
+    #     awk: remember the last `set -u`/`set -euo` line number; when a
+    #     bare-`${CLAUDE_PLUGIN_ROOT}` `-f` resolution test appears within 3
+    #     lines after it (and no intervening fence-closer), flag it.
+    while IFS=: read -r ln content; do
+      [ -n "$ln" ] || continue
+      local_hits+=("RESOLUTION-FENCE-FORM (set -u above fence): $rel:$ln has \`set -u\`/\`set -euo\` within 3 lines above a bare-\`\${CLAUDE_PLUGIN_ROOT}\` resolution fence. The new idiom's bare token is UNBOUND on the legacy lane and aborts under \`set -u\`. Remove the \`set -u\` above the fence. → $content")
+      local_fail=1
+    done < <(awk '
+      /set -u|set -euo/ { setu_line = NR; setu_text = $0 }
+      # a bare ${CLAUDE_PLUGIN_ROOT} resolution -f test (NOT the :- form)
+      /\[[[:space:]]+-f[[:space:]]+"\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/update-zskills\/scripts\/(zskills-resolve-config|zskills-paths)\.sh"/ {
+        if (setu_line > 0 && (NR - setu_line) <= 3) {
+          printf "%d:%s\n", setu_line, setu_text
+          setu_line = 0
+        }
+      }
+    ' "$skill_file" || true)
+  done < <(
+    if [ -n "$extra_root" ]; then
+      find "$target_root" "$extra_root" -name '*.md' | sort
+    else
+      find "$target_root" -name '*.md' | sort
+    fi
+  )
+  printf -v "$fail_var_name" '%s' "$local_fail"
+  if [ "$local_fail" -eq 1 ]; then
+    for h in "${local_hits[@]}"; do
+      eval "$hits_var_name+=(\"\$h\")"
+    done
+  fi
+}
+
+# ── Synthetic FAIL/PASS fixtures proving each assertion FIRES and ALLOWS ──
+RF_FIXTURE_DIR=$(mktemp -d)
+mkdir -p "$RF_FIXTURE_DIR/skills/rf-fail-guard" \
+         "$RF_FIXTURE_DIR/skills/rf-fail-default" \
+         "$RF_FIXTURE_DIR/skills/rf-fail-setu" \
+         "$RF_FIXTURE_DIR/skills/rf-pass"
+
+# FAIL fixture A: `:-`-guarded resolution form (the broken pre-fix form).
+cat > "$RF_FIXTURE_DIR/skills/rf-fail-guard/SKILL.md" <<'RF_FAIL_GUARD'
+# rf-fail-guard
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+```
+RF_FAIL_GUARD
+
+# FAIL fixture B: `:-`-default resolution form.
+cat > "$RF_FIXTURE_DIR/skills/rf-fail-default/SKILL.md" <<'RF_FAIL_DEFAULT'
+# rf-fail-default
+
+```bash
+. "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude}/skills/update-zskills/scripts/zskills-paths.sh"
+```
+RF_FAIL_DEFAULT
+
+# FAIL fixture C: `set -u` immediately above a bare-token resolution fence.
+cat > "$RF_FIXTURE_DIR/skills/rf-fail-setu/SKILL.md" <<'RF_FAIL_SETU'
+# rf-fail-setu
+
+```bash
+set -u
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+```
+RF_FAIL_SETU
+
+# PASS fixture: the NEW idiom — bare token, NO `:-`, NO `set -u` above.
+cat > "$RF_FIXTURE_DIR/skills/rf-pass/SKILL.md" <<'RF_PASS'
+# rf-pass
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+```
+RF_PASS
+
+# FAIL-fixture A proof (`:-`-guard fires).
+RF_FAIL_GUARD_FAIL=0
+RF_FAIL_GUARD_HITS=()
+scan_resolution_fence_forms "$RF_FIXTURE_DIR/skills/rf-fail-guard" RF_FAIL_GUARD_FAIL RF_FAIL_GUARD_HITS
+if [ "$RF_FAIL_GUARD_FAIL" -eq 1 ] && [ "${#RF_FAIL_GUARD_HITS[@]}" -ge 1 ]; then
+  pass "resolution-fence-form synthetic-FAIL (\`:-\`-guard): broken guard form flagged"
+else
+  fail "resolution-fence-form synthetic-FAIL (\`:-\`-guard): should flag the guard form" "fail=$RF_FAIL_GUARD_FAIL hits=${#RF_FAIL_GUARD_HITS[@]}"
+fi
+
+# FAIL-fixture B proof (`:-`-default fires).
+RF_FAIL_DEFAULT_FAIL=0
+RF_FAIL_DEFAULT_HITS=()
+scan_resolution_fence_forms "$RF_FIXTURE_DIR/skills/rf-fail-default" RF_FAIL_DEFAULT_FAIL RF_FAIL_DEFAULT_HITS
+if [ "$RF_FAIL_DEFAULT_FAIL" -eq 1 ] && [ "${#RF_FAIL_DEFAULT_HITS[@]}" -ge 1 ]; then
+  pass "resolution-fence-form synthetic-FAIL (\`:-\`-default): broken default form flagged"
+else
+  fail "resolution-fence-form synthetic-FAIL (\`:-\`-default): should flag the default form" "fail=$RF_FAIL_DEFAULT_FAIL hits=${#RF_FAIL_DEFAULT_HITS[@]}"
+fi
+
+# FAIL-fixture C proof (`set -u` above fence fires).
+RF_FAIL_SETU_FAIL=0
+RF_FAIL_SETU_HITS=()
+scan_resolution_fence_forms "$RF_FIXTURE_DIR/skills/rf-fail-setu" RF_FAIL_SETU_FAIL RF_FAIL_SETU_HITS
+if [ "$RF_FAIL_SETU_FAIL" -eq 1 ] && [ "${#RF_FAIL_SETU_HITS[@]}" -ge 1 ]; then
+  pass "resolution-fence-form synthetic-FAIL (set -u above fence): \`set -u\`-above-resolution-fence flagged"
+else
+  fail "resolution-fence-form synthetic-FAIL (set -u above fence): should flag set -u above fence" "fail=$RF_FAIL_SETU_FAIL hits=${#RF_FAIL_SETU_HITS[@]}"
+fi
+
+# PASS-fixture proof (new idiom allowed).
+RF_PASS_FAIL=0
+RF_PASS_HITS=()
+scan_resolution_fence_forms "$RF_FIXTURE_DIR/skills/rf-pass" RF_PASS_FAIL RF_PASS_HITS
+if [ "$RF_PASS_FAIL" -eq 0 ]; then
+  pass "resolution-fence-form synthetic-PASS: bare-token new idiom (no \`:-\`, no \`set -u\`) accepted"
+else
+  fail "resolution-fence-form synthetic-PASS: should accept the new idiom" "${RF_PASS_HITS[*]:-no hits}"
+fi
+
+rm -rf "$RF_FIXTURE_DIR"
+
+# Real-tree case: Phase 1+2 removed every `:-`-guarded/`:-`-default resolution
+# fence and put no `set -u` above any fence — so expect 0 hits. This LOCKS the
+# invariant against future regression.
+REAL_RF_FAIL=0
+REAL_RF_HITS=()
+scan_resolution_fence_forms "$REPO_ROOT/skills" REAL_RF_FAIL REAL_RF_HITS "$REPO_ROOT/block-diagram"
+if [ "$REAL_RF_FAIL" -eq 0 ]; then
+  pass "resolution-fence-form real-tree: no \`:-\`-guarded/\`:-\`-default resolution fences and no \`set -u\` above any resolution fence (skills/** + block-diagram/**)"
+else
+  fail "resolution-fence-form real-tree: ${#REAL_RF_HITS[@]} broken resolution-fence form(s)" "see hits below"
+  for h in "${REAL_RF_HITS[@]}"; do
     printf '    %s\n' "$h" >&2
   done
 fi

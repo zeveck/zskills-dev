@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.01+979c6f"
+  version: "2026.06.03+02a28c"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -265,7 +265,8 @@ Run `pr-rebase.sh` against the configured base branch. Parse its
 stdout for `CONFLICT_FILES_LIST` / `REASON`. Map the exit code:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -317,7 +318,8 @@ steps 4–7 and proceed to step 8/9.
 ### Step 4 — Push and create-or-detect PR (skipped in resume mode)
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -383,7 +385,8 @@ If `STATUS` is unset (or `created` with `CI_STATUS=not-monitored`
 already set in step 5, in which case skip), run `pr-monitor.sh`:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -458,7 +461,8 @@ All rebase/push/fetch stderr is captured to a single sidecar
 `REBASE_STDERR_FILE` in the result file when the loop fails.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -621,7 +625,8 @@ fi
 Always run `pr-merge.sh` — it owns the auto/CI gating internally.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -707,7 +712,8 @@ sub-path itself is bounded by the same `AUTO_REBASE_MAX=3` cap Step 6b
 uses, so the total work is finite.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1003,7 +1009,8 @@ from inside a worktree but without `--worktree-path` silently skipped
 the `.landed` write. `--worktree-path` remains an explicit override.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1102,7 +1109,8 @@ fulfill. The 4 non-/run-plan callers never pass `--tracking-id`, so this
 block is a no-op for them (preserves current behavior exactly).
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

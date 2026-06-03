@@ -9,7 +9,7 @@ description: >-
   and sanitised .zskills-tracked / .worktreepurpose writes. Prints the
   worktree path on stdout.
 metadata:
-  version: "2026.06.01+e7b84c"
+  version: "2026.06.03+a53784"
 ---
 
 # /create-worktree — Unified Worktree Creation
@@ -31,7 +31,8 @@ This is why the script is strict but the skill is ergonomic.
 Invoke via `$CLAUDE_PROJECT_DIR` (works from any CWD, including nested worktrees):
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

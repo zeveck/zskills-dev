@@ -121,7 +121,8 @@ Production callers (other skills' scripts) source via
 `$CLAUDE_PROJECT_DIR`:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-stub-lib.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-stub-lib.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-stub-lib.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"

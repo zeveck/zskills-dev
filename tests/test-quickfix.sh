@@ -241,6 +241,13 @@ PREFLIGHT_SCRIPT="$TEST_TMPDIR/preflight.sh"
   # .claude/zskills-config.json under the fixture.
   echo ': "${CLAUDE_PROJECT_DIR:=$(pwd)}"'
   echo 'export CLAUDE_PROJECT_DIR'
+  # Legacy-lane faithful under the generated script's `set -u`: production
+  # fences run WITHOUT `set -u`, so the new resolution idiom's bare
+  # ${CLAUDE_PLUGIN_ROOT} token expands empty → else/legacy branch. Bind it
+  # EMPTY (not a real path) so the same legacy else-branch is exercised without
+  # an unbound-variable abort under the injected `set -u`.
+  echo ': "${CLAUDE_PLUGIN_ROOT:=}"'
+  echo 'export CLAUDE_PLUGIN_ROOT'
   extract_preflight
 } > "$PREFLIGHT_SCRIPT"
 chmod +x "$PREFLIGHT_SCRIPT"
@@ -311,6 +318,11 @@ FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
   # $(pwd) equals the fixture root.
   echo ': "${CLAUDE_PROJECT_DIR:=$(pwd)}"'
   echo 'export CLAUDE_PROJECT_DIR'
+  # Legacy-lane faithful under the generated script's `set -u`: bind the new
+  # resolution idiom's bare ${CLAUDE_PLUGIN_ROOT} token EMPTY (not a real path)
+  # so the legacy else-branch is exercised without an unbound-variable abort.
+  echo ': "${CLAUDE_PLUGIN_ROOT:=}"'
+  echo 'export CLAUDE_PLUGIN_ROOT'
   extract_full_flow
 } > "$FULL_FLOW_SCRIPT"
 chmod +x "$FULL_FLOW_SCRIPT"

@@ -13,7 +13,8 @@ After the verification agent commits Phase N, BEFORE dispatching Phase N+1's
 impl agent:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -123,7 +124,8 @@ fi
 After the LAST phase's verification agent commits, before pushing:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -217,13 +219,15 @@ Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper anchored on
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])PLAN_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /PLAN_REPORT.md tail -->
 ```bash
 cd "$WORKTREE_PATH"
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 ZSKILLS_PATHS_ROOT="$WORKTREE_PATH" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$WORKTREE_PATH/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -248,7 +252,8 @@ body on existing PRs, preserving any user-added review notes outside the
 markers.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

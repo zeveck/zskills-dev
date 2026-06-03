@@ -96,7 +96,8 @@ agent hasn't returned after 2 hours, declare it **failed**:
 
 1. **Create worktree via `.claude/skills/create-worktree/scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -374,7 +375,8 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 **Worktree creation — via `.claude/skills/create-worktree/scripts/create-worktree.sh`, NOT `isolation: "worktree"`:**
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -434,7 +436,8 @@ implementation agent, the orchestrator captures a test baseline in the worktree:
 ```bash
 # Resolve config-derived vars at fence-top — context compaction may have
 # lost vars set in earlier fences (per the convention at modes/pr.md:325-345).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -456,7 +459,8 @@ create the implementation step marker. Per the PR-mode bookkeeping rule,
 the bookkeeping anchor is `$WORKTREE_PATH` in PR mode and `$CLAUDE_PROJECT_DIR`
 otherwise — sourced via the path-config helper:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -464,7 +468,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -621,7 +626,8 @@ Include this VERBATIM in the verifier dispatch prompt:
      there). The verifier must run tests via:
 
      ```bash
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
        . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -837,7 +843,8 @@ After verification passes, create the verification step marker. Per the
 PR-mode bookkeeping rule, the bookkeeping anchor is `$WORKTREE_PATH` in PR
 mode and `$CLAUDE_PROJECT_DIR` otherwise — sourced via the path-config helper:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -845,7 +852,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -916,7 +924,8 @@ globs `step.*.verify`). If Phase 3.5 proceeds cleanly, write an
 informational marker:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -924,7 +933,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1064,7 +1074,8 @@ commits on the feature branch.
    surface.
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1101,7 +1112,8 @@ attention?" and that's always the newest phase.
 Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper at the top of the
 fence (PR mode anchors on `$WORKTREE_PATH`, otherwise `$CLAUDE_PROJECT_DIR`):
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1109,7 +1121,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1187,7 +1200,8 @@ of all plan reports:
 
 After writing the report and regenerating the index, create the report step marker:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1195,7 +1209,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1227,7 +1242,8 @@ Exit 12 (pipeline mismatch) is tolerated — it means another pipeline
 owns the claim and our session must not touch it.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1252,7 +1268,8 @@ re-parsing the bare-integer issue number(s) from `$PLAN_FILE_FOR_READ`'s
 frontmatter (same normalization as the acquire fence). Without this, the
 issue claim leaks until `/run-plan stop` or a manual release.
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1326,7 +1343,8 @@ Three branches:
    Phase 6.
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1358,7 +1376,8 @@ Three branches:
    rollover wrong — at 23:58, the naive math pinned the cron to
    earlier-today, and it would fire ~365 days out).
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1374,7 +1393,8 @@ Three branches:
    `--allow-marks` because the re-entry cadence is backoff-driven, not
    API-busy-avoidance-driven:
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1391,7 +1411,8 @@ Three branches:
 2. **Marker exists AND fulfilled exists**: verify completed. Delete the
    attempt counter file (cleanup):
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1466,13 +1487,15 @@ the only supported path. The path-config helper resolves
 `$ZSKILLS_PLANS_DIR` — NEVER hardcode `plans/<slug>.md`:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 ZSKILLS_PATHS_ROOT="${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1496,13 +1519,15 @@ full-datetime form the historical backfill emits).
 
 Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1562,7 +1587,8 @@ if [ "$MARKER_COUNT" -ge 10 ]; then
   # Lane-correct path: prefer the ${CLAUDE_PLUGIN_ROOT} form on the plugin
   # install (no .claude/skills/ mirror exists there), else the legacy mirror
   # path. Mirrors the dual-lane resolution used elsewhere in this skill (#865).
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     CLEAR_TRACKING_PATH="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh"
   else
     CLEAR_TRACKING_PATH=".claude/skills/update-zskills/scripts/clear-tracking.sh"
@@ -1668,13 +1694,15 @@ marker and update the fulfillment file. Post-landing happens on `main`
 regardless of `LANDING_MODE` (cherry-pick: after cherry-pick to main; PR:
 after PR merge), so anchor on `$CLAUDE_PROJECT_DIR`:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1701,7 +1729,8 @@ plan unclaimed during /land-pr's CI-poll window, allowing a second
 Exit 12 here invokes Failure Protocol — a pipeline-mismatch at
 terminal merge indicates a stomped claim.
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1735,7 +1764,8 @@ in SKILL.md). Exit 12 (pipeline mismatch) is tolerated per-issue — it means
 another pipeline owns that issue claim (e.g., the WARN-and-PROCEED path
 never won it) and we must not clobber it.
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1765,7 +1795,8 @@ rm -f "<worktree-path>/.zskills-tracked"
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
 ignores these — they are informational only):
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1773,7 +1804,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1787,7 +1819,8 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Isec
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1795,7 +1828,8 @@ fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1823,7 +1857,8 @@ the same `FEATURE_BRANCH` variable; direct mode passes empty for both
 worktree and branch):
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

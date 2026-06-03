@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.31+a538b9"
+  version: "2026.06.03+fd8ce9"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -81,7 +81,8 @@ fi
 # $ZSKILLS_PLANS_DIR. Phase 1's Tracking-fulfillment fence re-derives
 # $TRACKING_ID idempotently from the same $PLAN_FILE.
 if [ -z "${PLAN_FILE:-}" ]; then
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"

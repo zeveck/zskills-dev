@@ -266,6 +266,19 @@ fi
 # empty/false in the script env → short-circuited the working `-f` test → fell
 # to the absent legacy mirror → resolution FAILED. Post-fix the bare-token `-f`
 # test substitutes to a real path → plugin branch → ZSKILLS_SKILLS_ROOT resolves.
+#
+# F5 HONESTY (PLUGIN_LANE_ROOT_RESOLUTION_FIX Phase 3): this is a SHELL-ONLY
+# test. It can prove ONLY *shell self-bootstrap of an already-substituted
+# fence* — i.e. that a fence whose bare ${CLAUDE_PLUGIN_ROOT} token has ALREADY
+# been replaced with the absolute plugin path resolves correctly when run.
+# It CANNOT prove that the live Claude Code harness performs that substitution
+# (replaces the bare token with $CLAUDE_PLUGIN_ROOT before handing the fence to
+# the shell). Here WE splice $REL in by hand to simulate the harness's
+# substitution; a real harness-substitution proof requires the attended
+# tests/test-plugin-live-load.sh (ZSKILLS_LIVE_ATTENDED=1) + a manual
+# /zs:update-zskills FAIL→PASS, NEITHER of which is a CI gate. Do not read a
+# green here as evidence the harness substitutes — only that the substituted
+# fence bootstraps.
 FENCE_SCRIPT="$REL/_synthetic-fence-$$.sh"
 # Render the harness substitution: bare ${CLAUDE_PLUGIN_ROOT} → the $REL literal.
 # Single-quoted heredoc keeps the file literal; we splice $REL in by hand so the

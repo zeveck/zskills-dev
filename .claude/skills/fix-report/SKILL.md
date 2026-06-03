@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.31+112185"
+  version: "2026.06.03+a92e4f"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -41,7 +41,8 @@ final landing of audit + tracker file changes is the user's call
 finalization in Step 3).
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

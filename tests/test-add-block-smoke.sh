@@ -64,6 +64,12 @@ run_setup() {
     export BLOCK_NAME
     export CLAUDE_PROJECT_DIR="$REPO_ROOT"   # config + sanitizer resolution
     if [ -n "$ZPID" ]; then export ZSKILLS_PIPELINE_ID="$ZPID"; else unset ZSKILLS_PIPELINE_ID; fi
+    # Legacy-lane faithful: production fences run WITHOUT `set -u`, so the new
+    # idiom's bare ${CLAUDE_PLUGIN_ROOT} token expands empty → else/legacy
+    # branch. This harness wraps the extracted fence in the file-level `set -u`;
+    # bind the token to empty so the SAME legacy else-branch is exercised
+    # without an unbound-variable abort (binding empty, NOT a real path).
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     eval "$FENCE" >/dev/null 2>&1 || { echo "FENCE_FAILED"; exit 1; }
     echo "PIPELINE_ID=$PIPELINE_ID"
     echo "BLOCK_SLUG=$BLOCK_SLUG"

@@ -165,6 +165,11 @@ run_loop() {
     export PATH="$SHIM_BIN:$PATH"
     export ZSKILLS_SKILLS_ROOT="$REPO_ROOT/skills"
     export CLAUDE_PROJECT_DIR="$REPO_ROOT"
+    # Legacy-lane faithful under `set -u`: production fences run WITHOUT
+    # `set -u`, so the new resolution idiom's bare ${CLAUDE_PLUGIN_ROOT} token
+    # expands empty → else/legacy branch. Bind it EMPTY (not a real path) so the
+    # same legacy else-branch is exercised without an unbound-variable abort.
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
     export PREPARED_RESULT_FILE="$result_file"
     # Caller-loop inputs the fence reads from sibling Step 1-3 fences.
     export BRANCH="feat/seam-harness"
