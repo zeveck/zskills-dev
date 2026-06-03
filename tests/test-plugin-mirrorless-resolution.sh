@@ -250,6 +250,54 @@ else
   fail "5b. legacy FULL_TEST_CMD empty — legacy branch resolution failed"
 fi
 
+# ── 6. synthetic-FENCE mirror-less PASS (Phase-1 acceptance #1) ──────────────
+# Cases 1/3 source the helper DIRECTLY with CLAUDE_PLUGIN_ROOT PRE-EXPORTED —
+# they prove the SCRIPTS resolve, but they do NOT exercise the lane-selection
+# FENCE the harness actually renders. The Phase-1 root-cause fix is the fence
+# migration (a self-locating script is useless if the fence can't source it),
+# so this case exercises a REAL fence guard rendered exactly as the harness
+# would on a mirror-less plugin consumer:
+#   - the BARE ${CLAUDE_PLUGIN_ROOT} token is substituted to the shipped tree's
+#     ABSOLUTE path (a string literal — NOT an env-var read);
+#   - the ${CLAUDE_PLUGIN_ROOT:-} form is ABSENT (the new idiom drops it);
+#   - the script runs with `env -u CLAUDE_PLUGIN_ROOT` (EMPTY plugin env, the
+#     real mirror-less reality) and NO pre-export.
+# Pre-fix this fence's `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&` first conjunct was
+# empty/false in the script env → short-circuited the working `-f` test → fell
+# to the absent legacy mirror → resolution FAILED. Post-fix the bare-token `-f`
+# test substitutes to a real path → plugin branch → ZSKILLS_SKILLS_ROOT resolves.
+FENCE_SCRIPT="$REL/_synthetic-fence-$$.sh"
+# Render the harness substitution: bare ${CLAUDE_PLUGIN_ROOT} → the $REL literal.
+# Single-quoted heredoc keeps the file literal; we splice $REL in by hand so the
+# rendered fence carries the ABSOLUTE path, NOT a live shell expansion.
+cat > "$FENCE_SCRIPT" <<FENCE
+#!/usr/bin/env bash
+# Synthetic plugin-skill fence as the harness renders it (bare token → abs path).
+if [ -f "$REL/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="$REL"
+  . "$REL/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "\$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+printf 'SSR=%s\n' "\$ZSKILLS_SKILLS_ROOT"
+printf 'FTC=%s\n' "\$FULL_TEST_CMD"
+FENCE
+fence_out="$(env -u CLAUDE_PLUGIN_ROOT -u ZSKILLS_SKILLS_ROOT \
+  CLAUDE_PROJECT_DIR="$PROJ" bash "$FENCE_SCRIPT")"
+rm -f "$FENCE_SCRIPT"
+fence_ssr="$(printf '%s\n' "$fence_out" | sed -n 's/^SSR=//p')"
+fence_ftc="$(printf '%s\n' "$fence_out" | sed -n 's/^FTC=//p')"
+if [ -n "$fence_ssr" ] && [ -d "$fence_ssr" ]; then
+  pass "6a. synthetic fence (bare-token, EMPTY env, NO pre-export) → ZSKILLS_SKILLS_ROOT resolves to a real dir ('$fence_ssr')"
+else
+  fail "6a. synthetic-fence ZSKILLS_SKILLS_ROOT not a real dir: got '$fence_ssr'"
+fi
+if [ -n "$fence_ftc" ]; then
+  pass "6b. synthetic fence: FULL_TEST_CMD resolved non-empty mirror-less ('$fence_ftc')"
+else
+  fail "6b. synthetic-fence FULL_TEST_CMD empty — fence did not resolve config mirror-less"
+fi
+
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"
