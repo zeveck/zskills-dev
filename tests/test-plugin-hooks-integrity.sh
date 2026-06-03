@@ -254,8 +254,9 @@ rm -f /tmp/.gap2.err
 
 # 2b — positive coverage: assert the EXPECTED in-tree set is actually being
 # checked (anti-green-by-absence). The 7 in-tree block-*.sh + warn-config-drift
+# + the 2 session-logging hooks (log-session-stop, log-permission-request)
 # must all be present, source the shim, and NOT be on any exclusion list.
-EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh"
+EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh log-session-stop.sh log-permission-request.sh"
 missing_expected=""
 for name in $EXPECTED_IN_TREE_SHIMMED; do
   # Must be registered, exist in-tree, source the shim, and not be excluded.
@@ -267,7 +268,7 @@ for name in $EXPECTED_IN_TREE_SHIMMED; do
   if in_list "$name" "$SHIM_EXCLUDE"; then missing_expected="$missing_expected $name(wrongly-excluded)"; continue; fi
 done
 if [ -z "$missing_expected" ]; then
-  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh are registered, in-tree, shim-sourcing, and asserted (not excluded)"
+  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh + the 2 session-logging hooks are registered, in-tree, shim-sourcing, and asserted (not excluded)"
 else
   fail "2b. expected shim-sourcing set incomplete:$missing_expected"
 fi

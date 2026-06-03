@@ -156,6 +156,22 @@
         }
       }
     },
+    "logging": {
+      "type": "object",
+      "description": "Session-logging configuration for the Stop / SubagentStop / PermissionRequest hooks (hooks/log-session-stop.sh, hooks/log-permission-request.sh).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master toggle for session logging. When true (default), the Stop/SubagentStop hook re-renders each session transcript to per-session markdown and the PermissionRequest hook appends a per-session permission sidecar. When false, BOTH hooks no-op immediately (exit 0, no files written)."
+        },
+        "dir": {
+          "type": "string",
+          "default": "",
+          "description": "Override directory for session logs. Resolution precedence used by both hooks AND skills/update-zskills/scripts/session-logs.sh: ZSKILLS_LOG_DIR env > logging.dir (this field) > Python tempfile.gettempdir()/zskills-session-logs/<project>/. Empty (default) falls through to the cross-platform tempdir default."
+        }
+      }
+    },
     "ci": {
       "type": "object",
       "description": "CI integration for PR mode. Controls whether the agent polls CI checks and attempts to fix failures.",
