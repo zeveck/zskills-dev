@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.06.03+d1da63"
+  version: "2026.06.03+36645c"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -340,8 +340,9 @@ crashes with exactly that phrase across 2026-04-29 and 2026-04-30
 sessions. Always foreground-Bash with explicit long timeout; capture
 to file as below; read the file when the call returns.
 
-1. **Run the full test suite with output captured to a file** (resolve via the
-   dual-lane prelude in references/canonical-config-prelude.md §1):
+1. **Run the full test suite with output captured to a file** (canonical form —
+   maintainers: see `references/canonical-config-prelude.md` §1 in the zskills
+   source):
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -570,9 +571,9 @@ If any issues were found in Phases 2-4:
 
 After fixing any issues in Phase 5:
 
-1. **Run `$FULL_TEST_CMD` again** (resolve via the dual-lane prelude in
-   references/canonical-config-prelude.md §1 if you don't already have it in
-   your environment) — all suites must pass, including new tests
+1. **Run `$FULL_TEST_CMD` again** (canonical form — maintainers: see
+   `references/canonical-config-prelude.md` §1 in the zskills source) — all
+   suites must pass, including new tests
 2. **Re-check manual verifications** if fixes touched UI code
 3. **If new problems are found**, go back to Phase 5
 
@@ -780,9 +781,9 @@ printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' 
 - **Fix, don't just report.** When problems are found, fix them — then re-verify.
   The goal is a clean verification, not a list of issues left for the user.
 - **Start a dev server if needed.** "No dev server" is not an excuse to
-  skip manual verification. Run `$DEV_SERVER_CMD &` (resolve via the dual-lane
-  prelude in references/canonical-config-prelude.md §1 if you don't already
-  have it in your environment) — it takes 2 seconds.
+  skip manual verification. Run `$DEV_SERVER_CMD &` (canonical form —
+  maintainers: see `references/canonical-config-prelude.md` §1 in the zskills
+  source) — it takes 2 seconds.
   Only report "cannot verify" for genuinely unavailable tooling (e.g.,
   no cargo for codegen).
 - **Be thorough but honest.** If something genuinely can't be verified,

@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.03+a0528a"
+  version: "2026.06.03+7c9f46"
 ---
 
 # Update Z Skills Infrastructure
@@ -805,22 +805,29 @@ Look in `.claude/hooks/` for these 2 files:
 
 ### Step 4 — Check scripts
 
-Look in `scripts/` for these files (all required by installed skills):
+Tier-1 machinery moved out of root `scripts/` and into the owning skill's
+mirror at `.claude/skills/<owner>/scripts/<name>` (see
+`references/script-ownership.md` for the authoritative tier → owner table).
+Check each Tier-1 script at its owner's path — NOT at root `scripts/`:
 
-- `port.sh`
-- `test-all.sh`
-- `briefing.py`
-- `clear-tracking.sh`
-- `land-phase.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for atomic post-landing cleanup
-- `post-run-invariants.sh` — referenced by `/run-plan` as mandatory end-of-run gate (7 invariants)
-- `write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
-- `worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
-- `create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
-- `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
-- `apply-preset.sh` — required by the preset UX (Step F); **config-only** — updates `execution.landing`/`execution.main_protected` in config (the hook reads `main_protected` at runtime; apply-preset does not touch it)
-- `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
-- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `.zskills/dev-server.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
-- `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
+- `.claude/skills/update-zskills/scripts/port.sh`
+- `.claude/skills/briefing/scripts/briefing.py` — also checked in Step 5; the /briefing skill requires it
+- `.claude/skills/update-zskills/scripts/clear-tracking.sh`
+- `.claude/skills/commit/scripts/land-phase.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for atomic post-landing cleanup
+- `.claude/skills/run-plan/scripts/post-run-invariants.sh` — referenced by `/run-plan` as mandatory end-of-run gate (7 invariants)
+- `.claude/skills/commit/scripts/write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
+- `.claude/skills/create-worktree/scripts/worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
+- `.claude/skills/create-worktree/scripts/create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
+- `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
+- `.claude/skills/update-zskills/scripts/apply-preset.sh` — required by the preset UX (Step F); **config-only** — updates `execution.landing`/`execution.main_protected` in config (the hook reads `main_protected` at runtime; apply-preset does not touch it)
+- `.claude/skills/run-plan/scripts/compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
+- `.claude/skills/update-zskills/scripts/statusline.sh` — session statusline helper (optional but should be installed if the user has it)
+
+Tier-2 release/consumer-tooling stays at root `scripts/` (per
+`references/script-ownership.md`) — check these there:
+
+- `scripts/test-all.sh`
+- `scripts/stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `.zskills/dev-server.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
 
 ### Step 5 — Check skills with additional requirements
 

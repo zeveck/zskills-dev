@@ -541,9 +541,9 @@ If this phase used delegate execution, verification runs on **main**:
 1. **Verify commits landed** — check `git log --oneline -10` for the
    delegate's commits. If expected commits are missing, the delegate
    failed to land — invoke Failure Protocol.
-2. **Run `$FULL_TEST_CMD` on main** (resolve via the dual-lane prelude in
-   references/canonical-config-prelude.md §1 if you don't already have it in
-   your environment) — the delegate already tested, but
+2. **Run `$FULL_TEST_CMD` on main** (canonical form — maintainers: see
+   `references/canonical-config-prelude.md` §1 in the zskills source) — the
+   delegate already tested, but
    /run-plan verifies against the plan's acceptance criteria.
 3. **Check acceptance criteria** from the verbatim plan text — the delegate
    skill doesn't know the plan's criteria, only /run-plan does.

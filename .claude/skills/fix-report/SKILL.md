@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.06.03+a92e4f"
+  version: "2026.06.03+5b244a"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -473,9 +473,9 @@ not "3 fixes in category" but one per fix.
   synthetic event limitations)
 - **Pre-existing Bugs Discovered** — bugs found during verification,
   not related to sprint fixes (Bug, Found During, Location, Severity)
-- **Test Suite Status** — `Command: $FULL_TEST_CMD` (resolve via the dual-lane
-  prelude in references/canonical-config-prelude.md §1 if you don't already
-  have it in your environment) + per-suite counts
+- **Test Suite Status** — `Command: $FULL_TEST_CMD` (canonical form —
+  maintainers: see `references/canonical-config-prelude.md` §1 in the zskills
+  source) + per-suite counts
 
 **Append, don't overwrite** — new items go at the top of each domain
 section. Already-verified items stay as `✅`. Returning from a fix
