@@ -142,7 +142,7 @@ _Status: ✅ Done._ The "drive a backlog / decompose a goal" family.
 
 ## Phase 4 — Diagnose/verify peers: investigate, qe-audit, verify-changes, session-report
 
-_Status: pending._
+_Status: ✅ Done._
 
 - [ ] Run the per-doc pipeline on `investigate.md`, `qe-audit.md`, `verify-changes.md`, `session-report.md`.
 - [ ] `session-report.md`: add the missing `handoff` mode (source `argument-hint: "[handoff]"`).
