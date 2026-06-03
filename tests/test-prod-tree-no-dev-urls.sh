@@ -107,6 +107,50 @@ assert_prod_url() {
   fi
 }
 
+# assert_marketplace_prod <label> <tree-dir>
+# The dev marketplace.json self-references the dev repo (zeveck/zskills-dev);
+# the publish path (finalize_prod_tree → rewrite_marketplace_repo) must
+# translate the `zs` source.repo back to zeveck/zskills in the BUILT tree.
+# DEV_URL_RE above is URL-only and will NOT catch the bare slug, so this uses a
+# BARE-substring `zskills-dev` check (mirroring the build-time residue
+# invariant) plus a structural zs source.repo assertion via Python json.
+assert_marketplace_prod() {
+  local label="$1" tree="$2"
+  local mp="$tree/.claude-plugin/marketplace.json"
+  if [ ! -f "$mp" ]; then
+    fail "$label: marketplace.json missing from built tree: $mp"
+    return
+  fi
+  # (i) zero bare 'zskills-dev' substring.
+  local hits
+  hits="$(grep -c 'zskills-dev' "$mp" 2>/dev/null || true)"
+  if [ "$hits" = "0" ]; then
+    pass "$label: 0 bare 'zskills-dev' hits in built marketplace.json"
+  else
+    fail "$label: built marketplace.json still contains 'zskills-dev' ($hits hit(s))"
+  fi
+  # (ii) zs source.repo == zeveck/zskills (structural, via Python json).
+  local PYTHON repo
+  PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  repo="$("$PYTHON" - "$mp" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    mp = json.load(f)
+for p in mp.get("plugins", []):
+    if isinstance(p, dict) and p.get("name") == "zs":
+        src = p.get("source")
+        if isinstance(src, dict):
+            print(src.get("repo", ""))
+        break
+PY
+)"
+  if [ "$repo" = "zeveck/zskills" ]; then
+    pass "$label: built marketplace zs source.repo == zeveck/zskills"
+  else
+    fail "$label: built marketplace zs source.repo is '$repo' (want zeveck/zskills)"
+  fi
+}
+
 # ── A. build-plugin-release.sh → its own STAGE (git ls-tree on the prod ref) ──
 echo "=== A. build-plugin-release.sh staged tree carries no dev URLs ==="
 PR_STAGE="$TMP/plugin-stage"
@@ -127,6 +171,7 @@ if snapshot_worktree_repo "$PR_CLONE"; then
       "$PR_STAGE/skills/run-plan/SKILL.md"
     assert_prod_url "A.inspecting-and-monitoring.md demo URL" \
       "$PR_STAGE/docs/guides/inspecting-and-monitoring.md"
+    assert_marketplace_prod "A.marketplace" "$PR_STAGE"
   else
     fail "0a. build-plugin-release.sh FAILED in isolated clone — output below:"
     sed 's/^/      /' "$TMP/pr-build.out"
@@ -151,6 +196,7 @@ if snapshot_worktree_repo "$BP_CLONE"; then
       "$BP_CLONE/skills/run-plan/SKILL.md"
     assert_prod_url "B.inspecting-and-monitoring.md demo URL" \
       "$BP_CLONE/docs/guides/inspecting-and-monitoring.md"
+    assert_marketplace_prod "B.marketplace" "$BP_CLONE"
   else
     fail "0b. build-prod.sh FAILED in isolated clone — output below:"
     sed 's/^/      /' "$TMP/bp-build.out"

@@ -275,6 +275,7 @@ run_suite "test-plugin-mirrorless-resolution.sh" "tests/test-plugin-mirrorless-r
 run_suite "test-plugin-d4-hook-siblings.sh" "tests/test-plugin-d4-hook-siblings.sh"
 # #1002 — dev→prod URL rewrite + strip parity in the shared finalizer.
 run_suite "test-build-rewrite-dev-urls.sh" "tests/test-build-rewrite-dev-urls.sh"
+run_suite "test-build-rewrite-marketplace-repo.sh" "tests/test-build-rewrite-marketplace-repo.sh"
 run_suite "test-prod-tree-no-dev-urls.sh" "tests/test-prod-tree-no-dev-urls.sh"
 run_suite "test-build-prod-strip-parity.sh" "tests/test-build-prod-strip-parity.sh"
 run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh"

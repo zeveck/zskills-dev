@@ -70,11 +70,16 @@ out(set(by_name) == {"zs", "zsbd"},
 
 # zs source — github object form accepted by the current validator:
 # { "source": "github", "repo": ..., "ref": ... }
+# This test runs against the DEV tree, whose manifest SELF-REFERENCES the dev
+# repo (zeveck/zskills-dev) so pre-publish plugin qual uses the genuine consumer
+# flow. The publish path (scripts/_lib/finalize-prod-tree.sh's
+# rewrite_marketplace_repo) translates this to zeveck/zskills in the prod tree;
+# tests/test-prod-tree-no-dev-urls.sh asserts the BUILT tree is prod-pointing.
 zs = by_name.get("zs", {})
 zs_src = zs.get("source")
 ok_zs = (isinstance(zs_src, dict)
          and zs_src.get("source") == "github"
-         and zs_src.get("repo") == "zeveck/zskills"
+         and zs_src.get("repo") == "zeveck/zskills-dev"
          and zs_src.get("ref") == "main")
 out(ok_zs, "marketplace: zs source is github {source,repo,ref}", repr(zs_src))
 
