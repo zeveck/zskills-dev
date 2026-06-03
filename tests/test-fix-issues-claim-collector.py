@@ -347,6 +347,106 @@ class EffectiveSkipReasonTests(unittest.TestCase):
         self.assertEqual(eff["code"], "plan-scale")
 
 
+class ReadStateFileSkippedRoundTripTests(unittest.TestCase):
+    """#1034 — end-to-end round-trip through `_read_state_file`.
+
+    The other skip-override tests (e.g.
+    `test_annotate_applies_override_in_fixture_branch`) construct `state`
+    synthetically and feed it straight into `_annotate_issues_queue`,
+    BYPASSING the on-disk read path. That bypass is exactly why the
+    `_read_state_file` regression shipped in PR #1030: the disk-write half
+    (`server.py` → `monitor-state.json:issues.skipped`) worked, but
+    `_read_state_file` silently dropped the dict-shaped `issues.skipped`
+    while building `issues_out` (it kept only `isinstance(entries, list)`
+    columns), so `_read_monitor_skipped` never saw the persisted override.
+
+    These tests write a real `monitor-state.json` containing an
+    `issues.skipped` DICT and run it THROUGH `_read_state_file`. Without the
+    fix the `skipped` key is absent and the chip falls through to
+    blurb-only, so these assertions FAIL; with the fix they PASS.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="zskills-readstate-"))
+        (self.tmp / ".zskills").mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_state(self, state: dict) -> None:
+        (self.tmp / ".zskills" / "monitor-state.json").write_text(
+            json.dumps(state), encoding="utf-8"
+        )
+
+    def test_read_state_file_preserves_issues_skipped_dict(self) -> None:
+        # The on-disk dict survives the read path intact.
+        self._write_state({
+            "version": "1.2",
+            "issues": {
+                "triage": [], "ready": [42], "in-progress": [], "done": [],
+                "backlog": [],
+                "skipped": {"42": {"code": "needs-decision",
+                                   "reason": "author input pending"}},
+            },
+        })
+        errors: list = []
+        state = collect._read_state_file(self.tmp, errors)
+        self.assertEqual(errors, [])
+        issues_section = state.get("issues")
+        self.assertIsInstance(issues_section, dict)
+        # The regression dropped this key entirely.
+        self.assertIn("skipped", issues_section,
+                      "issues.skipped dropped by _read_state_file (#1034)")
+        self.assertEqual(
+            issues_section["skipped"],
+            {"42": {"code": "needs-decision",
+                    "reason": "author input pending"}},
+        )
+
+    def test_read_monitor_skipped_sees_round_tripped_override(self) -> None:
+        # `_read_monitor_skipped` consumes the round-tripped state and yields
+        # the live override map. Empty without the fix (key was dropped).
+        self._write_state({
+            "version": "1.2",
+            "issues": {
+                "ready": [42], "backlog": [],
+                "skipped": {"42": {"code": "needs-decision",
+                                   "reason": "author input pending"}},
+            },
+        })
+        state = collect._read_state_file(self.tmp, [])
+        monitor = collect._read_monitor_skipped(state)
+        self.assertIn(42, monitor,
+                      "live override not visible after _read_state_file (#1034)")
+        self.assertEqual(monitor[42]["code"], "needs-decision")
+        self.assertEqual(monitor[42]["reason"], "author input pending")
+
+    def test_annotate_uses_round_tripped_override_and_keeps_column(self) -> None:
+        # The full chip path: read state from disk, then annotate. The chip
+        # gets the override reason AND the issue's queue.column stays the
+        # REAL column ("ready"), not the reserved "skipped" key — guarding
+        # the pos-pollution that surfaces once `skipped` is preserved.
+        self._write_state({
+            "version": "1.2",
+            "issues": {
+                "triage": [], "ready": [42], "in-progress": [], "done": [],
+                "backlog": [],
+                "skipped": {"42": {"code": "needs-decision",
+                                   "reason": "needs author X/Y"}},
+            },
+        })
+        state = collect._read_state_file(self.tmp, [])
+        issues = [{"number": 42, "title": "re-triaged"}]
+        collect._annotate_issues_queue(issues, state)  # 2-arg fixture branch
+        sr = issues[0].get("skip_reason")
+        self.assertIsNotNone(sr, "no skip_reason after round-trip (#1034)")
+        self.assertEqual(sr["code"], "needs-decision")
+        self.assertEqual(sr["label"], "needs author X/Y")  # reason -> label
+        # The phantom-column guard: queue.column must be the real column.
+        self.assertEqual(issues[0]["queue"]["column"], "ready")
+        self.assertEqual(issues[0]["queue"]["index"], 0)
+
+
 class ReadClaimsLatencyBenchmark(unittest.TestCase):
     """T3.3 — issue #514 latency budget. <10ms wall-clock p95 for 50
     simulated claims. NOT skip-not-fail. If this regresses, memoize

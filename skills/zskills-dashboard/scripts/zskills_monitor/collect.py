@@ -1707,10 +1707,27 @@ def _read_state_file(
             if isinstance(k, str) and isinstance(v, dict):
                 plans_skipped[k] = dict(v)
 
-    issues_out: Dict[str, List[Any]] = {}
+    issues_out: Dict[str, Any] = {}
     for col, entries in issues_raw.items():
         if isinstance(entries, list):
             issues_out[col] = list(entries)
+
+    # #1034 — surface issues.skipped through the state reader. Like
+    # `plans.skipped`, `issues.skipped` is a DICT (issue_num→record), so the
+    # per-column list-iteration loop above silently filters it out. Preserve
+    # it explicitly, tolerating absent / non-dict shapes (defaults to {}).
+    # Unlike plans_skipped (a sibling top-level key), this MUST live under
+    # `issues_out["skipped"]` because `_read_monitor_skipped` reads
+    # `state["issues"]["skipped"]`. Per-key entries are copied verbatim and
+    # type-validated downstream by `_read_monitor_skipped` (which accepts both
+    # the bare-code-string and {"code","reason"} dict shapes), so we keep
+    # every entry here and only enforce the dict-of-entries top-level shape.
+    issues_skipped_raw = issues_raw.get("skipped") if isinstance(issues_raw, dict) else None
+    issues_skipped: Dict[str, Any] = {}
+    if isinstance(issues_skipped_raw, dict):
+        for k, v in issues_skipped_raw.items():
+            issues_skipped[k] = dict(v) if isinstance(v, dict) else v
+    issues_out["skipped"] = issues_skipped
 
     # W1.4: guarantee `backlog` keys are present for downstream consumers
     # (v1.1 files do not write them; v1.2 does).
@@ -1903,6 +1920,19 @@ def _annotate_issues_queue(
 
     pos: Dict[int, Tuple[str, int]] = {}
     for col, entries in state_issues.items():
+        # #1034 — `issues.skipped` is a DICT (issue_num→record), not a
+        # position list. Now that `_read_state_file` preserves it under
+        # `state["issues"]["skipped"]` (so `_read_monitor_skipped` can see
+        # the live override), it must NOT participate in column/position
+        # iteration — otherwise its keys would be parsed as issue numbers and
+        # overwrite the real `pos[n]` column with a phantom "skipped" column.
+        # (`_annotate_plans_queue` avoids this by iterating an explicit
+        # PLAN_COLUMNS set; the issues path iterates `state_issues.items()`,
+        # so we filter the reserved key here.)
+        if col == "skipped":
+            continue
+        if not isinstance(entries, list):
+            continue
         for i, num in enumerate(entries):
             try:
                 n = int(num)
@@ -1933,7 +1963,9 @@ def _annotate_issues_queue(
             _resolve_paths(main_root)["issues_dir"] / "ISSUES_PLAN.md"
         )
         all_nums: List[int] = []
-        for col_entries in state_issues.values():
+        for col_key, col_entries in state_issues.items():
+            if col_key == "skipped" or not isinstance(col_entries, list):
+                continue  # #1034 — `skipped` is a dict, not a position list
             for num in (col_entries or []):
                 try:
                     all_nums.append(int(num))
@@ -2893,6 +2925,13 @@ def collect_snapshot(
     raw_issues = state.get("issues", {})
     filtered_issues: Dict[str, Any] = {}
     for col, entries in raw_issues.items():
+        # #1034 — `issues.skipped` is a DICT (issue_num→record), preserved
+        # verbatim through the closed-issue filter. Treating it as a position
+        # list would flatten it into a list of issue-number keys and break
+        # `_read_monitor_skipped` on the rendered snapshot.
+        if col == "skipped":
+            filtered_issues[col] = entries
+            continue
         if not entries:
             filtered_issues[col] = []
             continue
