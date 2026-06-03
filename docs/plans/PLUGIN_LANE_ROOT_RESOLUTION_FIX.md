@@ -1,7 +1,7 @@
 # Plugin-Lane Root Resolution Fix
 
-**Status:** DRAFT v3 (fresh-agent reviewed + 1-round /refine-plan). Ready for `/run-plan`.
-**Landing:** PR (main_protected). Execute via `/run-plan` after review.
+**Status:** ✅ COMPLETE — all 3 phases executed, verified, and merged via PR #1046 (main @ `5c8fc9a`, 2026-06-03). Mirror-less plugin install verified working LIVE (`claude --plugin-dir` → `/zs:update-zskills` reports `lane: plugin`; bundled verifier `Overall: PASS`). Full suite `7601/7601`. See `docs/reports/plan-plugin-lane-root-resolution-fix.md`.
+**Landing:** PR (main_protected). Executed via `/run-plan ... finish auto`.
 
 ## Problem (root cause — empirically proven this session)
 
@@ -49,7 +49,7 @@ fi
 
 ---
 
-## Phase 1 — Env-independent core + ONE end-to-end vertical slice (atomic; load-bearing)  [ ]
+## Phase 1 — Env-independent core + ONE end-to-end vertical slice (atomic; load-bearing)  [x]
 
 The fence migration is the load-bearing fix (a self-locating script is useless if the fence can't source it), so Phase 1 ships a COMPLETE working slice for one skill, proven on a real mirror-less consumer, before the wide sweep.
 
@@ -67,7 +67,7 @@ The fence migration is the load-bearing fix (a self-locating script is useless i
 - Real `claude --plugin-dir` mirror-less dispatch of `/zs:update-zskills` → verifier `lane: plugin`, `Overall: PASS`, **watched FAIL → PASS** (attended proof of harness substitution — see Phase 3 on CI vs attended).
 - Legacy lane regression: resolution still works; `tests/test-verify-install.sh` legacy/none/de-hooked cases stay green (F2 guard).
 
-## Phase 2 — Mechanical sweep across all remaining skills  [ ]
+## Phase 2 — Mechanical sweep across all remaining skills  [x]
 
 - Apply the new idiom to all remaining fence sites. **Do NOT hard-code the counts** (the two reviewers disagreed by ±1–4): derive them at execution and report live numbers. Enumeration:
   - guard fence-lines: `grep -rcF -- '[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]' skills/ block-diagram/`.
@@ -85,7 +85,7 @@ The fence migration is the load-bearing fix (a self-locating script is useless i
 
 **Acceptance:** zero remaining `[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]`-guarded AND zero `${CLAUDE_PLUGIN_ROOT:-$…}`-default resolution fences in `skills/**`/`block-diagram/**`; dashboard `-x` fences retain `-x`+`$MAIN_ROOT`; source/mirror byte-sync; `bash tests/run-all.sh` green.
 
-## Phase 3 — De-mask tests + conformance lock-in  [ ]
+## Phase 3 — De-mask tests + conformance lock-in  [x]
 
 - **De-mask `tests/test-plugin-mirrorless-resolution.sh`:** positive cases pre-`export CLAUDE_PLUGIN_ROOT` AND source the absolute path directly (case 5 `unset`s but still sources the absolute path), bypassing the fence. Add ≥1 case that renders a synthetic fence with the bare token substituted to the consumer's plugin path and NO pre-export, then runs THAT. **F5 honesty:** a shell-only test can only prove *shell self-bootstrap of an already-substituted fence* — it CANNOT prove the harness performs the substitution. State this; the real harness-substitution proof is the attended `tests/test-plugin-live-load.sh` (`ZSKILLS_LIVE_ATTENDED=1`) + manual `/zs:update-zskills` FAIL→PASS, which are NOT CI gates.
 - **Conformance (`tests/test-skill-conformance.sh`):**
