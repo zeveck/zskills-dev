@@ -6,7 +6,7 @@ status: active
 
 # Plan: User-Doc Rewrite (docs/skills → docs/guides)
 
-> **Landing mode: PR** (`main_protected: true`). **Executed by the top-level orchestrator, not `/run-plan`.** The per-doc pipeline fans out several agents per doc, and a `/run-plan` phase implementer is itself a subagent that cannot dispatch sub-subagents (Anthropic design) — so it could not run the pipeline. The orchestrator dispatches the agents directly, does each phase's work in a worktree, and lands each phase as an auto-merged PR via `/land-pr`. Mode is automatic under locked-main — never pass a redundant `pr` token.
+> **Landing mode: PR** (`main_protected: true`). **Executed via `/run-plan … finish auto`**, which runs at the top level and therefore has `Agent` access — so the orchestrator can fan out the per-doc pipeline directly (a `/run-plan` *phase implementer* is a subagent and could not, but `/run-plan` itself drives the phases at top level). The run uses **one persistent worktree** for the whole plan, **commits per phase** in that worktree, and lands a **single final auto-merged PR** at the end (not a PR per phase). Phases are **cron-chunked, one phase per fire**. Within each phase the orchestrator dispatches the per-doc implementer agents plus a phase verifier, and spot-checks citations itself. Mode is automatic under locked-main — never pass a redundant `pr` token.
 
 ## Overview
 
@@ -49,7 +49,7 @@ These rules are the standard each rewritten doc is held to. They are referenced 
 
 ## The per-doc pipeline (how each doc gets rewritten and proven)
 
-Each doc is rewritten through three roles, all dispatched by the **top-level orchestrator** (which has `Agent` access). This is *why* the plan is executed by the orchestrator and not `/run-plan`: a `/run-plan` phase implementer is itself a subagent and **cannot dispatch sub-subagents** (Anthropic design), so it could not fan out the pipeline. The orchestrator runs the roles as separate agents per doc (or per small group) and spot-checks their output. The orchestrator may scale the agent count to the work — the role separation, not a fixed headcount, is what matters:
+Each doc is rewritten through three roles, all dispatched by the **top-level orchestrator** (which has `Agent` access). This is *why* the plan runs as `/run-plan … finish auto` rather than relying on a phase implementer: `/run-plan` drives each phase at the top level, so the orchestrator can fan out the pipeline — whereas a `/run-plan` *phase implementer* is itself a subagent and **cannot dispatch sub-subagents** (Anthropic design). The orchestrator runs the roles as separate agents per doc (or per small group) and spot-checks their output. The orchestrator may scale the agent count to the work — the role separation, not a fixed headcount, is what matters:
 
 1. **Extract + write (a dispatched implementer agent).** Reads the *full* source for each skill in the group, then commits, alongside the rewritten doc, a **fact sheet**: every factual claim the doc makes, each tied to a `SKILL.md:LINE` citation + quote. Arguments come from `argument-hint`; companion skills from the Phase-0 graph; typical-usage from the Phase-0 usage map. **The fact sheet proves a line was *located*, not that it *supports* the claim** — a skimming agent can grep a real line, quote it verbatim, and still attach it to a doc sentence it does not back. So each entry pairs the citation with **the exact doc sentence it backs** (claim↔quote adjacency), written as `path:line: "<verbatim quote>"` so the quote is mechanically re-checkable. Citation *existence* is cheap; *correspondence* (does this line support this sentence?) is the load-bearing check — that is the verifier's job (step 2), not a mechanical guarantee. The doc may state nothing absent from its fact sheet. The agent also records any cross-mode / cross-skill surprises as discrepancy notes. (Extract and write may be one agent or two; if one, the fact sheet must still be committed as the inspectable proof-of-read.)
 
@@ -59,7 +59,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 
 ## Deliverables
 
-- **Rewritten catalog docs**, landed as thematic PRs grouped by peer-family.
+- **Rewritten catalog docs**, organized into peer-family phases and landed as a **single final PR** (`/run-plan … finish auto`, one worktree, commit-per-phase).
 - **`docs/reports/SKILL_DISCREPANCIES.md`** (outside the viewer catalog so it stays a working doc): cross-skill inconsistencies and surprising cross-mode behavior, each entry tagged with the orchestrator's **hypothesis of intent (intentional vs. surprising)** and a request for the user's ruling. Divergence ≠ bug — some is deliberate (e.g. `/do`'s `stop [query]`/`next [query]` disambiguators exist because `/do` *could* fan out parallel crons in one session; most schedulable skills correctly use bare `every`/`stop`/`next`). Entries never assert a verdict; they ask. **Intake is bounded** to avoid a judgment swamp: log an entry only when the inconsistency (a) would change a user-facing doc claim, or (b) looks like a real skill bug — pure stylistic variation is not logged. Soft-cap ~20 entries; beyond that, record the *count* of un-enumerated extras rather than listing every one.
 - **Per-doc fact sheets + verdict ledgers** committed as review evidence (kept under `docs/reports/doc-rewrite-evidence/` so they're out of the catalog).
 
@@ -82,7 +82,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 - Each phase = one peer-family. The implementer reads every source file at HEAD (line numbers shift; roles don't).
 - Acceptance is checked by the verifier's ledger **and** the orchestrator's spot-check before the phase's PR lands.
 - `docs/reports/SKILL_DISCREPANCIES.md` accumulates across phases; the final phase consolidates and presents it.
-- **Phases land strictly serially.** Each phase's PR is fully merged and its tracking markers cleaned before the next phase's agents are dispatched. No per-doc agent dispatches `/land-pr` — only the orchestrator lands, once per phase (avoids the serial-`requires.land-pr` deadlock CLAUDE.md warns about).
+- **One worktree, commit-per-phase, single final PR.** `/run-plan … finish auto` does all phases in **one persistent worktree**, **commits per phase** there, and lands a **single auto-merged PR** at the end — not a PR per phase. Phases are **cron-chunked, one phase per fire**, so the work runs serially within that one worktree/branch. No per-doc agent dispatches `/land-pr`; the final landing is a single `/run-plan`-driven PR (which avoids the serial-`requires.land-pr` deadlock CLAUDE.md warns about, since there is only one landing for the whole plan).
 - **Catalog regen on H1 change.** The viewer nav is generated into `docs/DocsRegistry.js` by `scripts/build-catalog.sh` (DO NOT hand-edit), and `tests/test-doc-viewer-catalog.sh` byte-diffs it as a drift gate; the nav entry `name` derives from each doc's H1. So if a rewrite changes a doc's H1, re-run `bash scripts/build-catalog.sh` and commit the regenerated `docs/DocsRegistry.js` in the SAME PR, or the drift gate fails the landing.
 - **`inspecting-and-monitoring.md` parity gate.** `tests/test-doc-viewer-parity.sh` asserts the rendered `.md` carries every distinctive token from the hand-built `.html`. A rewrite that drops tokens trips it; if a drop is deliberate, update `HTML_ONLY_OK_TOKENS` with a reason.
 - **`bash tests/run-all.sh` must pass before each phase PR lands** (catches the catalog drift gate, parity gate, and any conformance gate touched).
@@ -228,7 +228,7 @@ No completed phases — the plan was drafted (PR #1021) and immediately refined;
 
 **Refinement process:** `/refine-plan` with 1 round of adversarial review (reviewer + devil's-advocate, both grounded in the live repo; orchestrator verified every load-bearing finding against source before baking).
 **Convergence:** Converged at round 1 — all substantive findings dispositioned (fixed or justified); the two CRITICAL findings (Phase 6 catalog generation, missing `doc.md`) and the HIGH anti-skim hole were verified true and fixed.
-**Remaining concerns:** Execution is a large multi-PR effort; the plan is orchestrator-executed (not `/run-plan`) and lands phases strictly serially. #1002 / #1012 are OPEN — Phase 6 (manual-testing nav) and Phase 7 (inspecting-and-monitoring URLs) branch on their merge state at execution time.
+**Remaining concerns:** Execution is a large multi-phase effort run via `/run-plan … finish auto` — one persistent worktree, commit-per-phase, cron-chunked one-phase-per-fire, landing a single final auto-merged PR; phases run serially within that worktree. #1002 / #1012 are OPEN — Phase 6 (manual-testing nav) and Phase 7 (inspecting-and-monitoring URLs) branch on their merge state at execution time.
 
 ### Round History
 | Round | Reviewer | Devil's Advocate | Substantive | Resolved |

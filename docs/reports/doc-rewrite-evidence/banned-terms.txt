@@ -1,0 +1,37 @@
+# Banned internals-voice terms — grep -E patterns, ONE per line.
+# Usage:  grep -nEf docs/reports/doc-rewrite-evidence/banned-terms.txt <phase docs>
+# A hit is a candidate, not an automatic failure: R5 allows a term the user
+# observably encounters (it appears in a message they read or names a command
+# they type). The verifier judges each hit against R5. Lines beginning with #
+# are comments and are ignored by grep -f.
+#
+# Seeded from RUBRIC.md R5 plus a grep of the current catalog docs. Extend as
+# later phases surface new offenders. Patterns are case-sensitive by default;
+# grep -nEf with no -i. Where a term shows up capitalized in prose (Two-Tier),
+# both spellings are listed.
+materialiser
+materialise
+materialize
+sentinel
+atomic(ally)?
+Phase [0-9]
+Phase [0-9][a-z]
+WI [0-9]
+Tier [12]
+[Tt]wo-[Tt]ier
+\$\{CLAUDE_PLUGIN_ROOT\}
+lock-LAST
+D[0-9]+\b
+flock
+collect\.py
+render-index
+build-catalog\.sh
+git-common-dir
+static-grep
+git-tokenwalk
+preset-owned
+disable-model-invocation
+subagent_type
+inject-bash-timeout
+verify-response-validate
+idempoten(t|cy|tly)
