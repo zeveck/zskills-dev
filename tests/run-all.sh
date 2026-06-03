@@ -110,6 +110,7 @@ run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase
 run_suite "test-fix-issues-skip-persistence.sh" "tests/test-fix-issues-skip-persistence.sh"
 run_suite "test-fix-issues-skip-effective-reason.sh" "tests/test-fix-issues-skip-effective-reason.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
+run_suite "test-do-issue-num-parser.sh" "tests/test-do-issue-num-parser.sh"
 # SEAM_HARDENING_HIGH Phase 3 — extract-and-run the real /commit arg-parser
 # + the real /commit pr canonical /land-pr caller loop. These supersede the
 # static-grep coverage that used to live in tests/test-commit.sh (removed).
