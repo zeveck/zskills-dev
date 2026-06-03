@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.02+4a048a"
+  version: "2026.06.02+58211e"
 ---
 
 # Update Z Skills Infrastructure
@@ -1071,8 +1071,41 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   **`### Bare-preset config-only short-circuit`** below, and exit with the
   script's exit code. Do not proceed to the audit or any fill step.
 
-- **Else (bare call, no preset):** print the plugin-lane explanation and
-  exit 0:
+- **Else (bare call, no preset):** FIRST run the bundled verifier's cheap
+  structural tier, THEN print the plugin-lane explanation and exit 0.
+
+  This is the plugin-lane analog of **`#### Step G.5 — Post-install
+  verification`**: a read-only, NON-FATAL health check ("verify at install
+  completion" equivalent) for the most-common single-lane install state. A
+  bare `/update-zskills` on the plugin lane does no install work (the plugin
+  manager owns skills/hooks/rules), but the consumer-side install can still
+  be subtly broken (a registered hook resolving to nothing, an un-rendered
+  `managed.md` carrying raw `{{TOKEN}}` placeholders, a dropped
+  artifact/sentinel, an accidental dual-install). Running the verifier here
+  surfaces that breakage even though there is no install/update path to wire
+  Step G.5 into on this lane. It is **read-only and NON-FATAL** — it reports
+  PASS/WARN/FAIL but never aborts and **cannot re-create the legacy
+  `.claude/skills` mirror** (the verifier only inspects state). Run ONLY the
+  cheap structural tier here — never `--deep` (the heavy live-`claude` probe
+  is opt-in and must not run on a bare informational call). Resolve the
+  verifier path lane-awarely, exactly as Step G.5 does:
+
+  ```bash
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
+    VERIFY_INSTALL="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh"
+  else
+    VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
+  fi
+  if [ -f "$VERIFY_INSTALL" ]; then
+    # Cheap tier only (no --deep). Non-fatal: report, never abort.
+    bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
+      echo "(post-install verification reported a FAIL above — review and fix your environment)"
+  else
+    echo "(post-install verifier not found at $VERIFY_INSTALL — skipping verification)"
+  fi
+  ```
+
+  THEN print the plugin-lane explanation and exit 0:
 
   ```
   You're on the plugin lane. Skills, hooks, and rules are plugin-managed —
