@@ -1,7 +1,7 @@
 ---
 name: run-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHEDULE] [now] | stop | next"
+argument-hint: "<plan-file> [phase|finish|status] [auto] [every SCHEDULE] [now] | stop | next"
 description: >-
   Execute the next phase of a plan: parse status, dispatch implementation
   in a worktree, verify via a separate agent, update progress, write the
@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.03+071829"
+  version: "2026.06.03+7d0000"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
