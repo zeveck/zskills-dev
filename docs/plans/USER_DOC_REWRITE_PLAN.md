@@ -1,7 +1,7 @@
 ---
 title: User-Doc Rewrite — docs/skills then docs/guides
 created: 2026-06-02
-status: active
+status: complete
 ---
 
 # Plan: User-Doc Rewrite (docs/skills → docs/guides)
@@ -198,16 +198,15 @@ _Status: ✅ Done._ Guides are less broken than skill docs but carry the heavies
 
 ## Phase 8 — Discrepancy review & consolidation
 
-_Status: pending._ Close the loop on the second deliverable.
+_Status: ✅ Done._ Close the loop on the second deliverable. **No user gate (per the user's "autoland" direction):** the consolidated `SKILL_DISCREPANCIES.md` ships WITH the work; the user files skill-fix issues from it on their own time post-merge. Phase 8 does not present-and-wait.
 
-- [ ] Consolidate `SKILL_DISCREPANCIES.md`: dedupe, ensure every entry carries an intent hypothesis + a user-ruling request.
-- [ ] Present to the user for ruling. For each "surprising" (likely-bug) entry the user confirms, file a GitHub issue (skill-fix, not doc). For "intentional" entries, add a one-line doc note only where user-relevant.
-- [ ] Final consistency pass: every doc's companion section still agrees with COMPANIONS.md after all rewrites.
+- [x] Consolidate `SKILL_DISCREPANCIES.md`: dedupe, ensure every entry carries an intent hypothesis + a user-ruling request. (No issues filed by the pipeline — the doc is the hand-off; the user files from it.)
+- [x] Final consistency pass: every doc's companion section still agrees with COMPANIONS.md after all rewrites.
 
 **Acceptance:**
-- [ ] `SKILL_DISCREPANCIES.md` reviewed with the user; issues filed for confirmed bugs.
-- [ ] No catalog doc contradicts another on companion skills or shared command grammar.
-- [ ] `bash tests/run-all.sh` passes (doc-conformance / link-check suites green).
+- [x] `SKILL_DISCREPANCIES.md` consolidated and coherent (every entry carries intent + a user-ruling question); it lands with the PR for the user to act on.
+- [x] No catalog doc contradicts another on companion skills or shared command grammar.
+- [x] `bash tests/run-all.sh` passes (doc-conformance / link-check / catalog / parity suites green).
 
 ## Drift Log
 
