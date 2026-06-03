@@ -436,7 +436,8 @@ RUN_E2E=1 bash tests/run-all.sh          # + e2e-parallel-pipelines
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline. All are slash-invocable by the user. Two additional
-helper skills (`/land-pr`, `/create-worktree`) are dispatched internally
+helper skills (`/land-pr`, `/manual-testing`) are marked
+`user-invocable: false` (hidden from the `/` menu) and dispatched internally
 by other skills — see Helpers below.
 
 #### Plan
@@ -456,7 +457,7 @@ by other skills — see Helpers below.
 | Skill | Purpose |
 |-------|---------|
 | `/run-plan` | Phase-by-phase plan execution with worktree isolation, verification gates, and auto-landing |
-| `/do` | Lightweight task dispatcher for ad-hoc work with optional worktree/push/scheduling |
+| `/do` | Everyday workhorse for ad-hoc work (docs, fixes, refactors, content); optional worktree/push/scheduling |
 | `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
 
 #### Quality
@@ -465,7 +466,6 @@ by other skills — see Helpers below.
 |-------|---------|
 | `/verify-changes` | 7-phase verification: diff review, test coverage audit, test run, manual UI check, fix, re-verify |
 | `/qe-audit` | Quality audit of recent commits — find test gaps, edge cases, file issues |
-| `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
 
 #### Fix
 
@@ -486,13 +486,14 @@ by other skills — see Helpers below.
 | `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
+| `/create-worktree` | Unified worktree creation. Primarily dispatched internally by `/run-plan`, `/fix-issues`, `/do` (which pass `--pipeline-id` verbatim — the script rejects invocations without the flag, rc 5); invocable directly but rarely needed. |
 
-#### Helpers (internal — dispatched by other skills, not designed for direct user invocation)
+#### Helpers (`user-invocable: false` — hidden from the `/` menu, dispatched by other skills)
 
 | Skill | Purpose |
 |-------|---------|
 | `/land-pr` | PR landing helper — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by `/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, and `/quickfix`. `user-invocable: false` hides it from the `/` menu. |
-| `/create-worktree` | Unified worktree creation. Tier 1 caller (bash inside `/run-plan`, `/fix-issues`, `/do`) must pass `--pipeline-id` verbatim — the script rejects invocations without the flag (rc 5). Tier 2 user/Claude invocation works ad-hoc but is rarely needed in practice. |
+| `/manual-testing` | Playwright-cli UI-verification recipes (real mouse/keyboard events). `user-invocable: false`; dispatched by `/verify-changes`. |
 
 ### Block Diagram Add-on (`block-diagram/`)
 

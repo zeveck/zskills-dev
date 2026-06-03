@@ -94,11 +94,13 @@ assert_count_ge() {
   fi
 }
 
-# Password gate / newsletter / robots / favicon — all stripped.
+# Password gate / newsletter / robots — all stripped. The favicon is now
+# linked (Z glyph for the doc viewer) and asserted present below.
 assert_count_eq "index.html: no zl-gate" "$INDEX_HTML" "zl-gate" 0
 assert_count_eq "index.html: no Password gate comment" "$INDEX_HTML" "Password gate" 0
 assert_count_eq "index.html: no robots meta" "$INDEX_HTML" 'name="robots"' 0
-assert_count_eq "index.html: no favicon.svg" "$INDEX_HTML" "favicon.svg" 0
+assert_count_ge "index.html: favicon.svg linked" "$INDEX_HTML" "favicon.svg" 1
+assert_count_eq "index.html: favicon link tag present" "$INDEX_HTML" 'rel="icon"' 1
 
 # CSS path: absolute /docs/docs.css replaced with sibling-relative ./docs.css.
 assert_count_eq "index.html: no absolute /docs/docs.css" "$INDEX_HTML" 'href="/docs/docs.css"' 0

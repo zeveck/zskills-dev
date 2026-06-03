@@ -37,6 +37,11 @@ upgrade, the plugin refreshes them. If you've edited one of these files
 yourself, your edited copy is left alone. See
 [`.gitignore` guidance](#gitignore-guidance) for whether to track them.
 
+By default the plugin install lands work in **`locked-main-pr`** mode
+(`execution.landing: pr`, `main_protected: true`): agents don't commit to
+`main` directly — finished work ships as a pull request from a worktree on a
+feature branch. To change it, see [Landing mode](#landing-mode).
+
 ## `/update-zskills` install
 
 Clone the repo, copy the skills into `.claude/skills/`, then run the installer

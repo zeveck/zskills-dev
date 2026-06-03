@@ -1,11 +1,17 @@
 # /manual-testing
 
-> Support skill that helps playwright-cli interact with a UI the way a user would — clicking menus, click-and-dragging elements on canvases, typing into inputs, using keyboard shortcuts — and documents workarounds where playwright-cli is too limited to mimic a particular user action.
+> **An internal helper — you don't call this one directly.** `/manual-testing`
+> is marked `user-invocable: false`, so typing it at the slash prompt gets you
+> nowhere. Other skills — most often [`/verify-changes`](verify-changes.md) —
+> dispatch it behind the scenes when they need to confirm a UI change works by
+> driving the real interface the way a person would.
 
-`/manual-testing` is an **internal helper**, not a user-facing command
-(`user-invocable: false`). Other skills — most often `/verify-changes` —
-dispatch it when they need to confirm a UI change works by driving the real
-interface the way a person would.
+## What it does
+
+`/manual-testing` helps playwright-cli interact with a UI the way a user would —
+clicking menus, click-and-dragging elements on canvases, typing into inputs,
+using keyboard shortcuts — and documents workarounds where playwright-cli is too
+limited to mimic a particular user action.
 
 ## Prerequisites
 

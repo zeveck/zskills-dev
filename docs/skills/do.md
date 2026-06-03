@@ -4,7 +4,7 @@
 
 ## What it does
 
-`/do` runs one small, self-contained task end to end: it researches the change, makes it, verifies it, and (when you ask) lands it. It is meant for work that doesn't warrant the heavier ceremony of `/run-plan` (multi-phase plans) or `/fix-issues` (batch bug fixing) — documentation, examples, small refactors, one-off fixes, and content updates.
+`/do` is the everyday workhorse: it takes a single self-contained task and runs it end to end — researching the change, making it, verifying it, and (when you ask) landing it. "Lightweight" here is relative to `/draft-plan`, not a size limit: it means no multi-phase plan and no open design to work out, *not* "small." Documentation, examples, refactors, a new UI element, plumbing new UI, one-off fixes, and content updates all fit. What sends a task elsewhere is unresolved design or work that needs staging into ordered phases (`/draft-plan`), or an issue backlog to clear (`/fix-issues`) — never the number of files touched.
 
 Given a plain-English description, `/do` first checks that the task is actually a good fit for it. If the description spans several unrelated areas, names many files, or asks for a feature-scale change, `/do` redirects you to a better skill (`/draft-plan` for plan-scale work, `/run-plan` when you point at an existing plan file) instead of attempting it. If the description is too vague to act on, it asks you to make it concrete. You can override a redirect with `--force`.
 
