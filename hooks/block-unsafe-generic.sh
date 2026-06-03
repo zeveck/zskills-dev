@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -941,13 +941,26 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   # so no need to re-extract from the JSON.
   # Wrapper-recursion via is_git_subcommand_in_wrappers (#399) catches
   # `bash -c 'git push origin main'` / `eval 'git push'`.
-  PUSH_CMD="$COMMAND"
-
-  # Strip everything before "git push" (e.g., "cd /tmp/path &&")
-  PUSH_CMD="${PUSH_CMD##*git push}"
+  #
+  # Use the tokens AFTER `push` that is_git_subcommand already extracted into
+  # GIT_SUB_REST. That tokenizer is `-C`-aware (it skips `-C <dir>` / `-c <kv>`
+  # before matching the subcommand, lines ~310-315) and segment-scoped (it
+  # truncates at the first &&/||/;/| boundary). The previous ad-hoc
+  # `${COMMAND##*git push}` string strip assumed `git` and `push` were
+  # ADJACENT tokens, so the worktree form `git -C /tmp/wt push ...` — where the
+  # literal substring "git push" never appears — was returned UNCHANGED and the
+  # positional loop below misread `-C`'s directory argument as the remote and
+  # `push` as a refspec, producing a garbage PUSH_REMOTE/PUSH_TARGET (#1037).
+  # Reusing GIT_SUB_REST makes extraction consume the same `-C`-aware
+  # tokenization the detection helper already uses, so
+  # `git -C /tmp/wt push --force-with-lease origin feat/x` parses identically
+  # to `cd /tmp/wt && git push --force-with-lease origin feat/x`.
+  PUSH_CMD="$GIT_SUB_REST"
 
   # Parse positional args after "git push": [-u] [remote] [refspec]
-  # Strip flags (-u, --set-upstream, -f, --force, etc.) and find positional args
+  # Strip flags (-u, --set-upstream, -f, --force, etc.) and find positional args.
+  # GIT_SUB_REST is already segment-scoped (chaining stripped), but keep the
+  # chain-boundary guard for defense-in-depth.
   PUSH_ARGS=""
   for word in $PUSH_CMD; do
     case "$word" in

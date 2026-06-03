@@ -672,6 +672,34 @@ expect_deny "git push origin refs/heads/master (fully-qualified master — #470)
 expect_deny "git push origin +refs/heads/main (force + fully-qualified — #470)" "git push origin +refs/heads/main"
 expect_deny "git push origin feat:refs/heads/main (refspec + fully-qualified — #470)" "git push origin feat:refs/heads/main"
 
+# Issue #1037: `git -C <dir> push ...` (worktree form) — the push-target
+# EXTRACTION must be `-C`-aware, mirroring the `-C`-aware subcommand DETECTION
+# (is_git_subcommand skips `-C <dir>` at lines ~310-315). Pre-fix the
+# extraction used `${COMMAND##*git push}`, which assumes `git` and `push` are
+# ADJACENT tokens; for `git -C /tmp/wt push ...` the literal substring
+# "git push" never appears, so the strip was a no-op and the positional loop
+# misread `-C`'s DIRECTORY argument as the remote and `push` as a refspec —
+# garbage PUSH_REMOTE/PUSH_TARGET. Symptom: /land-pr Step 6b's
+# `git -C "$WT" push --force-with-lease` self-blocked / mis-targeted in a
+# main_protected repo. Post-fix, extraction reuses GIT_SUB_REST (the `-C`-aware
+# tokens after `push`), so `git -C <dir> push ...` parses identically to
+# `cd <dir> && git push ...`.
+#
+# (a) SECURITY preserved: the worktree form pushing to main/master must still
+# DENY (fail-closed, no config = main_protected default). Pre-fix these
+# silently ALLOWED because PUSH_TARGET resolved to the garbage directory token.
+expect_deny "git -C /tmp/wt push origin main (worktree form — #1037)" "git -C /tmp/wt push origin main"
+expect_deny "git -C /tmp/wt push -u origin main (worktree + upstream — #1037)" "git -C /tmp/wt push -u origin main"
+expect_deny "git -C /tmp/wt push --force origin main (worktree + force — #1037)" "git -C /tmp/wt push --force origin main"
+expect_deny "git -C /tmp/wt push origin feat:main (worktree + refspec — #1037)" "git -C /tmp/wt push origin feat:main"
+expect_deny "git -C /tmp/wt push origin +main (worktree + force-prefix — #1037)" "git -C /tmp/wt push origin +main"
+expect_deny "git -C /tmp/wt push origin refs/heads/master (worktree + qualified — #1037)" "git -C /tmp/wt push origin refs/heads/master"
+# (b) ALLOWED case: the worktree form pushing a FEATURE branch (the /land-pr
+# Step 6b auto-rebase push) must be allowed — identical to the cd-prefixed form.
+expect_allow "git -C /tmp/wt push --force-with-lease origin feat/x (worktree — #1037)" "git -C /tmp/wt push --force-with-lease origin feat/x"
+expect_allow "git -C /tmp/wt push origin feat/x (worktree — #1037)" "git -C /tmp/wt push origin feat/x"
+expect_allow "cd /tmp/wt && git push --force-with-lease origin feat/x (cd form parity — #1037)" "cd /tmp/wt && git push --force-with-lease origin feat/x"
+
 echo ""
 echo "=== Push: main-push block reads execution.main_protected from config ==="
 
@@ -719,6 +747,14 @@ toggle_test "main_protected:false allows git push on master" 0 "master" "allow"
 # refspec parsing.
 toggle_test "main_protected:false allows 'git push origin main' (explicit refspec)" 0 "feat/test" "allow" "git push origin main"
 toggle_test "main_protected:false allows 'git push -u origin main' (upstream + refspec)" 0 "feat/test" "allow" "git push -u origin main"
+
+# Issue #1037: worktree-form `git -C <dir> push` must resolve the SAME
+# PUSH_TARGET as the cd-prefixed form under both config toggles. Proves the
+# `-C`-aware extraction (GIT_SUB_REST reuse) is config-coherent: blocked under
+# main_protected:true, allowed under main_protected:false — identical to the
+# plain form on lines above.
+toggle_test "main_protected:true denies 'git -C <dir> push origin main' (worktree — #1037)" 1 "feat/test" "deny" "git -C /tmp/wt push origin main"
+toggle_test "main_protected:false allows 'git -C <dir> push origin main' (worktree — #1037)" 0 "feat/test" "allow" "git -C /tmp/wt push origin main"
 
 # Issue #515: `git push origin HEAD` from a `main` checkout resolves
 # server-side to remote `main` — defeats the main-protection regime via a
