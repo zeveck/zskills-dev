@@ -99,9 +99,14 @@ done < <(grep -rl 'MW-EXAMPLE' "$REL" 2>/dev/null || true)
 
 # Strip-verification: the SAME grep build-plugin-release.sh runs to gate its
 # prod ref (step 10). 0 forbidden survivors == $REL matches the shipped tree.
+# NOTE (#1002): build-*.sh sub-pattern anchored to `scripts/build-…` to match
+# what finalize_prod_tree actually strips (maxdepth 1 in $tree/scripts/). The
+# old loose `build-.*\.sh` false-positived on shipped test files whose basename
+# starts with `build-` (tests/test-build-rewrite-dev-urls.sh,
+# tests/test-build-prod-strip-parity.sh).
 STRIP_HITS="$(cd "$REL" && find . -type f \
   | sed 's|^\./||' \
-  | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
+  | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|scripts/build-[^/]*\.sh|MW-EXAMPLE' || true)"
 if [ -z "$STRIP_HITS" ]; then
   pass "0. strip set applied: 0 forbidden paths in \$REL (matches shipped tree)"
 else

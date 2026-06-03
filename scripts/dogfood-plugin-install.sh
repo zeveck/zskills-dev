@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # dogfood-plugin-install.sh — autonomous, repeatable plugin-install dogfood.
 #
+# zskills-dev-url-allow: this maintainer dogfood entry-point legitimately
+# defaults ZSKILLS_DOGFOOD_REPO to the DEV repo (it clones the dev repo to
+# exercise a real plugin install). The dev URL is load-bearing config here, not
+# a consumer-facing artifact, so the prod build's rewrite_dev_urls must NOT
+# rewrite it (#1002 inventory classifies this LOW / dogfood-only).
+#
 # PURPOSE
 #   Exercise a REAL `claude plugin install` of the `zs` plugin end-to-end,
 #   from a throwaway marketplace pointing at the public dev repo, leaving

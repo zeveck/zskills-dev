@@ -1,5 +1,11 @@
 # Changelog
 
+<!-- zskills-dev-url-allow: the changelog narrates dev→prod URL rewrites by
+     literally naming the dev Pages/repo URLs (e.g. the #1002 entry). The prod
+     build's rewrite_dev_urls honors this marker and leaves CHANGELOG.md
+     untouched, so the historical entries stay readable instead of being
+     mangled to "X → X". -->
+
 ## Unreleased
 
 ### Fixed — dashboard idle-state phantom pill (#995)
