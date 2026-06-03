@@ -446,6 +446,39 @@ code, pre, .mono {
   color: var(--text);
 }
 
+/* Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans-side skip chip.
+   Ephemeral (cleared by claim-acquire / pin-toggle / × dismiss).
+   The plan's skip chip wraps two children — a label span and a × button —
+   so override the base inline-block to inline-flex for vertical centering.
+   Code-specific variant for mode-mismatch reuses the magenta palette
+   (visual idiom continuity with the issues-side needs-decision chip). */
+.skip-chip--mode-mismatch {
+  background: rgba(247, 120, 186, 0.14);
+  border-color: var(--pink);
+  color: var(--pink);
+}
+.skip-chip:has(> .skip-dismiss-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding-right: 6px;
+}
+.skip-chip-label { display: inline-block; }
+.skip-dismiss-btn {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0 0 6px;
+  margin: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.skip-dismiss-btn svg { width: 12px; height: 12px; }
+.skip-dismiss-btn:hover,
+.skip-dismiss-btn:focus { opacity: 0.7; outline: none; }
+
 /* Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
    Green to read as "active healthy work happening"; matches skip-chip's
    bordered-pill + tinted-background aesthetic so the palette feels

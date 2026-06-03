@@ -11,7 +11,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.06.02+3119a3"
+  version: "2026.06.02+58d6c0"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
@@ -218,6 +218,48 @@ the lock is acquired, with no timeout (the writes are fast enough
 that contention is bounded). `os.replace()` inside Python performs
 the actual atomic rename so concurrent readers always see a complete
 file.
+
+### Mode-mismatch skip (Phase 2 of DASHBOARD_RUNSTATUS_CLEANUP_PLAN)
+
+**Trigger.** At selection time, when `MODE_OVERRIDE` (the explicit CLI
+batch-mode token `phase` or `finish`) is non-empty AND a per-plan
+entry mode (`mode` field in `monitor-state.json:plans.ready`) is
+non-empty AND the two differ.
+
+**Effect.** The plan is dropped from this sprint's dispatch (the
+filter at `scripts/filter-mode-mismatch-plans.sh` writes the
+acceptance rule: `accepts(plan, sprint) = (sprint.batch_mode is null)
+OR (plan.mode is INHERIT) OR (plan.mode === sprint.batch_mode)`). A
+record under `monitor-state.json:plans.skipped[<slug>] = {code:
+"mode-mismatch", reason: "<batch>≠<pin>", sprint_id, at}` is written
+inside the same `$MONITOR_LOCK` flock; an activity-feed marker
+`step.work-on-plans.${SPRINT_ID}.${SLUG}` is written on FRESH records
+only (re-fires against an identical `(code, reason)` tuple skip the
+marker write so the activity feed is not spammed).
+
+**Three clear paths** converge on `plans.skipped[<slug>]`:
+
+- **claim-acquire** (system, idempotent best-effort) — when any
+  matching sprint claims the plan, `claim-plan.sh:cmd_acquire` POPs
+  the slug from `plans.skipped`. Failures do NOT abort the acquire
+  (graceful degradation).
+- **pin-toggle** (server-side, queue POST) — when the user toggles
+  the per-plan pin to match the next batch mode, the dashboard
+  `/api/queue` handler detects the pin diff and POPs the slug.
+- **× click** (user-driven) — the SKIP-chip's × dismiss button POSTs
+  `/api/plan-skip-dismiss` with `{slug}`; the server POPs idempotently
+  (200 with no write when the slug is absent).
+
+**Asymmetry with Issues skip.** Plans skip is **EPHEMERAL** (cleared
+by ANY of the three paths). Issues skip (`/fix-issues:skipped`) is
+**STICKY** (cleared only by explicit `/fix-issues reconsider <N>`).
+The asymmetry is intentional — do NOT try to converge them.
+
+**Scope.** The mode-pin constraint applies AT THE `/work-on-plans`
+SELECTION BOUNDARY ONLY. A directly typed `/run-plan <slug> finish`
+against a `phase`-pinned plan is an explicit one-shot CLI override
+and bypasses the pin (`claim-plan.sh:cmd_acquire` does not gate on
+the pin).
 
 ## Step 1 — sync (read monitor-state.json)
 

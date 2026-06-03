@@ -244,9 +244,10 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // State: QUEUED — unclaimed plan in 'ready' column
 // ------------------------------------------------------------------
 
-// Q1: inherit (entry.mode=null) → post-#988 falls back to literal "finish".
-//      Chip is togglable (queued state); the post-#988 default of "finish"
-//      doesn't lock unclaimed plans (only claimed + finish does).
+// Q1 (Phase 2 — INHERIT label): entry.mode=null → chip text is literal
+//      "inherit" (lowercase). The post-#988 "finish" fallback only applies
+//      to the effectiveMode used for the lock condition; the visible
+//      chipText now exposes the inherit pin honestly.
 {
   globalThis.__entryMode = null;
   const card = buildPlanCard(makeUnclaimedPlan("q-inherit", 3), "q-inherit", "ready");
@@ -256,8 +257,10 @@ function makeUnclaimedPlan(slug, phaseCount) {
     expect(chip.getAttribute("data-state"), "queued", "queued-inherit: data-state=queued");
     expect(chip.getAttribute("data-source"), "inherit", "queued-inherit: data-source=inherit");
     expect(chip.getAttribute("data-action"), "toggle-mode", "queued-inherit: data-action=toggle-mode (cycle)");
-    expectTrue(chip.textContent.indexOf("finish") >= 0,
-      "queued-inherit: chip shows post-#988 effective mode 'finish'");
+    expect(chip.textContent, "inherit",
+      "queued-inherit (Phase 2): chip text is literal 'inherit' (lowercase)");
+    expectTrue((chip.getAttribute("aria-label") || "").indexOf("inherit") >= 0,
+      "queued-inherit: aria-label contains 'inherit' (lowercase)");
     expect(chip.getAttribute("disabled"), null, "queued-inherit: not disabled");
   }
 }
@@ -362,20 +365,69 @@ function makeUnclaimedPlan(slug, phaseCount) {
   }
 }
 
-// RF2: claimed + inherit (entry.mode=null) → post-#988 literal default
-//      "finish" → running-finish, locked. (Pre-#988 this case relied on
-//      defaultMode="finish" being passed in; the post-#988 default falls
-//      out of the literal fallback in buildPlanCard.)
+// RF2 (Phase 2): claimed + entry.mode=null + claim.dispatch_mode="finish".
+//      Claim ALWAYS writes dispatch_mode (post-#874); a claimed card resolves
+//      via plan.claim.dispatch_mode. Asserts the FINISH-claim lock anchored
+//      on claim.dispatch_mode (not ws.batch_mode).
 {
   globalThis.__entryMode = null;
-  const card = buildPlanCard(makeClaimedPlan("rf-inherit", 5), "rf-inherit", "ready");
+  const p = makeClaimedPlan("rf-inherit", 5);
+  p.claim.dispatch_mode = "finish";
+  const card = buildPlanCard(p, "rf-inherit", "ready");
   const chip = findByClass(card, "mode-chip");
-  expectTrue(chip, "running-finish (inherit): chip rendered");
+  expectTrue(chip, "running-finish (dispatch_mode=finish): chip rendered");
   if (chip) {
+    // Locked-branch HTML embeds chipText (lowercase 'finish') after the
+    // SVG lock-icon span; assert against innerHTML in the harness (the
+    // node-DOM stub does not compute textContent from innerHTML).
+    expectTrue((chip.innerHTML || "").indexOf("finish") >= 0,
+      "running-finish (dispatch_mode=finish): innerHTML contains 'finish' (lowercase)");
     expect(chip.getAttribute("data-state"), "running-finish",
-      "running-finish (inherit, post-#988 default=finish): data-state=running-finish");
+      "running-finish (dispatch_mode=finish): data-state=running-finish");
+    expect(chip.getAttribute("aria-disabled"), "true",
+      "running-finish (dispatch_mode=finish): aria-disabled=true");
     expect(chip.getAttribute("disabled"), "disabled",
-      "running-finish (inherit): button is disabled (no-op)");
+      "running-finish (dispatch_mode=finish): button is disabled (no-op)");
+  }
+}
+
+// NEW (Phase 2 — claim.dispatch_mode='phase'): claimed + entry.mode=null +
+//      claim.dispatch_mode="phase". Chip text is "phase", state is
+//      running-phase, NOT locked, click handler dispatches.
+{
+  globalThis.__entryMode = null;
+  const p = makeClaimedPlan("rp-claim-phase", 5);
+  p.claim.dispatch_mode = "phase";
+  const card = buildPlanCard(p, "rp-claim-phase", "ready");
+  const chip = findByClass(card, "mode-chip");
+  expectTrue(chip, "running-phase (dispatch_mode=phase): chip rendered");
+  if (chip) {
+    expect(chip.textContent, "phase",
+      "running-phase (dispatch_mode=phase): chipText === 'phase'");
+    expect(chip.getAttribute("data-state"), "running-phase",
+      "running-phase (dispatch_mode=phase): data-state=running-phase");
+    expect(chip.getAttribute("data-action"), "toggle-mode",
+      "running-phase (dispatch_mode=phase): toggle-mode action (not locked)");
+    expect(chip.getAttribute("aria-disabled"), null,
+      "running-phase (dispatch_mode=phase): no aria-disabled");
+  }
+}
+
+// NEW (Phase 2 — unclaimed + entry.mode='phase'): explicit pin renders
+//      "phase" with data-source="explicit", NOT locked.
+{
+  globalThis.__entryMode = "phase";
+  const card = buildPlanCard(makeUnclaimedPlan("q-phase-explicit", 3),
+    "q-phase-explicit", "ready");
+  const chip = findByClass(card, "mode-chip");
+  expectTrue(chip, "queued-phase-explicit: chip rendered");
+  if (chip) {
+    expect(chip.textContent, "phase",
+      "queued-phase-explicit: chipText === 'phase'");
+    expect(chip.getAttribute("data-source"), "explicit",
+      "queued-phase-explicit: data-source=explicit");
+    expect(chip.getAttribute("aria-disabled"), null,
+      "queued-phase-explicit: NOT locked");
   }
 }
 

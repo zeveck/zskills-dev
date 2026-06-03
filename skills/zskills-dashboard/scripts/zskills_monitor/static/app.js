@@ -866,6 +866,11 @@ function fingerprintPlans(plans, queues) {
       // pipeline_id changes when a new pipeline claims; current_phase
       // changes at each phase boundary; both null when no claim.
       p.claim ? [p.claim.pipeline_id || null, p.claim.current_phase || null] : null,
+      // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — skip_reason tuple.
+      // Without this, × clicks and pin-toggle clears mutate the state
+      // but the next poll's diff-suppression hides the change for one
+      // cycle, producing a visibly stuck chip.
+      p.skip_reason ? [p.skip_reason.code || null, p.skip_reason.reason || null] : null,
     ]),
   });
 }
@@ -1138,6 +1143,49 @@ function buildPlanCard(plan, slug, col) {
     }
   }
 
+  // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP chip with × dismiss.
+  // Renders on a Ready-column plan card carrying a `skip_reason` dict
+  // (server-side: monitor-state.json:plans.skipped[slug]). Mutual exclusion
+  // (mirror #862/#898 for issue side): a live claim suppresses the skip
+  // chip — the claim won; the skip mark is stale and gets cleared on the
+  // next acquire-side best-effort sweep.
+  //
+  // Three clear paths converge on plans.skipped[slug]:
+  //   (a) claim-acquire — server-side, idempotent best-effort.
+  //   (b) pin-toggle    — server-side, queue-POST selective pop.
+  //   (c) × click       — user-driven, /api/plan-skip-dismiss.
+  {
+    const hasLiveClaim = !!(plan && plan.claim);
+    const skipReason = (!hasLiveClaim && plan && plan.skip_reason) ? plan.skip_reason : null;
+    if (skipReason && col === "ready") {
+      const row = el("div", { cls: "card-sub" });
+      const chip = el("span", {
+        cls: "skip-chip skip-chip--" + String(skipReason.code || ""),
+        attrs: { title: String(skipReason.reason || "") },
+      });
+      const label = el("span", {
+        cls: "skip-chip-label",
+        text: "skip: " + String(skipReason.code || "") +
+              (skipReason.reason ? " — " + String(skipReason.reason) : ""),
+      });
+      const dismiss = el("button", {
+        cls: "skip-dismiss-btn",
+        attrs: {
+          type: "button",
+          "data-action": "plan-skip-dismiss",
+          "data-slug": slug,
+          "aria-label": "Dismiss skip for " + slug,
+          title: "Dismiss",
+        },
+        html: SVG_ICONS.x,  // chrome-only SVG carveout, not literal × char.
+      });
+      chip.appendChild(label);
+      chip.appendChild(dismiss);
+      row.appendChild(chip);
+      card.appendChild(row);
+    }
+  }
+
   // Per-row mode chip on Ready cards (issue #814 + follow-up).
   // Two effective states keyed on claim + effective dispatch mode:
   //   - running-finish  → LOCKED. /run-plan finish-auto holds the claim
@@ -1166,33 +1214,54 @@ function buildPlanCard(plan, slug, col) {
   // step 1 falls through to step 2 + step 3 unchanged. Back-compat is
   // structural, not flag-gated.
   if (col === "ready") {
+    // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Three-state chip with
+    // explicit INHERIT label. Derivation:
+    //   - pinSource     : "inherit" when entryMode === null, else "explicit".
+    //   - displayMode   : claim.dispatch_mode if a claim is present, else
+    //                     entryMode (which may be null).
+    //   - chipText      : the lowercase string "inherit" when displayMode
+    //                     is null, else displayMode itself.
+    //   - effectiveMode : displayMode || "finish" — used by the lock
+    //                     condition ONLY (anchored on claim.dispatch_mode,
+    //                     never on ws.batch_mode — see #930).
+    //
+    // FINISH-claim lock invariant: `isClaimed && effectiveMode === "finish"`
+    // sources from claim.dispatch_mode (dispatch-lifetime), NOT
+    // ws.batch_mode (wrapper-lifetime). The wrapper finishing its sprint
+    // while a claim is in flight must NOT silently unlock the chip.
     const entryMode = currentEntryMode(slug);
-    const isOverride = entryMode === "phase" || entryMode === "finish";
+    const pinSource = (entryMode === null || typeof entryMode === "undefined")
+      ? "inherit" : "explicit";
     const claimDispatchMode =
       (plan && plan.claim && plan.claim.dispatch_mode) || null;
-    const effectiveMode =
-      claimDispatchMode || (isOverride ? entryMode : "finish");
+    const displayMode = claimDispatchMode || (
+      (entryMode === null || typeof entryMode === "undefined") ? null : entryMode
+    );
+    const chipText = (displayMode === null) ? "inherit" : displayMode;
+    const effectiveMode = displayMode || "finish";
     const isClaimed = !!(plan && plan.claim);
     const locked = isClaimed && effectiveMode === "finish";
     let state, ariaLabel;
     if (locked) {
       state = "running-finish";
-      ariaLabel = "Mode: finish (locked while running).";
+      ariaLabel = "Mode: finish (locked while finish-mode /run-plan is in flight; releases on completion).";
     } else if (isClaimed) {
       state = "running-phase";
-      ariaLabel = "Mode: " + effectiveMode
+      ariaLabel = "Mode: " + chipText
         + " (running). Click to cycle inherit, phase, finish.";
+    } else if (pinSource === "explicit") {
+      state = "queued";
+      ariaLabel = "Mode: " + chipText
+        + " (pinned). Click to cycle inherit, phase, finish.";
     } else {
       state = "queued";
-      ariaLabel = isOverride
-        ? ("Mode: " + effectiveMode + " (override). Click to cycle inherit, phase, finish.")
-        : ("Mode: " + effectiveMode + " (inherits default). Click to cycle inherit, phase, finish.");
+      ariaLabel = "Mode: inherit (inherits batch). Click to cycle inherit, phase, finish.";
     }
     const chipAttrs = {
       type: "button",
       "data-slug": slug,
       "data-state": state,
-      "data-source": isOverride ? "explicit" : "inherit",
+      "data-source": pinSource,
       "aria-label": ariaLabel,
     };
     if (locked) {
@@ -1203,10 +1272,14 @@ function buildPlanCard(plan, slug, col) {
     }
     const chipOpts = { cls: "mode-chip", attrs: chipAttrs };
     if (locked) {
+      // Locked branch embeds chipText (resolved string, lowercase) — the
+      // leading space artifact (e.g. " finish") between the SVG span and
+      // the text is INTENTIONAL spacing; tests must use .textContent.trim()
+      // to absorb it.
       chipOpts.html = '<span class="mode-chip-lock" aria-hidden="true">'
-        + SVG_ICONS.lock + '</span> ' + effectiveMode;
+        + SVG_ICONS.lock + '</span> ' + chipText;
     } else {
-      chipOpts.text = effectiveMode;
+      chipOpts.text = chipText;
     }
     const chip = el("button", chipOpts);
     card.appendChild(chip);
@@ -2667,6 +2740,30 @@ async function togglePlanMode(slug) {
 // back to phase or inherit. Issue #814. /work-on-plans re-reads the chip
 // each round, so this takes effect at the next phase dispatch.
 
+// Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP-chip × dismiss.
+// POSTs {slug} to /api/plan-skip-dismiss; on 2xx the next poll observes
+// plans.skipped[slug] cleared and re-renders (gated by the skip_reason
+// tuple in fingerprintPlans). Idempotent: server returns 200 even when
+// the slug is absent (no spurious updated_at bump in that case).
+async function postPlanSkipDismiss(slug) {
+  try {
+    const resp = await fetch("/api/plan-skip-dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: slug }),
+    });
+    if (!resp.ok) {
+      showToast("Dismiss failed: " + resp.status, "err");
+      return;
+    }
+    // On 2xx, the next poll will see plans.skipped[slug] gone and re-render.
+  } catch (err) {
+    showToast(
+      "Dismiss error: " + (err && err.message ? err.message : err), "err",
+    );
+  }
+}
+
 // -------------------------------------------------------- drag-and-drop
 
 let dragState = null;
@@ -3193,6 +3290,15 @@ async function handleAction(action, target) {
   if (action === "plan-right") return movePlan(slug, "right");
   if (action === "plan-discard") return discardPlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
+  // Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP-chip × dismiss.
+  // The click may bubble from a child SVG path; walk up to the button to
+  // get data-slug.
+  if (action === "plan-skip-dismiss") {
+    const btn = target.closest('[data-action="plan-skip-dismiss"]') || target;
+    const s = btn.getAttribute("data-slug");
+    if (s) return postPlanSkipDismiss(s);
+    return;
+  }
 
   // Column-header chevron: move-all in column, adjacent column only.
   if (action === "plan-move-all-left" || action === "plan-move-all-right" ||

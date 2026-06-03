@@ -314,6 +314,78 @@ PY
     return 11
   fi
 
+  # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — best-effort plans.skipped clear.
+  # Claim file is durable above; this is the acquire-side arm of the three
+  # clear paths. Graceful degradation: any failure (lock contention,
+  # malformed JSON, write error) is logged to stderr and we return 0 —
+  # the claim succeeded; we don't fail the acquire for a clear-skip
+  # best-effort. The visual race is masked by mutual exclusion (the
+  # SKIP chip is suppressed client-side when plan.claim is present).
+  #
+  # Self-reentry path: returns 0 from the EEXIST branch above WITHOUT
+  # reaching this hook. The original (fresh) acquire already cleared
+  # the skip mark; the re-entry inherits that state. Calling the helper
+  # on the re-entry path too would be harmless (the helper is idempotent)
+  # but is not required.
+  clear_plan_skip_if_present "$SLUG" "$MAIN_ROOT" || true
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# clear_plan_skip_if_present <slug> <main_root>
+#
+# Best-effort acquire-side arm of the Phase 2 three-clear-paths design.
+# Idempotent: returns 0 when the state file is absent, when the slug is
+# already absent from plans.skipped, or when any error occurs (contention,
+# malformed JSON, write error). The claim is already durable by the time
+# this runs; never failing the acquire for a clear-skip best-effort is
+# the load-bearing invariant.
+# ---------------------------------------------------------------------------
+clear_plan_skip_if_present() {
+  local slug="$1"
+  local main_root="$2"
+  local monitor_state="$main_root/.zskills/monitor-state.json"
+  local monitor_lock="$main_root/.zskills/monitor-state.json.lock"
+  if [ ! -f "$monitor_state" ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$monitor_lock")" 2>/dev/null || true
+  (
+    flock -x 9 2>/dev/null || true
+    "$_CLAIM_PYTHON" - "$monitor_state" "$slug" <<'PY' 2>/dev/null || true
+import json, os, sys, tempfile, datetime
+state_path, slug = sys.argv[1], sys.argv[2]
+try:
+    with open(state_path) as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        sys.exit(0)
+except Exception:
+    sys.exit(0)
+plans = data.get("plans")
+if not isinstance(plans, dict):
+    sys.exit(0)
+skipped = plans.get("skipped")
+if not isinstance(skipped, dict) or slug not in skipped:
+    sys.exit(0)
+skipped.pop(slug, None)
+data["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+parent = os.path.dirname(state_path) or "."
+try:
+    tmp = tempfile.NamedTemporaryFile(
+        "w", delete=False, dir=parent,
+        prefix=".monitor-state.", suffix=".tmp",
+    )
+    json.dump(data, tmp, indent=2)
+    tmp.write("\n")
+    tmp.close()
+    os.replace(tmp.name, state_path)
+except OSError as exc:
+    sys.stderr.write(
+        f"claim-plan.sh clear_plan_skip_if_present: write failed for {state_path}: {exc}\n"
+    )
+PY
+  ) 9>"$monitor_lock" 2>/dev/null
   return 0
 }
 

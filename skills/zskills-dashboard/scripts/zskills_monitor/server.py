@@ -790,6 +790,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if decoded_path == "/api/queue":
             self._handle_queue_post()
             return
+        # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — Plans SKIP chip × dismiss.
+        if decoded_path == "/api/plan-skip-dismiss":
+            self._handle_plan_skip_dismiss_post()
+            return
         self._send_json(404, {"error": f"unknown POST path: {decoded_path}"})
 
     # ------------------------------------------------------------- handlers
@@ -1043,9 +1047,109 @@ class MonitorHandler(BaseHTTPRequestHandler):
             new_doc["version"] = "1.2"
             new_doc["default_mode"] = payload.get("default_mode", existing_dm)
             new_doc["updated_at"] = _now_iso()
+            # Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — selective pop of
+            # plans.skipped on pin CHANGE. This arm is ADDITIVE on top of
+            # Phase 1's deep-copy base: `new_doc["plans"]["skipped"]` already
+            # mirrors `existing["plans"]["skipped"]` from the deep-copy.
+            # Walk the pin diff across EVERY plan column where a pin can
+            # live (PLAN_COLUMNS + "completed" — the drag-to-completed safety
+            # hatch from #905/#853). A naive iteration over PLAN_COLUMNS
+            # alone would silently wipe skip markers on drag-to-completed.
+            pin_walk_cols = list(PLAN_COLUMNS) + ["completed"]
+            def _flatten_modes(doc: Dict[str, Any]) -> Dict[str, Any]:
+                out: Dict[str, Any] = {}
+                plans_section = doc.get("plans", {}) if isinstance(doc, dict) else {}
+                if not isinstance(plans_section, dict):
+                    return out
+                for c in pin_walk_cols:
+                    arr = plans_section.get(c, [])
+                    if not isinstance(arr, list):
+                        continue
+                    for entry in arr:
+                        if not isinstance(entry, dict):
+                            continue
+                        s = entry.get("slug")
+                        if isinstance(s, str) and s:
+                            out[s] = entry.get("mode")
+                return out
+            prev_modes = _flatten_modes(existing)
+            new_modes = _flatten_modes(new_doc)
+            skipped_dict = new_doc.get("plans", {}).get("skipped")
+            if isinstance(skipped_dict, dict):
+                # Pin changed → clear (covers None→"phase", "phase"→None,
+                # "phase"→"finish"; NOT "phase"→"phase" / drag-reorder).
+                for s, new_m in new_modes.items():
+                    if s in prev_modes and prev_modes[s] != new_m:
+                        skipped_dict.pop(s, None)
+                # Slug disappeared from all columns → also clear (no queue
+                # identity left).
+                for s in list(prev_modes.keys()):
+                    if s not in new_modes:
+                        skipped_dict.pop(s, None)
+                # Newly appeared slugs: leave alone (no prior skip).
             target = main_root / ".zskills" / "monitor-state.json"
             _atomic_write_json(target, new_doc)
         self._send_json(200, {"ok": True, "updated_at": new_doc["updated_at"], "state_updated_at": new_doc["updated_at"]})
+
+    def _handle_plan_skip_dismiss_post(self) -> None:
+        """Phase 2 (DASHBOARD_RUNSTATUS_CLEANUP) — × dismiss endpoint.
+
+        Idempotent: if the slug is absent from `plans.skipped`, NO WRITE
+        occurs and the 200 response carries the existing `updated_at`
+        unchanged. Asymmetric with `/api/issue-reconsider` (Phase 3) which
+        always writes (dedup-append) — that asymmetry mirrors the deeper
+        Plans-vs-Issues asymmetry and is intentional.
+        """
+        if not self._origin_ok():
+            self._send_json(403, {"error": "Origin check failed"})
+            return
+        body_bytes, err = self._read_request_body()
+        if err is not None or body_bytes is None:
+            self._send_json(400, {"error": err or "unreadable body"})
+            return
+        try:
+            payload = json.loads(body_bytes.decode("utf-8") or "null")
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as exc:
+            self._send_json(400, {"error": f"json parse: {exc}"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "body is not an object"})
+            return
+        slug = payload.get("slug")
+        if not isinstance(slug, str) or not slug or not SLUG_RE.match(slug):
+            self._send_json(400, {"error": "missing or invalid slug"})
+            return
+        ctx = self._ctx()
+        main_root: pathlib.Path = ctx["main_root"]
+        with _state_lock(main_root):
+            existing = _read_monitor_state(main_root)
+            plans_section = existing.get("plans")
+            if not isinstance(plans_section, dict):
+                # Nothing to clear; idempotent no-op.
+                self._send_json(200, {
+                    "ok": True, "slug": slug,
+                    "updated_at": existing.get("updated_at", ""),
+                })
+                return
+            skipped = plans_section.get("skipped")
+            if not isinstance(skipped, dict) or slug not in skipped:
+                # Idempotent: slug absent → no write, return existing
+                # updated_at unchanged.
+                self._send_json(200, {
+                    "ok": True, "slug": slug,
+                    "updated_at": existing.get("updated_at", ""),
+                })
+                return
+            # Present: pop + bump + atomic-write.
+            new_doc = copy.deepcopy(existing)
+            new_doc.get("plans", {}).get("skipped", {}).pop(slug, None)
+            new_doc["updated_at"] = _now_iso()
+            target = main_root / ".zskills" / "monitor-state.json"
+            _atomic_write_json(target, new_doc)
+            self._send_json(200, {
+                "ok": True, "slug": slug,
+                "updated_at": new_doc["updated_at"],
+            })
 
     def _handle_work_state_get(self) -> None:
         ctx = self._ctx()

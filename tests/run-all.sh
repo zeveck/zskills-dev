@@ -220,6 +220,8 @@ run_suite "test-fix-issues-selection-filter.sh" "tests/test-fix-issues-selection
 run_suite "test-plan-claim-collector.sh" "tests/test-plan-claim-collector.sh"
 run_suite "test-plan-claim-render-dom.sh" "tests/test-plan-claim-render-dom.sh"
 run_suite "test-mode-chip-three-state.sh" "tests/test-mode-chip-three-state.sh"
+run_suite "test-plans-skip-chip.sh" "tests/test-plans-skip-chip.sh"
+run_suite "test-plan-skip-clear-paths.sh" "tests/test-plan-skip-clear-paths.sh"
 run_suite "test-tab-dot-render-dom.sh" "tests/test-tab-dot-render-dom.sh"
 run_suite "test-doc-viewer-renderer.sh" "tests/test-doc-viewer-renderer.sh"
 run_suite "test-doc-viewer-shell.sh" "tests/test-doc-viewer-shell.sh"
