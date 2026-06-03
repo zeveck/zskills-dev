@@ -110,7 +110,7 @@ anything.
 ![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed.](assets/zskills-dashboard.png)
 
 > **Try it live:** an interactive, browser-only demo of this dashboard runs at
-> **<http://zskills.synapticnoise.com/demo/>** — drop plans into *Accepted*
+> **<http://zskills.synapticnoise.com/dashboard-demo/>** — drop plans into *Accepted*
 > (and issues into *Ready*) and watch them get worked, with the activity feed
 > and run-status chips updating live. *(The screenshot above is from that demo;
 > its plan names are illustrative placeholders.)*
