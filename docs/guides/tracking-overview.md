@@ -133,5 +133,3 @@ the audit and issues state that lives alongside it) by accident.
 - **Claiming work items** is a related but distinct mechanism: before a pipeline
   works an issue or plan, it claims it so two pipelines don't pick up the same
   item. That is separate from the commit-gating tracking described here.
-</content>
-</invoke>

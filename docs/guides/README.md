@@ -19,5 +19,3 @@ Practical guides for installing zskills and working with it day to day. Start wi
 ## See also
 
 - **[Skills reference](../skills/README.md)** — per-skill details for the 23 user-facing slash commands.
-</content>
-</invoke>
