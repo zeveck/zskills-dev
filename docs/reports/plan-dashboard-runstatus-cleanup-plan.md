@@ -17,7 +17,7 @@ updated: 2026-06-03
 |-------|--------|--------|-------|
 | 1 — Rip run-status pill + trigger plumbing + queue POST preserve-by-default | ✅ Done | 9ecd939 | 18 files; +457 / −1997; 7397/7397 tests pass |
 | 2 — Plans chip three-state + mode-conflict skip + SKIP chip × dismiss | ✅ Done | f6f134e | 25 files; +2571 / −67; 7464/7464 tests pass; 6/6 playwright |
-| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ⬚ Pending | | Scheduled for next cron fire |
+| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ✅ Done | e6a2d71 | 14 files; +401 / −7 + 3 new test files (~954 lines); 7519/7519 tests pass; 6/6 playwright |
 
 ## Phase 1 — what landed
 
@@ -76,5 +76,36 @@ Overall: 7464/7464 passed, 0 failed
 5. SKIP chip with × button — chip + `<button aria-label="Dismiss skip for …">` rendered
 6. × click clears via next poll — DOM `.skip-chip` count 1→0; server state `plans.skipped == {}`
 
-## Next
-Phase 3 (Issues × dismiss + activity-feed SKIP pill + CHANGELOG + final mirror sync) — scheduled via one-shot cron.
+## Phase 3 — what landed
+
+Commit `e6a2d71` on `feat/dashboard-runstatus-cleanup-plan`:
+
+- **Issues skip-chip × dismiss button** wired to new `/api/issue-reconsider` endpoint → `_handle_issue_reconsider_post` appends to `issues.reconsider[]` (mirroring the existing `/fix-issues reconsider <N>` CLI semantics).
+- **Sticky semantics preserved** — × click adds to `issues.reconsider[]` but does NOT remove from `issues.skipped[N]`. The chip stays visible until the next `/fix-issues` re-triages. Asymmetric with Plans skip (Phase 2) which is ephemeral — the asymmetry is intentional, baked into the plan's Explicit non-goal.
+- **Activity-feed `a-status-skip` pill** rendered for BOTH plan-skip and issue-skip events. Shared CSS class (`var(--pink)` = `#f778ba`), distinct underlying activity records.
+- **`fingerprintIssues` extended** to include the `skip_reason` tuple so dashboard re-renders when skip state changes.
+- **CSRF gate** on `/api/issue-reconsider` — wrong Origin → 403 + no state mutation.
+- **Idempotent dedup** — re-POST of same `{number}` is a no-op, no `updated_at` bump.
+- **Skill bump:** `zskills-dashboard` only (no other source skills touched).
+- **CHANGELOG entry** — single cohesive block covering all 3 phases + `Closes #1005. Closes #1006.` keywords on separate lines per the multi-issue close discipline.
+
+## Phase 3 — test tally
+```
+Overall: 7519/7519 passed, 0 failed
+```
+(+55 cases over Phase 2's 7464: `test-issue-reconsider-endpoint.sh` 15, `test-issues-skip-dismiss-ui.sh` 25, `test-activity-feed-skip-status.sh` 15.)
+
+## Phase 3 — Playwright verification
+All 6 dashboard-render checks executed; **Sticky semantics confirmed live** — after clicking × on issue #1020's skip-chip, `monitor-state.json:issues.reconsider == [1020]` AND `issues.skipped["1020"]` STILL PRESENT. CSRF curl → 403 verified. Idempotent re-click verified.
+
+## Surfaced follow-up (NOT a Phase 3 regression)
+
+The verifier discovered a **pre-existing collector gap** in `_read_state_file` at `skills/zskills-dashboard/scripts/zskills_monitor/collect.py:1711-1713` — the function filters `state["issues"]` to list-valued columns only, dropping the `issues.skipped` dict shape before it reaches `_read_monitor_skipped`. This is symmetric to the Phase 2 fix that added explicit `plans_skipped` extraction (Phase 3 spec did NOT require the analogous fix for issues). The Phase 3 CODE PATH (chip render + click → POST → state mutation) works end-to-end when an issue has `skip_reason` populated, but the collector currently strips that signal before render. Recommended: file a separate issue to extend `_read_state_file` with `issues_skipped` extraction symmetric to `plans_skipped`.
+
+## Issue claims released
+
+`#1005` and `#1006` released after PR merge (per Phase 6 land step).
+
+## Plan complete
+
+All 3 phases ✅ Done. Frontmatter flipped to `status: complete`. Branch `feat/dashboard-runstatus-cleanup-plan` ready to push as one cumulative PR.

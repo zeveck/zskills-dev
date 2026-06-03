@@ -1,7 +1,8 @@
 ---
 title: Dashboard Run-Status Cleanup
 created: 2026-06-02
-status: active
+status: complete
+completed: 2026-06-03
 ---
 
 # Plan: Dashboard Run-Status Cleanup
@@ -122,7 +123,7 @@ Skills that will be bumped at least once in this plan: `zskills-dashboard`, `wor
 |-------|--------|--------|-------|
 | 1 — Rip run-status pill + trigger plumbing + broaden queue POST preserve-by-default | ✅ Done | 9ecd939 | 18 files, +457/-1997; 7397/7397 tests pass; #1005 |
 | 2 — Plans chip three-state + mode-conflict skip + SKIP chip × dismiss (three clear paths) | ✅ Done | f6f134e | 25 files, +2571/-67; 7464/7464 tests pass; 6/6 playwright checks; #1005 |
-| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ⬚ | | |
+| 3 — Issues × dismiss + activity-feed SKIP pill + wrap-up | ✅ Done | e6a2d71 | 14 files, +401/-7 + 3 new tests; 7519/7519 tests pass; 6/6 playwright checks; #1006 |
 
 ---
 
