@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.03+7c9f46"
+  version: "2026.06.03+73561e"
 ---
 
 # Update Z Skills Infrastructure
@@ -1544,11 +1544,27 @@ not in this table is foreign and preserved untouched):
 | PreToolUse   | Edit\|Write | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"` |
 | PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 | PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
+| Stop         | (none)  | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/log-session-stop.sh"`               |
+| SubagentStop | (none)  | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/log-session-stop.sh"`               |
+| PermissionRequest | (none) | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/log-permission-request.sh"`       |
 
-All 11 rows carry `"type": "command"` and `"timeout": 5`. The
+All 14 rows carry `"type": "command"`; the PreToolUse / PostToolUse / Stop
+/ SubagentStop / PermissionRequest rows carry `"timeout": 5` except the two
+`log-session-stop.sh` rows (Stop, SubagentStop) which carry `"timeout":
+30` (transcript-render headroom). The
 `warn-config-drift.sh` hook lands in Phase 3 of
 `plans/DRIFT_ARCH_FIX.md`; the two PostToolUse rows become live once
-that hook is installed.
+that hook is installed. The three session-logging rows (Stop,
+SubagentStop, PermissionRequest) register WITHOUT a tool matcher — these
+events are matcher-less, so the settings.json shape is
+`"<Event>": [ { "hooks": [ { "type": "command", "command": "..." } ] } ]`
+(no `"matcher"` key), and the plugin-lane `hooks/hooks.json` uses the same
+matcher-less shape under `${CLAUDE_PLUGIN_ROOT}`. They drive the
+session-logging capability: `log-session-stop.sh` re-renders each
+transcript to per-session markdown (merging the permission sidecar by
+timestamp with a `[PERMISSION]` tag), and `log-permission-request.sh` is a
+passive, fail-open sidecar logger that NEVER blocks/approves/denies. Both
+no-op when `logging.enabled` is false.
 
 **Session-init-only `settings.json` load (#460).** `.claude/settings.json`
 is loaded ONCE at session start. The in-memory hook table is fixed at
@@ -1830,6 +1846,7 @@ STALE_LIST=(
   re-invocation-detect.sh
   review-loop.sh
   sanitize-pipeline-id.sh
+  session-logs.sh
   statusline.sh
   sync-pr-body-progress.sh
   verify-completed-checksums.sh

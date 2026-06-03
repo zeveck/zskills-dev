@@ -13,6 +13,10 @@
   "commit": {
     "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   },
+  "logging": {
+    "enabled": true,
+    "dir": ""
+  },
   "testing": {
     "unit_cmd": "bash tests/run-all.sh",
     "full_cmd": "bash tests/run-all.sh",

@@ -278,6 +278,9 @@ run_suite "test-build-rewrite-dev-urls.sh" "tests/test-build-rewrite-dev-urls.sh
 run_suite "test-prod-tree-no-dev-urls.sh" "tests/test-prod-tree-no-dev-urls.sh"
 run_suite "test-build-prod-strip-parity.sh" "tests/test-build-prod-strip-parity.sh"
 run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh"
+# Session-logging capability — Stop/SubagentStop renderer + permission merge,
+# passive/fail-open PermissionRequest hook, and the session-logs.sh helper.
+run_suite "test-session-logging.sh" "tests/test-session-logging.sh"
 # Phase 2 — SessionStart materialiser + dual-install detection + renderer.
 run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
 run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"

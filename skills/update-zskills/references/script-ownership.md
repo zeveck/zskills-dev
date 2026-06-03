@@ -48,6 +48,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `re-invocation-detect.sh`    | 1      | `draft-tests`                |
 | `review-loop.sh`             | 1      | `draft-tests`                |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
+| `session-logs.sh`            | 1      | `update-zskills`             |
 | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
 | `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `.zskills/dev-server.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
 | `sync-pr-body-progress.sh`   | 1      | `run-plan`                   |
@@ -59,7 +60,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 | `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
-Total: 32 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+Total: 33 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
 `create-worktree`, `defer-backoff-decide`, `detect-language`,
@@ -68,6 +69,7 @@ Total: 32 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `insert-test-spec-revisions`, `land-phase`, `migrate-paths`, `parse-plan`,
 `plan-drift-correct`, `port`, `post-run-invariants`,
 `re-invocation-detect`, `review-loop`, `sanitize-pipeline-id`,
+`session-logs`,
 `statusline`, `sync-pr-body-progress`, `verify-completed-checksums`,
 `worktree-add-safe`, `write-landed`, `zskills-paths`, `zskills-stub-lib`);
 4 Tier 2 (`build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
