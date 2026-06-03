@@ -120,7 +120,7 @@ _Status: ✅ Done._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — t
 
 ## Phase 2 — Planning peers: draft-plan, run-plan, refine-plan, draft-tests, plans
 
-_Status: pending._ The plan-authoring family; cross-references between them must be consistent (R6).
+_Status: ✅ Done._ The plan-authoring family; cross-references between them must be consistent (R6).
 
 - [ ] Run the per-doc pipeline on `draft-plan.md`, `run-plan.md`, `refine-plan.md`, `draft-tests.md`, `plans.md`.
 - [ ] `run-plan.md`: fix the `auto` description (mode-conflated — cherry-pick mode has no PR to auto-merge); replace cron-cadence mechanics with user-relevant "long phases don't burn context".

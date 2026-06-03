@@ -2,26 +2,72 @@
 
 > Draft a high-quality plan through iterative adversarial review: research, draft, review, devil's-advocate, refine -- repeated until convergence. Output is a plan file ready for `/run-plan` execution.
 
-## Usage
+## What it does
+
+`/draft-plan` turns a description of work into a written plan file you can execute with `/run-plan`. It does this by drafting the plan and then attacking it: one pass researches the problem, another writes a first draft, and then reviewers and a deliberately adversarial "devil's advocate" poke holes in it while a refiner addresses every finding. This review-and-refine cycle repeats until the plan stops accumulating substantive problems (or hits the round budget you set).
+
+The payoff is downstream. `/run-plan` executes a plan faithfully, so the quality of the plan is the quality of the result -- a weak plan executed perfectly is still a weak result. The adversarial drafting is where that quality is bought.
+
+The output is a single plan file with a structure `/run-plan` understands: an overview, a progress tracker, and numbered phases, each with goals, specific work items, design and constraints, and testable acceptance criteria. The file ends with a "Plan Quality" section recording how many rounds ran, whether the plan converged, and any concerns left unresolved.
+
+When run on a repository that protects its main branch, `/draft-plan` does its work in an isolated worktree and commits the finished plan there on a feature branch, rather than leaving it as a loose file. If you pass `auto`, it then opens a pull request for the plan and merges it once checks pass; without `auto`, the commit stays on the branch and you land it yourself.
+
+If the research turns up a task too broad to spec well in one plan -- too many phases, or sub-problems that share nothing -- `/draft-plan` will say so and recommend `/research-and-plan` to decompose it into focused sub-plans instead.
+
+## Typical usage
+
+The common case is a single sentence describing what you want planned:
 
 ```
-/draft-plan [output FILE] [rounds N] [auto] [brainstorm] [quiz] <description...>
+/draft-plan Add dark mode support to the editor
 ```
+
+You can name the output file (otherwise the path is derived from the description), and you can raise the number of review rounds when the design is hairy:
+
+```
+/draft-plan output plans/DARK_MODE.md Add dark mode support
+/draft-plan rounds 5 Redesign the solver architecture
+```
+
+When you want the plan to land automatically once it is drafted, add `auto`. This is the shape used when chaining straight into execution -- draft the plan, land it, then run it:
+
+```
+/draft-plan plans/THERMAL_PLAN.md auto Implement the thermal domain
+```
+
+For work where the design itself is still open, start with an interactive conversation before any drafting: `brainstorm` for co-designing a fuzzy idea, or `quiz` for a requirements interview when you know roughly what you want but need the precise requirements drawn out.
+
+```
+/draft-plan brainstorm Add a settings panel
+/draft-plan quiz Add dark mode support
+```
+
+## Companion skills
+
+- **`/run-plan` is the next step.** `/draft-plan` produces a plan file; `/run-plan` executes it. They are sequential, not alternatives -- if you already have a plan file, skip straight to `/run-plan`.
+- **`/refine-plan`** adjusts a plan that is already mid-execution when reality has drifted from what the plan assumed -- it sits between `/draft-plan` and `/run-plan` for in-flight corrections.
+- **`/draft-tests`** is the test-spec sibling of the plan-authoring family, using the same adversarial drafting to produce test specifications.
+- **`/research-and-plan`** is the tool to reach for when a goal is broad enough to decompose into several sub-plans; `/draft-plan` will hand off to it when the task is too big for one plan.
+- For a one-commit change where the approach is already settled, `/do` (or `/quickfix`, where the project allows editing main in place) is lighter than drafting a full plan.
 
 ## Arguments
 
+```
+/draft-plan [output FILE] [rounds N] [auto] [brainstorm|quiz] <description...>
+```
+
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `description` | Yes | What the plan should accomplish, in natural language |
-| `output FILE` | No | Output path for the plan file (default: auto-derived from description). May appear as `output <path>` or as a bare leading `*.md` token |
-| `rounds N` | No | Maximum adversarial review rounds (default: 3) |
-| `auto` | No | After the Phase 6 worktree commit, dispatch `/land-pr` to push the branch, open a PR, monitor CI, and auto-merge. Without `auto`, the plan is committed in the worktree and the caller lands manually. Whitespace-anchored, case-insensitive, match-anywhere in `$ARGUMENTS`. |
-| `brainstorm` | No | Before Phase 1, load `references/brainstorm.md` and run an 8-step interactive design dialogue that captures decisions/rationale/open questions into a durable `/tmp` notes file, then feeds the notes into the research fan-out. Whitespace-anchored, case-insensitive, match-anywhere -- but anchored so it does **not** match `brainstorming` / `brainstormed` / `brainstorms`. |
-| `quiz` | No | Before Phase 1, load `references/quiz.md` and run an interactive Socratic requirements interview that elicits intent, scope, and priorities through conversation, persisting state to a durable `/tmp` file and seeding the deferred research fan-out with the captured requirements. **Leading-flag only** -- recognized only when it appears in the flag cluster before the description begins (like `output` / `rounds`), **not** match-anywhere like `auto` / `brainstorm`. A `quiz` inside the description text is description, not the flag. |
+| `description` | Yes | What the plan should accomplish, in natural language. Can be brief ("add dark mode") or a detailed multi-paragraph brief. Everything after the recognized leading flags is the description. |
+| `output FILE` | No | Where to write the plan file. Defaults to a path derived from the description. May be given as `output <path>` or as a bare leading `*.md` token before the description begins. |
+| `rounds N` | No | Maximum review-and-refine cycles. Defaults to 3. The process stops early if a round converges with no substantive new issues. |
+| `auto` | No | After the plan is committed, open a pull request, run checks, and merge it. Without `auto`, the plan is committed on the feature branch and you land it manually. Recognized anywhere in the arguments. |
+| `brainstorm` | No | Run an interactive design dialogue before drafting, then feed what you decided into the research. Recognized only as a leading flag, before the description begins. |
+| `quiz` | No | Run an interactive requirements interview before drafting, then seed the research with the requirements it captures. Recognized only as a leading flag, before the description begins. |
 
-> `brainstorm` and `quiz` are progressive-disclosure references: their bodies are
-> conditionally loaded only when the corresponding flag is set, keeping the base
-> SKILL.md lean for the common case.
+`brainstorm` and `quiz` are mutually exclusive -- both are pre-draft interviews, and asking for both at once is an error rather than a silent drop of one. Because they are recognized only at the front of the arguments, a description word like "build a quiz app" does not trigger either mode; to enable a mode you must lead with the flag, not append it.
+
+`auto` mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and `/quickfix`. It controls only whether the plan lands automatically -- it does not skip the review rounds or the brainstorm/quiz dialogue.
 
 ## Examples
 
@@ -29,62 +75,20 @@
 /draft-plan Add dark mode support to the editor
 /draft-plan output plans/DARK_MODE.md Add dark mode support
 /draft-plan rounds 5 Redesign the solver architecture
-/draft-plan auto Implement undo/redo for the block editor
+/draft-plan plans/THERMAL_PLAN.md auto Implement the thermal domain
 /draft-plan brainstorm Add a settings panel             # interactive design dialogue first
-/draft-plan quiz Add dark mode support                   # interactive requirements interview first
-/draft-plan output p.md quiz rounds 5 Add dark mode      # quiz in the leading flag cluster, any order
-/draft-plan output p.md build a quiz app                 # QUIZ_FLAG NOT set -- "quiz" is description
-/draft-plan add dark mode quiz                           # QUIZ_FLAG NOT set -- trailing quiz is description
+/draft-plan quiz Add dark mode support                  # interactive requirements interview first
+/draft-plan output p.md quiz rounds 5 Add dark mode     # quiz in the leading flag cluster, any order
+/draft-plan output p.md build a quiz app                # "quiz" here is description, not the flag
+/draft-plan add dark mode quiz                          # trailing "quiz" is description, not the flag
 ```
-
-> `auto` mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and
-> `/quickfix`: it triggers the post-commit `/land-pr` auto-merge dispatch. It
-> does **not** skip the planning review rounds or the brainstorm/quiz dialogue.
-
-## Brainstorm mode (`brainstorm`)
-
-Loads [`references/brainstorm.md`](https://github.com/zeveck/zskills/blob/main/skills/draft-plan/references/brainstorm.md) and runs an 8-step interactive dialogue **before Phase 1**:
-
-1. Restate the seed idea in 1-2 sentences.
-2. Optionally offer a visual companion (live HTML demo or `playwright-cli` screenshot) when the idea is visual.
-3. Ask clarifying questions one at a time -- most fundamental first.
-4. Propose 2-3 approaches with trade-offs and an explicit recommendation at each fork.
-5. Apply ruthless YAGNI and gentle pushback.
-6. Capture decisions, rationale, and rejected alternatives into `/tmp/draft-plan-brainstorm-$TRACKING_ID.md` as they're made.
-7. Offer the transition checkpoint when open questions are exhausted.
-8. On affirmative confirm, flip the notes file status to `ready` and hand off to Phase 1.
-
-The notes file is a **resumable state machine** -- if compaction interrupts the dialogue, re-entry resumes from `status: in-progress` rather than restarting. The Phase 1 research agents are then seeded with the literal notes-file path as the primary design seed; the Codebase/Patterns/Prior-art agents still run to ground the design against the repo. Demo HTML lives under `/tmp/draft-plan-demo-$TRACKING_ID/` on an OS-assigned ephemeral port, never inside the worktree.
-
-## Quiz mode (`quiz`)
-
-Loads [`references/quiz.md`](https://github.com/zeveck/zskills/blob/main/skills/draft-plan/references/quiz.md) and runs an interactive **requirements interview** before any research:
-
-- **No research during the interview** -- conversation runs against the agent's existing knowledge. Codebase uncertainties are deferred to the post-interview fan-out as open questions, never interrogated out of the user.
-- **Ask vs defer rule:** ask the *user* about intent, scope, priorities, preferences, and success criteria; defer any *codebase fact* the agent is unsure of to the fan-out's open-questions list.
-- **Running understanding summary** is restated every turn (goal / in-scope / out-of-scope / confirmed assumptions / open) so the user can correct drift in one reply.
-- **Persistence + recovery-read:** state is written to `/tmp/draft-plan-quiz-$TRACKING_ID.md` after every answer, and re-read on resume after compaction before issuing the next question.
-- **Termination contract:** the agent proposes readiness each round; it terminates only on an explicit, normalized, whole-message go-word (`draft` / `go` / `ready` / `proceed`). A go-word embedded in a steering sentence does **not** exit. Bare affirmations count only when they directly answer a just-posed readiness offer.
-- **On exit,** the Phase 1 research fan-out runs unchanged but seeded with the durable interview file as priors, and the deferred open questions are handed to the Codebase/Prior-art agents to resolve. Phase 6 finalize adds a "Requirements captured via quiz" subsection to the plan's `## Plan Quality` section -- a distillation, not a raw transcript.
-
-`quiz` is deliberately leading-flag-only (unlike `auto` and `brainstorm`) so that a description like "build a quiz app" or an autonomously-dispatched call from `/research-and-plan` cannot accidentally hang on an interactive prompt with no human to answer.
-
-## Common Patterns
-
-- **Standard plan drafting:** `/draft-plan Implement physics simulation blocks` -- research, draft, review cycles until convergence
-- **Custom output:** `/draft-plan output plans/PHYSICS_BLOCKS.md Implement physics simulation blocks`
-- **More review rounds:** `/draft-plan rounds 5 Redesign the state machine`
-- **Interactive design exploration:** `/draft-plan brainstorm <idea>` -- pre-Phase-1 dialogue with optional visual demo
-- **Interactive requirements elicitation:** `/draft-plan quiz <idea>` -- pre-research Socratic interview, then seeded fan-out
-- **Autonomous (from /research-and-go):** `/draft-plan auto <description>` -- skip confirmation checkpoints
 
 ## Tips & Gotchas
 
-- Must run at top level -- internally dispatches reviewer, devil's-advocate, and refiner sub-agents in parallel
-- The plan output is designed to be executed by `/run-plan` -- each phase has clear acceptance criteria
-- Adversarial review means multiple agents poke holes in the plan from different angles before convergence
-- Completed phases from a prior `/run-plan` execution are never modified during refinement
-- If the goal is broad enough to decompose into multiple sub-plans, consider `/research-and-plan` instead
-- Reserve `/draft-plan` for skills/workflows with non-trivial design surface (integration points, multiple commands, hook interactions) -- thin prompt changes don't need adversarial review
-- `brainstorm` and `quiz` are not mutually exclusive at the parser level, but they target different gaps -- `brainstorm` for "design surface is fuzzy and I want a co-design conversation"; `quiz` for "I know roughly what I want but the agent needs to extract precise requirements." Pick the one that matches the bottleneck; using both at once is unusual.
-- `quiz` is leading-only by design -- to enable it you must lead with the flag (`/draft-plan quiz <description>`), not append it (`/draft-plan <description> quiz`)
+- The plan output is designed to be executed by `/run-plan` -- each phase has clear, testable acceptance criteria.
+- Adversarial review means multiple reviewers poke holes in the plan from different angles before it converges; a comfortable review is a useless one.
+- Drafting against an existing plan file modernizes it rather than starting blank -- the old plan's intent is treated as research input, and the review checks that nothing from it was lost.
+- If a plan does not converge within the round budget, it is still written, with a "remaining concerns" section, and you decide whether to proceed or refine further.
+- If the goal is broad enough to decompose into multiple sub-plans, reach for `/research-and-plan` instead.
+- Reserve `/draft-plan` for work with non-trivial design surface (integration points, multiple commands, staged phases). A single, settled change is lighter as a `/do` or `/quickfix`.
+- Choose between the interview modes by the bottleneck: `brainstorm` when the design surface is fuzzy and you want to co-design it, `quiz` when you know roughly what you want but the requirements need to be drawn out precisely.
