@@ -1,3 +1,10 @@
+---
+title: Plugin-Lane Root Resolution Fix
+created: 2026-06-03
+status: complete
+completed: "2026-06-03T09:03:27-04:00"
+---
+
 # Plugin-Lane Root Resolution Fix
 
 **Status:** ✅ COMPLETE — all 3 phases executed, verified, and merged via PR #1046 (main @ `5c8fc9a`, 2026-06-03). Mirror-less plugin install verified working LIVE (`claude --plugin-dir` → `/zs:update-zskills` reports `lane: plugin`; bundled verifier `Overall: PASS`). Full suite `7601/7601`. See `docs/reports/plan-plugin-lane-root-resolution-fix.md`.
