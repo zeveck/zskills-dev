@@ -112,6 +112,17 @@ else
   fail "plugin-lane explanation text missing"
 fi
 
+# The bare-call plugin arm now ALSO runs the post-install verifier (the
+# plugin-lane analog of Step G.5). Scope the assertion to the Step 0.7
+# region (from its header to the next top-level '## ' header) so it does not
+# spuriously match Step G.5's own verify-install.sh reference further down.
+STEP07_REGION="$(awk '/^## Step 0\.7 — Lane check/{f=1} f{print} f&&/^## Bare-preset config-only short-circuit/{exit}' "$REPO_ROOT/$SKILL")"
+if printf '%s\n' "$STEP07_REGION" | grep -q "verify-install.sh"; then
+  pass "Step 0.7 plugin branch references verify-install.sh (runs post-install verifier)"
+else
+  fail "Step 0.7 plugin branch does NOT reference verify-install.sh (verifier not wired into bare-call arm)"
+fi
+
 # ── AC1 — pure-plugin not flipped ─────────────────────────────────────────
 P1="$TMP/plugin"
 base_fixture "$P1"
