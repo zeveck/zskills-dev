@@ -96,13 +96,13 @@ which must come first.
 
 | Argument | What it does |
 |----------|--------------|
-| `pr` | Push the current branch and open a pull request to main. Must be the **first** token — this prevents a scope hint that happens to contain "pr" from triggering PR mode. Requires a clean working tree. (`skills/commit/SKILL.md:28`, `skills/commit/SKILL.md:25`, `skills/commit/SKILL.md:468`) |
-| `scope` | A free-text hint (e.g. `skill updates`, `parser reset button fix`) that guides which files count as related. Advisory — the skill still reads the diffs. (`skills/commit/SKILL.md:20`, `skills/commit/SKILL.md:464`) |
-| `push` | Commit, then push to the remote. (`skills/commit/SKILL.md:22`, `skills/commit/SKILL.md:419`) |
-| `land` | Cherry-pick the current worktree's commits onto main, run tests, and record that the work has landed. Only valid when you are in a worktree. (`skills/commit/SKILL.md:24`, `skills/commit/modes/land.md:10`) |
-| `auto` | In PR mode, request that the pull request auto-merge once CI passes. Has no effect with `push` or `land`. (`skills/commit/SKILL.md:154`, `skills/commit/SKILL.md:41`) |
+| `pr` | Push the current branch and open a pull request to main. Must be the **first** token — this prevents a scope hint that happens to contain "pr" from triggering PR mode. Requires a clean working tree. |
+| `scope` | A free-text hint (e.g. `skill updates`, `parser reset button fix`) that guides which files count as related. Advisory — the skill still reads the diffs. |
+| `push` | Commit, then push to the remote. |
+| `land` | Cherry-pick the current worktree's commits onto main, run tests, and record that the work has landed. Only valid when you are in a worktree. |
+| `auto` | In PR mode, request that the pull request auto-merge once CI passes. Has no effect with `push` or `land`. |
 
 If you give no mode token at all, `/commit` reads your project's configured
 default landing behavior to decide what to do — on a project that lands
 through pull requests, a bare `/commit` behaves like `/commit pr`.
-(`skills/commit/SKILL.md:31`, `skills/commit/SKILL.md:139`)
+

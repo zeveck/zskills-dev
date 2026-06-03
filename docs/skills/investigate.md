@@ -49,7 +49,7 @@ When the input is an issue number, `/investigate` also claims that issue first, 
 |----------|----------|-------------|
 | `<description or #issue>` | Yes | The bug to investigate — either a plain-text symptom description, or a GitHub issue reference like `#387` |
 
-`/investigate` takes a single argument. Two forms are accepted (`skills/investigate/SKILL.md:40-43`):
+`/investigate` takes a single argument. Two forms are accepted:
 
 - **`#N`** — a GitHub issue number. The issue is fetched with `gh issue view`, and its title, body, and comments become the starting point. This form also triggers the issue claim described under Typical usage.
 - **Free text** — a description of the bug: an error message, an observed behavior, or a failing test name.
