@@ -46,7 +46,7 @@ Run bare, it lists the ready queue. Give it a number to run that many plans from
 - **`/run-plan`** — the executor `/work-on-plans` calls for each plan. `/work-on-plans` is the batch driver; `/run-plan` does the actual phase-by-phase work on one plan. When you only have one plan to run, use `/run-plan` directly.
 - **`/plans`** — the read-only plan dashboard. Check `/plans` first to review what's ready and in what order before kicking off a batch.
 - **`/draft-plan`** — produces the plan files in the first place. A plan has to be drafted and marked ready before `/work-on-plans` will run it.
-- **`/zskills-dashboard`** — the interactive status UI for in-flight pipelines; it reads the same ready queue `/work-on-plans` drains, and is where you can interactively prioritize it.
+- **`/zskills-dashboard`** — the interactive status UI for in-flight pipelines; it surfaces the same ready queue `/work-on-plans` drains as the plan board's **Accepted** column. Drag a plan into Accepted (or out of it) to control what the next run picks up.
 - **`/fix-issues`** — the bug-backlog counterpart. Same batch-and-schedule shape, but it drives issues instead of plans.
 
 ## Arguments
@@ -132,4 +132,5 @@ Cancel the active recurring schedule.
 - Recurring `finish`-mode schedules require intervals of at least an hour; `phase` mode has no minimum.
 - A plan must be drafted and marked ready before `/work-on-plans` will run it — `/draft-plan` and `/plans` are how plans get there.
 - If a queued plan's file is missing, `/work-on-plans` stops and tells you instead of silently skipping it, so you can remove the stale entry.
+- The ready queue (its internal name) shows up on the `/zskills-dashboard` plan board as the **Accepted** column — drag plans into Accepted to enqueue them and reorder within it to set priority.
 - `/work-on-plans` does not choose how each plan lands — `/run-plan` decides that from its own configuration.

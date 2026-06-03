@@ -6,14 +6,18 @@ argument list, see the [per-skill reference](../skills/README.md).
 
 ## Philosophy
 
-Z Skills matches the skill to the work — not the other way around. A typo
-fix runs through `/quickfix` or `/do`; a backlog of small bugs through
-`/fix-issues`; a feature whose approach still needs to be worked out gets
-`/draft-plan` first; a broad goal that splits into several dependent
-sub-plans gets `/research-and-plan`. Plans are the exception, not the
-default — reach for `/draft-plan` only when the work has open design
-questions or needs to be staged into ordered phases, not just because it
-touches a lot of files.
+Z Skills matches the skill to the work — not the other way around. The
+everyday workhorse is `/do` (with its co-equal peer `/quickfix`): when you
+can describe the change and its approach is clear, `/do` it — whatever the
+size, from a typo to a wide refactor to plumbing a new UI element. A backlog
+of bugs to clear runs through `/fix-issues`. Reach for `/draft-plan` **freely**
+— lean toward it on a genuine toss-up — whenever the work has open design to
+work out or needs to be staged into ordered phases. A broad goal that splits
+into several dependent sub-plans gets `/research-and-plan`.
+
+The axis is **design-depth / staging, not file-count**: thirty files changed
+by one settled approach is still a `/do`; one change with unresolved design is
+a `/draft-plan`.
 
 **Your changes are checked before they land**, whichever skill you pick:
 tests run, a separate review pass re-checks the work, and nothing reaches
@@ -39,7 +43,29 @@ when needed; otherwise the configured default applies.
 
 ---
 
-## 1. Plan-driven feature
+## 1. Everyday change — just `/do` it
+
+**When:** Any change you can describe whose approach is clear — a doc edit, a
+bug fix, a refactor, a new UI element, a content update. This is the workhorse
+you reach for most; most "just ask Claude" work runs through it.
+
+```text
+/do "<task>" pr          # worktree-isolated; required when main is protected
+# or, only when main is NOT protected:
+/quickfix "<task>"       # in-place on main, no worktree
+```
+
+- `/do` and `/quickfix` are **peers, not tiers** — same lifecycle (triage →
+  review → commit → PR → land) and same one-commit-PR shape. The only
+  difference is *where the work tree lives*.
+- Choose by **project policy, not task size**: `main_protected: true`
+  projects must use `/do` (it isolates work in a worktree); `/quickfix` edits
+  in place on `main` and is valid only when `main_protected: false`.
+- "Lightweight" means **no staged phases and no open design** — *not* "small."
+  A wide but settled change is still a `/do`; reach for `/draft-plan` only when
+  the design is open or the work needs to be staged into ordered phases.
+
+## 2. Plan-driven feature
 
 **When:** You have a goal and want a reviewed plan before any code is written.
 
@@ -57,7 +83,7 @@ when needed; otherwise the configured default applies.
   next one) and `auto` lets it land each phase autonomously, so you can walk
   away. Drop `finish auto` to step through one phase at a time.
 
-## 2. Plan with test specs
+## 3. Plan with test specs
 
 **When:** You want test coverage designed into the plan up front, not bolted on.
 
@@ -75,7 +101,7 @@ when needed; otherwise the configured default applies.
   (design dialogue) or `quiz` (requirements interview) before `/draft-tests`
   appends test specs.
 
-## 3. Big goal decomposition
+## 4. Big goal decomposition
 
 **When:** The goal is too large for one plan and decomposes into several
 dependent sub-plans.
@@ -98,7 +124,7 @@ Or, to draft **and** execute everything in one autonomous pass:
 - `/research-and-go` uses the same drafting machinery but continues straight
   into execution. Use it when you've said "walk away."
 
-## 4. Mid-flight plan drift
+## 5. Mid-flight plan drift
 
 **When:** A plan is partway executed and reality has diverged from the spec.
 
@@ -112,7 +138,7 @@ Or, to draft **and** execute everything in one autonomous pass:
   original design.
 - Resume `/run-plan` to execute the corrected remaining phases.
 
-## 5. Backlog bug sprint
+## 6. Backlog bug sprint
 
 **When:** You have several small bugs or issues to clear in one batch.
 
@@ -127,7 +153,7 @@ Or, to draft **and** execute everything in one autonomous pass:
 - `/fix-report` walks the sprint results, gates landing on your review of each
   manual verification, lands the fixes, and closes the GitHub issues.
 
-## 6. Unclear bug → root cause
+## 7. Unclear bug → root cause
 
 **When:** Something is broken but the root cause is not yet proven.
 
@@ -141,23 +167,6 @@ Or, to draft **and** execute everything in one autonomous pass:
 - Once the root cause is known, ship the fix with `/do pr` (worktree) or
   `/quickfix` (no worktree) — the fix is now a known change, not an
   investigation.
-
-## 7. Small ad-hoc change
-
-**When:** A one-commit change you can describe directly, no plan needed.
-
-```text
-/do "<task>" pr          # worktree-isolated; required when main is protected
-# or, only when main is NOT protected:
-/quickfix "<task>"       # in-place on main, no worktree
-```
-
-- `/do` and `/quickfix` are **peers, not tiers** — same lifecycle (triage →
-  review → commit → PR → land) and same one-commit-PR shape. The only
-  difference is *where the work tree lives*.
-- Choose by **project policy, not task size**: `main_protected: true`
-  projects must use `/do` (it isolates work in a worktree); `/quickfix` edits
-  in place on `main` and is valid only when `main_protected: false`.
 
 ## 8. Pre-commit quality gate
 
@@ -189,20 +198,18 @@ Or, to draft **and** execute everything in one autonomous pass:
 
 ## 10. Proactive coverage
 
-**When:** You want to find test gaps before they bite, or verify UI behavior
-in a real browser.
+**When:** You want to find test gaps before they bite.
 
 ```text
 /qe-audit
-/manual-testing
 ```
 
 - `/qe-audit` proactively scans the repo for test-coverage gaps and likely
   bugs and **files GitHub issues** — it generates work, where
   `/verify-changes` only gates your current changes.
-- `/manual-testing` gives browser-based verification recipes (driven by
-  `playwright-cli`) for confirming user-facing behavior with real
-  mouse/keyboard events.
+- `/manual-testing` is an internal helper you don't run directly —
+  `/verify-changes` dispatches it to verify UI behavior with real
+  mouse/keyboard events (`playwright-cli`).
 
 ## 11. Status & monitoring
 
