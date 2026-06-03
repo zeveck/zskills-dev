@@ -1,111 +1,105 @@
 # Inspecting & Monitoring a zskills Project
 
-> **Audience:** anyone driving or observing a zskills-managed repo who wants to
+> **Audience:** anyone driving or watching a zskills-managed repo who wants to
 > answer *"what is the system doing, what has it done, and what's stuck?"* —
 > without reading git history by hand.
 >
-> **Scope:** this is the **operator/observer** guide. For the enforcement
-> mechanics (how hooks gate commits) see
-> [`tracking-overview.md`](tracking-overview.md); for the
-> marker naming scheme see
-> [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md).
+> **Scope:** this guide covers the views and files you read to *observe* a
+> project. For how hooks gate commits, see
+> [`tracking-overview.md`](tracking-overview.md); for the marker naming scheme
+> see [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md).
 
 ## You don't need an agent to watch zskills
 
-Everything zskills records is a **plain-text file or a web page a human can
-read directly**. The skills and hooks below are conveniences over that data —
-they don't own it. Two consequences worth internalizing up front:
+Everything zskills records is a **plain-text file or a web page you can read
+directly**. The skills and hooks below are conveniences over that data — they
+don't own it. Two things follow from that:
 
 - **The dashboard is for you.** `/zskills-dashboard` serves a normal web UI in
   your browser — open it and click around; you don't need Claude in the loop to
   read plans, issues, worktrees, and tracking activity.
-- **The trackers are a human-auditable trail.** Every claim, step, and
-  completion marker is a small text file under `.zskills/`. You can verify what
-  a pipeline actually did — phase by phase — with `ls`, `cat`, and `grep`
-  yourself. The hooks read the same files to *enforce*; nothing stops you from
-  reading them to *audit*. No skill invocation required.
+- **The tracking files are a trail you can read.** Every claim, step, and
+  completion marker is a small text file under `.zskills/`. You can check what
+  a pipeline actually did, phase by phase, with `ls`, `cat`, and `grep`. The
+  hooks read the same files to decide whether a commit is allowed; nothing
+  stops you from reading them too.
 
 ## The mental model: live state vs. durable record
 
-zskills leaves two kinds of trail, and most confusion comes from conflating
-them:
+zskills leaves two kinds of trail, and most confusion comes from mixing them
+up:
 
 | | **Live state** (what's happening *now*) | **Durable record** (what *happened*) |
 |---|---|---|
 | **Where** | `.zskills/claims/`, `current_phase` chips, crons, `.landed` | `fulfilled.*` markers, plan reports, git history |
-| **Lifetime** | exists only while a pipeline is in-flight; released/removed at completion | persists across runs; survives `clear-tracking.sh` |
-| **Answers** | "is anything running? is it stuck?" | "what has this project ever shipped, by which skill, when?" |
-| **Inspect with** | `/briefing`, dashboard, `ls .zskills/claims` | `fulfilled.*` queries, `/session-report`, `docs/reports/` |
+| **Lifetime** | exists only while a pipeline is in flight; released or removed when it finishes | persists across runs; survives cleanup |
+| **Answers** | "is anything running? is it stuck?" | "what has this project shipped, by which skill, when?" |
+| **Read it with** | `/briefing`, the dashboard, `ls .zskills/claims` | `fulfilled.*` files, `/session-report`, `docs/reports/` |
 
-Everything below is one of these two lenses.
+Everything below is one of these two views.
 
 ---
 
 ## 1. The four inspection skills
 
-These are the high-level, human-friendly views. Reach for these first; drop to
-the raw files (sections 2–4) when you want to verify them or go deeper.
+These are the high-level, friendly views. Reach for these first; drop to the
+raw files (sections 2–4) when you want to confirm them or dig deeper.
 
 | Skill | Shows | Reach for it when |
 |-------|-------|-------------------|
 | `/briefing` | worktree status, open checkboxes, recent commits | "where does the project stand right now?" |
 | `/plans` | every plan's status + the next ready plan | "what plan should run next / what's blocked?" |
-| `/zskills-dashboard` | local web UI: plans, issues, worktrees, branches, tracking activity, drag-and-drop priority queue | you want a live, clickable overview |
-| `/session-report` | what **this session** said it would do vs. what actually shipped (verified against git/PRs/plans, not memory) | "did I actually land everything I claimed this session?" |
+| `/zskills-dashboard` | local web UI: plans, issues, worktrees, branches, tracking activity, a drag-and-drop priority queue | you want a live, clickable overview |
+| `/session-report` | what **this session** said it would do vs. what actually shipped (checked against git/PRs/plans, not memory) | "did I actually land everything I claimed this session?" |
 
-### `/briefing` — project status, with modes & a period window
+### `/briefing` — project status, with modes and a time window
 
 The default at-a-glance view: recent commits, open checkboxes, worktree state.
-It takes a mode and (for `report`) a time window:
+It takes a mode, and `report` takes a time window:
 
 ```text
 /briefing                # summary (default)
-/briefing report 24h     # fuller report over a time window (1h|6h|24h|2d|7d)
-/briefing verify         # verify recent changes hold up
+/briefing report 24h     # fuller report over a window (1h|6h|24h|2d|7d)
+/briefing verify         # check that recent changes hold up
 /briefing current        # what's in flight
 /briefing worktrees      # worktree inventory
-/briefing every 6h       # schedule a recurring briefing (stop / next manage it)
+/briefing every 6h       # run a recurring briefing (stop / next manage it)
 ```
 
 ### `/plans` — the plan queue
 
 The in-terminal plan view: every plan's status and **the next ready plan to
 run** (dependencies satisfied, not blocked, not already in flight). This is the
-"what should happen next?" lens — the dashboard (below) is its clickable
-web equivalent.
+"what should happen next?" view; the dashboard (below) is its clickable web
+equivalent.
 
 ```text
 /plans            # status of every plan + the next ready one
-/plans details    # per-plan detail
+/plans details    # one line per plan
 /plans next       # just the next ready plan
 /plans rebuild    # regenerate the plan index
 ```
 
-**Two read-only queue lenses sit side by side.** `/plans` shows the *status of
-every plan*; `/work-on-plans` (with no args) lists the *prioritized ready
-queue* — the dashboard's drag-and-drop order, read from
-`.zskills/monitor-state.json` (`plans.ready`) — and `/work-on-plans next` shows
-whether a recurring batch run is scheduled. Both are read-only **until** you
-hand them an action: `/plans rebuild` regenerates the index;
-`/work-on-plans N|all [phase]` dispatches `/run-plan` per queued plan (the
-execution mode — the bug-side analogue is `/fix-issues`). The default
-mode is `finish` (one PR per plan); the `phase` token opts out to
-one-phase-at-a-time pacing.
+`/plans` is read-only — it shows status and tells you what's next, but doesn't
+start anything. To actually run the ready plans, `/work-on-plans` takes the
+prioritized queue (the same order you set by dragging in the dashboard) and
+runs `/run-plan` for each. By default it opens one PR per plan; add the `phase`
+token to run one phase at a time instead.
 
 ### `/zskills-dashboard` — the browser view
 
-Starts a detached local web server (Python `http`, port from `DEV_PORT` /
-`dev_server.default_port` / `port.sh`) reading `.zskills/monitor-state.json`:
+Starts a local web server in the background and opens a page that reads the
+project's live state:
 
 ```text
 /zskills-dashboard start | stop | status | restart
 ```
 
-Then open `http://localhost:<port>` in your browser — a human-readable page
-(plans, issues, worktrees, branches, tracking activity, a drag-and-drop
-priority queue). `restart` = stop+start (use after code changes). Leave it
-running and refresh to watch a pipeline progress without asking the agent
-anything.
+The `start` command prints the URL — open it in your browser to see plans,
+issues, worktrees, branches, tracking activity, and a drag-and-drop priority
+queue. `restart` is stop-then-start (use it after you change the dashboard's
+own code). Leave it running and refresh the page to watch a pipeline progress
+without asking the agent anything.
 
 ![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed.](assets/zskills-dashboard.png)
 
@@ -118,33 +112,34 @@ anything.
 ### `/session-report` — the honesty check
 
 Reconciles what **this session** *said* it would do against what actually
-shipped — verified against **ground truth** (git, PRs, plans, worktrees), not
-conversation memory. It takes no arguments; you run it at the end of a working
-session. It catches the two failure modes memory can't: "I thought I shipped X
-but the PR never merged," and "I did finish Y — in another session." Use it
-before you trust a session's own summary of itself.
+shipped — checked against git, PRs, plans, and worktrees, not conversation
+memory. It takes no arguments; run it at the end of a working session. It
+catches the two things memory gets wrong: "I thought I shipped X but the PR
+never merged," and "I did finish Y — in another session." Run it before you
+trust a session's own summary of itself.
 
 ---
 
-## 2. Tracking markers as an audit ledger
+## 2. Tracking markers as a record of what happened
 
-`.zskills/tracking/<pipeline-id>/` holds the markers the enforcement hooks use
-(`requires.*`, `step.*`) **and** the durable completion records (`fulfilled.*`).
-The audit value lives almost entirely in the `fulfilled.*` set — and, again,
-these are plain files you can read yourself to verify any claim a skill makes.
+`.zskills/tracking/<pipeline-id>/` holds the markers the hooks use to gate
+commits (`requires.*`, `step.*`) **and** the durable completion records
+(`fulfilled.*`). The record you'll care about is the `fulfilled.*` set — these
+are plain files you can read to confirm any claim a skill makes.
 
 ### The marker families
 
 | Family | Role | Lifetime |
 |--------|------|----------|
-| `requires.<skill>.<id>` | a declared obligation ("this skill must run before landing") | transient — cleared by `clear-tracking.sh` |
-| `step.<skill>.<id>.<stage>` | progress within a pipeline (`implement` / `verify` / `report` / `land`) | transient |
-| `fulfilled.<skill>.<id>` | **a completion record** — one per invocation that landed work | **durable** — preserved by `clear-tracking.sh` |
+| `requires.<skill>.<id>` | a declared obligation ("this skill must run before landing") | temporary — cleared on cleanup |
+| `step.<skill>.<id>.<stage>` | progress within a pipeline (`implement` / `verify` / `report` / `land`) | temporary |
+| `fulfilled.<skill>.<id>` | **a completion record** — one per invocation that landed work | **durable** — kept on cleanup |
 
-`clear-tracking.sh` is built around exactly this distinction: it **preserves**
-`fulfilled.{run-plan,land-pr,commit,do,fix-issues,quickfix}.*` (the history)
-and clears everything else (the in-flight scaffolding). So after cleanup, the
-tracking dir *is* the completion ledger.
+Cleanup is built around exactly this split: it **keeps** the `fulfilled.*`
+completion records for the skills that land work (`/run-plan`, `/land-pr`,
+`/commit`, `/do`, `/fix-issues`, `/quickfix`) and clears everything else (the
+in-flight scaffolding). So after cleanup, the tracking directory *is* your
+completion history.
 
 ### What a completion record contains
 
@@ -166,58 +161,53 @@ date: 2026-05-30T01:14:23-04:00
 ```
 
 That's enough to answer "which plan, which phase, landed via which PR, when" —
-no git archaeology required.
+no digging through git required.
 
-### Verifying a pipeline's steps by hand
+### Reading a pipeline's steps by hand
 
-You can reconstruct exactly what a pipeline did, in order, without invoking
-anything — the `step.*` markers are the per-stage breadcrumbs (present until
-`clear-tracking.sh` sweeps them), and the `fulfilled.*` records are the final
-word:
+You can reconstruct what a pipeline did, in order, without invoking anything.
+The `step.*` files are the per-stage breadcrumbs (present until cleanup sweeps
+them); the `fulfilled.*` records are the final word:
 
 ```bash
 T=.zskills/tracking
 
 # Walk one pipeline's steps in order (implement → verify → report → land):
 ls -1 "$T"/run-plan.<plan-slug>/step.* 2>/dev/null
-cat   "$T"/run-plan.<plan-slug>/step.run-plan.<plan-slug>.verify   # has result: pass
+cat   "$T"/run-plan.<plan-slug>/step.run-plan.<plan-slug>.verify   # shows result: pass
 
 # Confirm it actually completed and landed:
 cat "$T"/run-plan.<plan-slug>/fulfilled.run-plan.<plan-slug>      # status: complete
 cat "$T"/run-plan.<plan-slug>/fulfilled.land-pr.<plan-slug>       # pr + date
 ```
 
-### Audit recipes
+### Counting what shipped
+
+The `fulfilled.*` files double as a tally. To see how much a project has
+landed, count them by skill:
 
 ```bash
 T=.zskills/tracking
 
-# Everything this project has ever landed, by skill:
-find "$T" -name 'fulfilled.run-plan.*'   | wc -l   # plans completed via /run-plan
-find "$T" -name 'fulfilled.land-pr.*'     | wc -l   # PRs landed via /land-pr
-find "$T" -name 'fulfilled.fix-issues.*'  | wc -l   # issues resolved via /fix-issues
+find "$T" -name 'fulfilled.run-plan.*'    | wc -l   # plans completed
+find "$T" -name 'fulfilled.land-pr.*'     | wc -l   # PRs landed
+find "$T" -name 'fulfilled.fix-issues.*'  | wc -l   # issues resolved
 
-# Which plans actually reached "complete" (not just "started"):
+# Plans that actually reached "complete" (not just started):
 grep -rl 'status: complete' "$T"/*/fulfilled.run-plan.* | wc -l
-
-# Stalled work — a declared requirement with no matching fulfillment
-# (a pipeline that started but never finished its obligation):
-for r in "$T"/*/requires.*; do
-  f="${r/requires./fulfilled.}"
-  [ -e "$f" ] || echo "UNFULFILLED: $r"
-done
 ```
 
-(See `tracking-overview.md` for how the hooks turn an unfulfilled
-`requires.*` into a commit/push **block** — the same signal you can read by
-hand here, enforced automatically there.)
+If you ever want to find a pipeline that started but never finished, look for a
+`requires.*` file with no matching `fulfilled.*` in the same directory — that's
+work that was declared but never completed. (When the hooks see the same thing,
+they turn it into a commit/push block; `tracking-overview.md` covers that.)
 
 ---
 
 ## 3. Claims — what's running *right now*
 
-A pipeline claims a work-item before working it (issue **or** plan) so two
-pipelines never double-work the same thing. The claim is the single best
+A pipeline claims a work item before working on it (an issue **or** a plan) so
+two pipelines never double-work the same thing. The claim is the single best
 signal of "is something in flight?"
 
 ```bash
@@ -226,12 +216,13 @@ ls -d .zskills/claims/*/                       # plan-<slug>/ and issue-<N>/ dir
 cat .zskills/claims/plan-<slug>/claim.json     # pipeline_id, current_phase, started_at
 ```
 
-A claim's `current_phase` field is the live progress pointer (e.g.
-`"Phase 3 — verified"`) — `cat` it again later to watch a run advance. Claims
-are **acquire-on-pickup / release-on-resolve** with **no TTL** — a lingering
-claim after a crash is the accepted cost of never killing a long-running agent
-mid-work. They are ownership-aware: a pipeline re-acquiring its **own** claim
-succeeds (it is not a collision). To clear a genuinely stale claim by hand:
+A claim's `current_phase` field is the live progress pointer. It starts at
+`"Phase 0 — acquired"` and advances to `"Phase 1"`, `"Phase 2"`, and so on as
+the run moves through the plan — `cat` it again later to see where it's up to. A
+claim is taken when work starts and released when the work resolves; there is
+no timeout, so a claim left behind after a crash is the accepted cost of never
+killing a long-running agent mid-work. A pipeline re-taking its **own** claim
+succeeds — that's not a collision. To clear a genuinely stale claim by hand:
 
 ```bash
 bash skills/run-plan/scripts/claim-plan.sh release <slug> --require-pipeline <pid>
@@ -242,9 +233,9 @@ bash skills/run-plan/scripts/claim-plan.sh release <slug> --require-pipeline <pi
 
 ## 4. `.landed` — per-worktree landing state
 
-When a pipeline lands work it writes a `.landed` marker in the worktree. It is
-**not** a tracking marker — it is worktree-state, and it's the fastest way to
-tell whether a leftover worktree is safe to remove.
+When a pipeline lands work it writes a `.landed` file in the worktree. It is
+**not** a tracking marker — it records worktree state, and it's the fastest way
+to tell whether a leftover worktree is safe to remove.
 
 ```bash
 cat <worktree>/.landed
@@ -252,52 +243,50 @@ cat <worktree>/.landed
 
 | `status:` | meaning |
 |-----------|---------|
-| `landed` | merged/cherry-picked to main — safe to remove |
+| `landed` | merged or cherry-picked to main — safe to remove |
 | `pr-ready` | PR open, CI green, awaiting review |
 | `pr-ci-failing` | PR open, CI failing after fix attempts |
 | `conflict` / `pr-failed` | needs manual intervention |
 | `not-landed` | agent finished without landing |
 
-If a worktree has no `.landed`, verify manually before removing
+If a worktree has no `.landed`, check it manually before removing
 (`git log main..<branch>`, `git status`). See the Worktree Rules in
 `CLAUDE.md`.
 
 ---
 
-## 5. Plan reports — the human-readable narrative
+## 5. Plan reports — the readable narrative
 
 For prose detail (per-phase work items, verification results, sign-off items),
 read the generated reports rather than the markers:
 
 ```text
-docs/reports/plan-<slug>.md   # per-plan, newest phase prepended at the top
+docs/reports/plan-<slug>.md   # per-plan, newest phase at the top
 docs/reports/SPRINT_REPORT.md # /fix-issues sprint outcomes
-<audit-dir>/PLAN_REPORT.md    # regenerated index across all plan reports
+<audit-dir>/PLAN_REPORT.md    # index across all plan reports
 ```
 
-(Paths are config-resolved via `output.reports_dir`; this project uses
-`docs/reports/`.) Each `/run-plan` phase prepends a section with status,
-commit, work-item table, and verification tally — so the report is a
-phase-by-phase audit trail in plain English, complementary to the machine
-markers in section 2.
+(Report paths come from your config's `output.reports_dir`; this project uses
+`docs/reports/`.) Each `/run-plan` phase adds a section at the top with status,
+commit, work-item table, and verification tally — so the report reads as a
+phase-by-phase history in plain English, alongside the machine markers in
+section 2.
 
 ---
 
-## 6. Monitoring a *running* pipeline
+## 6. Watching a *running* pipeline
 
-A long `finish auto` run leaves several live signals you can watch (refresh the
-dashboard, or `cat` the files):
+A long `finish auto` run leaves several live signals you can watch — refresh
+the dashboard, or `cat` the files:
 
 - **Claim `current_phase`** — `cat .zskills/claims/plan-<slug>/claim.json`
-  updates as phases advance (`implemented` → `verified` → `reported`).
-- **Dashboard activity** — `/zskills-dashboard` surfaces tracking activity and
-  the execution-mode chip (queued / phase-N / finish / locked).
-- **Defer counters** — `.zskills/tracking/<pid>/in-progress-defers.<phase>`
-  shows how many times a chunked cron fire has deferred while a phase is in
-  flight (the adaptive-backoff counter; see `ADAPTIVE_CRON_BACKOFF.md`).
-- **The cron itself** — a `finish auto` run schedules a recurring `*/1` cron;
+  updates as the run moves from one phase to the next.
+- **Dashboard activity** — `/zskills-dashboard` shows tracking activity and a
+  run-status chip (queued / phase-N / finish / locked).
+- **The cron itself** — a `finish auto` run schedules a recurring cron;
   `/run-plan <plan> status` shows phase progress, `/run-plan <plan> next` shows
-  the next fire, `/run-plan stop` cancels it (and releases run-plan-held claims).
+  the next fire, and `/run-plan stop` cancels it (and releases the claims the
+  run was holding).
 
 ---
 
@@ -311,7 +300,7 @@ for w in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
   [ -f "$w/.landed" ] && echo "$w: $(grep '^status:' "$w/.landed")"
 done                                                       # landing state per worktree
 
-# --- durable: what happened (audit by hand) ---
+# --- durable: what happened ---
 find .zskills/tracking -name 'fulfilled.*' | wc -l         # total completion records
 grep -rl 'status: complete' .zskills/tracking/*/fulfilled.run-plan.*   # plans completed
 ls docs/reports/plan-*.md                                  # per-plan narratives
@@ -319,24 +308,22 @@ ls docs/reports/plan-*.md                                  # per-plan narratives
 # --- high-level views ---
 /briefing                # project status
 /plans                   # plan dashboard
-/zskills-dashboard start # web UI (then open http://localhost:<port> in a browser)
-/session-report          # this-session audit
+/zskills-dashboard start # web UI (then open the printed URL in a browser)
+/session-report          # this-session check
 ```
 
 **Housekeeping:** `bash skills/update-zskills/scripts/clear-tracking.sh` sweeps
-the transient `requires.*` / `step.*` scaffolding and **preserves the
-`fulfilled.*` completion ledger** — run it when the marker count grows large;
-your audit history is never touched.
+the temporary `requires.*` / `step.*` files and **keeps the `fulfilled.*`
+completion records** — run it when the marker count grows large; your history
+is never touched.
 
 ---
 
 ## See also
 
-- [`tracking-overview.md`](tracking-overview.md) — the
-  enforcement model: how markers gate commits, with worked examples and a
-  troubleshooting section.
+- [`tracking-overview.md`](tracking-overview.md) — how markers gate commits,
+  with worked examples and a troubleshooting section.
 - [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md) — the
-  authoritative marker naming scheme, delegation semantics, and `.landed`
-  semantics.
-- [`docs/guides/workflows.md`](workflows.md) — end-to-end workflows (§11 is the short
-  Status & monitoring index this doc expands on).
+  marker naming scheme, delegation semantics, and `.landed` semantics.
+- [`docs/guides/workflows.md`](workflows.md) — end-to-end workflows (§11 is the
+  short Status & monitoring index this guide expands on).

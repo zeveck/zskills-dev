@@ -185,16 +185,16 @@ _Status: ✅ Done._ **This phase is NOT docs-only** — the viewer nav is machin
 
 ## Phase 7 — Guides (secondary): README, installing-zskills, switching-install-lanes, tracking-overview, inspecting-and-monitoring, workflows
 
-_Status: pending._ Guides are less broken than skill docs but carry the heaviest hedge-soup (`installing-zskills`) and the worst single doc (`tracking-overview`). `inspecting-and-monitoring.md` is rewritten **except** its dev/prod-URL + install-path content (→ #1002).
+_Status: ✅ Done._ Guides are less broken than skill docs but carry the heaviest hedge-soup (`installing-zskills`) and the worst single doc (`tracking-overview`). `inspecting-and-monitoring.md` is rewritten **except** its dev/prod-URL + install-path content (→ #1002).
 
-- [ ] `tracking-overview.md`: reconcile against `docs/tracking/TRACKING_NAMING.md` + current hook — the flat-vs-per-pipeline-subdir layout examples are wrong; the "suffix matching" section is obsolete; the "enforced on commit/cherry-pick/push identically" claim needs the on-main scoping checked (R2). Likely a near-rewrite.
-- [ ] `installing-zskills.md`: de-hedge the lede (R3) — "pick one lane; you can't run both" without "end-state/not-tiered/not-deprecated" defensiveness; replace materialiser/sentinel/`${CLAUDE_PLUGIN_ROOT}` prose with plain user-facing behavior.
-- [ ] `switching-install-lanes.md`: strip "D25 / lock-LAST / basename-gated / sentinel-gated" vocabulary.
-- [ ] `workflows.md`: the dashed-`--auto`-belongs-to-`/land-pr` statement is actually **correct** (CLAUDE.md flag convention: `/land-pr` is the one skill taking `--auto` with dashes). The real defect is the over-broad "never type a dashed flag yourself" generalization — carve out the user-facing `--force` (`/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`) and `--rounds N` (`/do`).
-- [ ] `README.md` (guides index): align with the rewritten guides.
+- [x] `tracking-overview.md`: reconcile against `docs/tracking/TRACKING_NAMING.md` + current hook — the flat-vs-per-pipeline-subdir layout examples are wrong; the "suffix matching" section is obsolete; the "enforced on commit/cherry-pick/push identically" claim needs the on-main scoping checked (R2). Likely a near-rewrite.
+- [x] `installing-zskills.md`: de-hedge the lede (R3) — "pick one lane; you can't run both" without "end-state/not-tiered/not-deprecated" defensiveness; replace materialiser/sentinel/`${CLAUDE_PLUGIN_ROOT}` prose with plain user-facing behavior.
+- [x] `switching-install-lanes.md`: strip "D25 / lock-LAST / basename-gated / sentinel-gated" vocabulary.
+- [x] `workflows.md`: the dashed-`--auto`-belongs-to-`/land-pr` statement is actually **correct** (CLAUDE.md flag convention: `/land-pr` is the one skill taking `--auto` with dashes). The real defect is the over-broad "never type a dashed flag yourself" generalization — carve out the user-facing `--force` (`/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`) and `--rounds N` (`/do`).
+- [x] `README.md` (guides index): align with the rewritten guides.
 
 **Acceptance:**
-- [ ] Fact sheet + clean verdict ledger per guide; banned-term grep clean; `tracking-overview` layout examples match `TRACKING_NAMING.md`; #1002-owned content left untouched and noted.
+- [x] Fact sheet + clean verdict ledger per guide; banned-term grep clean; `tracking-overview` layout examples match `TRACKING_NAMING.md`; #1002-owned content left untouched and noted.
 
 ## Phase 8 — Discrepancy review & consolidation
 

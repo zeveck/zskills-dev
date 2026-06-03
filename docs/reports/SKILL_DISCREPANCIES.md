@@ -197,3 +197,21 @@ _Un-enumerated extras beyond the soft cap: 0 (seed set only; later phases append
 - **Why it matters / doc impact:** The Phase 1 `quickfix.md`/`do.md` rewrites followed CLAUDE.md (peers, size-agnostic) over the SKILL.md line. If the SKILL.md prose stays, a future doc pass could re-import the tiers framing. The fix belongs in `skills/quickfix/SKILL.md` (align its Coexistence note to peers), with a `metadata.version` bump.
 - **Orchestrator's hypothesis:** Surprising — a stale framing in the skill source that the canonical decision table already overrides.
 - **Question for the user:** Confirm and file a `skills/quickfix/SKILL.md` prose fix (align the Coexistence note to the peers framing)?
+
+### `managed.md` / `CLAUDE_TEMPLATE.md` tracking prose is stale ("suffix matching")
+
+- **Type:** source bug — surface, don't patch
+- **What diverges:** `.claude/rules/zskills/managed.md` (rendered from `CLAUDE_TEMPLATE.md`) still describes tracking pipeline-scoping as "suffix matching on pipeline ID," but the authoritative `docs/tracking/TRACKING_NAMING.md` + the current hook reader use **per-pipeline subdirectories** (`.zskills/tracking/$PIPELINE_ID/`); the hook explicitly notes "Subdir-only reader (dual-read fallback removed; all writers migrated)."
+- **Evidence:** `.claude/rules/zskills/managed.md` ("Pipeline scoping (suffix matching on pipeline ID)") vs. `docs/tracking/TRACKING_NAMING.md` + `hooks/block-unsafe-project.sh.template` (`PIPELINE_SUBDIR="$TRACKING_DIR/$PIPELINE_ID"`, "Subdir-only reader" comment). The rewritten `docs/guides/tracking-overview.md` cites the hook + TRACKING_NAMING, not managed.md.
+- **Why it matters:** managed.md is loaded into every agent's context; the stale "suffix matching" prose contradicts the actual subdir scheme.
+- **Orchestrator's hypothesis:** Surprising — the template's tracking section wasn't updated when scoping moved to per-pipeline subdirs.
+- **Question for the user:** Fix the tracking-scoping prose in `CLAUDE_TEMPLATE.md` and re-render `managed.md`?
+
+### `switch-install-path.sh` cites a CLAUDE.md section that exists only in the rendered `managed.md`
+
+- **Type:** source inconsistency — minor, surface
+- **What diverges:** `scripts/switch-install-path.sh` header references "CLAUDE.md `## Migration scripts`", but the top-level (author-only) `CLAUDE.md` has no such section — it exists only in `.claude/rules/zskills/managed.md` (rendered from `CLAUDE_TEMPLATE.md`).
+- **Evidence:** `scripts/switch-install-path.sh` header comment vs. `grep -n "## Migration scripts" CLAUDE.md` (absent) / `.claude/rules/zskills/managed.md` (present).
+- **Why it matters:** a reader following the script's pointer to top-level CLAUDE.md won't find the section.
+- **Orchestrator's hypothesis:** Surprising-but-minor — the reference should point at the rendered rules file (or the template).
+- **Question for the user:** Repoint the script's comment to `managed.md` / `CLAUDE_TEMPLATE.md`?

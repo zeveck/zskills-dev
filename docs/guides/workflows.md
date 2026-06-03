@@ -8,16 +8,17 @@ argument list, see the [per-skill reference](../skills/README.md).
 
 Z Skills matches the skill to the work — not the other way around. A typo
 fix runs through `/quickfix` or `/do`; a backlog of small bugs through
-`/fix-issues`; a feature with real design surface gets `/draft-plan`
-first; a broad goal that decomposes into multiple sub-plans gets
-`/research-and-plan`. Plans are the exception, not the default — reserve
-them for work whose design surface actually warrants adversarial review
-(integration points, multi-command coordination, hook interactions).
+`/fix-issues`; a feature whose approach still needs to be worked out gets
+`/draft-plan` first; a broad goal that splits into several dependent
+sub-plans gets `/research-and-plan`. Plans are the exception, not the
+default — reach for `/draft-plan` only when the work has open design
+questions or needs to be staged into ordered phases, not just because it
+touches a lot of files.
 
-**Verification happens at every step** regardless of which skill you pick:
-implementers run tests, a fresh verifier subagent re-checks the work
-before it lands, and nothing reaches `main` unverified. The skill choice
-governs *ceremony*; verification is constant.
+**Your changes are checked before they land**, whichever skill you pick:
+tests run, a separate review pass re-checks the work, and nothing reaches
+`main` unchecked. The skill choice governs how much *ceremony* the work
+goes through; the checking is constant.
 
 Landing mode (cherry-pick / locked-main-pr / direct) is install-time
 configuration — covered in
@@ -25,11 +26,16 @@ configuration — covered in
 The workflow snippets below pass `pr` or `direct` as a positional override
 when needed; otherwise the configured default applies.
 
-> **Argument syntax.** User-facing skills take **positional tokens** —
-> `auto`, `pr`, `direct`, `finish` — *not* `--flags`. (For example:
-> `/run-plan docs/plans/X.md finish auto pr`.) The dashed `--auto` form
-> belongs only to the internal `/land-pr` helper that these skills dispatch
-> for you; you should never type it yourself.
+> **Argument syntax.** Most arguments you type are **positional tokens** —
+> mode/verb words like `auto`, `pr`, `direct`, `finish` with no dashes.
+> (For example: `/run-plan docs/plans/X.md finish auto pr`.) A few skills
+> also take dashed flags, which are reserved for overriding a safety gate:
+> `--force` (on `/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`)
+> skips the triage and review step, and `--rounds N` (on `/do`) sets how
+> many review-and-refine cycles run. The one dashed flag you do **not**
+> type is `--auto`: that form belongs to the internal `/land-pr` helper
+> these skills dispatch for you. To auto-merge, pass the positional `auto`
+> token instead.
 
 ---
 
@@ -42,11 +48,11 @@ when needed; otherwise the configured default applies.
 /run-plan docs/plans/<file>.md finish auto
 ```
 
-- `/draft-plan` researches the goal and runs iterative adversarial review,
-  emitting a plan file under `docs/plans/`. This catches design flaws before
-  they cost you commits. Add `brainstorm` for an interactive design dialogue
-  before research, or `quiz` for an interactive requirements interview that
-  elicits intent and scope before research.
+- `/draft-plan` researches the goal and runs repeated rounds of critical
+  review, writing a plan file under `docs/plans/`. This catches design flaws
+  before they cost you commits. Add `brainstorm` for an interactive design
+  dialogue before research, or `quiz` for an interactive requirements
+  interview that draws out intent and scope before research.
 - `/run-plan` executes that plan. `finish` runs **all** phases (not just the
   next one) and `auto` lets it land each phase autonomously, so you can walk
   away. Drop `finish auto` to step through one phase at a time.
