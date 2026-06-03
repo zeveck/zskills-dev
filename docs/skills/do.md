@@ -2,6 +2,18 @@
 
 > Lightweight task dispatcher for ad-hoc work: documentation, examples, refactoring, content updates. Worktree/direct/pr landing modes via flag or config. Recurring via `every SCHEDULE`; `stop`/`next` manage the schedule.
 
+## What it does
+
+`/do` runs one small, self-contained task end to end: it researches the change, makes it, verifies it, and (when you ask) lands it. It is meant for work that doesn't warrant the heavier ceremony of `/run-plan` (multi-phase plans) or `/fix-issues` (batch bug fixing) — documentation, examples, small refactors, one-off fixes, and content updates.
+
+Given a plain-English description, `/do` first checks that the task is actually a good fit for it. If the description spans several unrelated areas, names many files, or asks for a feature-scale change, `/do` redirects you to a better skill (`/draft-plan` for plan-scale work, `/run-plan` when you point at an existing plan file) instead of attempting it. If the description is too vague to act on, it asks you to make it concrete. You can override a redirect with `--force`.
+
+Once it decides to proceed, `/do` dispatches a fresh review agent to sanity-check its plan before any code is written, then does the work, then verifies it. Verification matches the kind of change: code changes run the full test suite and a separate `/verify-changes` pass, while content-only changes (markdown, images, presentations) skip the test suite and instead get a focused review of the diff. The `auto` flag controls whether the result lands autonomously — it does not control whether verification runs; code changes are always verified.
+
+How the result reaches `main` depends on the landing mode (see Arguments). The common shape in a protected-`main` repo is a pull request: `/do` opens a worktree, makes the change there, runs the verification gate locally, opens a PR, and watches CI. Output is brief and inline — `/do` writes no persistent report file; the commit (or PR) is the artifact.
+
+`/do` and `/quickfix` are co-equal peers: same lifecycle, same one-commit-PR shape, same landing path. The only difference is where the work happens — `/quickfix` edits in place on `main` (valid only when `main` is unprotected), while `/do` isolates the work. Pick by project policy, not task size.
+
 ## Usage
 
 ```
@@ -11,19 +23,48 @@
 /do now [query]
 ```
 
+## Typical usage
+
+The most common form is a free-text description, optionally autonomous, optionally on a schedule:
+
+```
+/do Make sure docs are up to date
+/do Sort the screenshots in session-sequence-snapshots
+/do Update the presentation auto
+/do Add dark mode to editor pr
+/do Check for broken links in examples every 12h now
+```
+
+A description alone runs the task immediately. Add a landing flag (`pr`, `worktree`, `direct`) to override the configured default. Add `auto` to land without stopping for approval. Add `every SCHEDULE` (with `now` to also run straight away) to turn the task into recurring maintenance.
+
+## Companion skills
+
+- **`/quickfix`** — the peer skill. Same lifecycle and one-commit-PR shape; `/quickfix` works in place on `main`, `/do` isolates the work. Choose by whether `main` is protected.
+- **`/draft-plan`** — where `/do` redirects you when a task is too big for a single pass. `/draft-plan` researches and decomposes plan-scale work.
+- **`/run-plan`** — where `/do` redirects you when the description references an existing plan file; `/run-plan` executes plans.
+- **`/fix-issues`** — for working a backlog of issues rather than a single ad-hoc task; `/do` redirects issue-batch work here.
+- **`/verify-changes`** — the verification gate `/do` runs on code changes before landing.
+- **`/land-pr`** — dispatched by `/do` in PR mode to handle the full PR lifecycle (push, CI polling, fix-cycle on failure). You never type it directly.
+- **`/cleanup-merged`** — run after a `/do` PR merges to catch your local clone up.
+
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `description` | Yes | What to do, in natural language |
-| `worktree` | No | Isolate work in a worktree, cherry-pick back to main |
-| `direct` | No | Work on main in place, no landing step |
-| `pr` | No | Named worktree + feature branch, push, create PR |
-| `auto` | No | Land autonomously (PR: auto-merge; worktree: cherry-pick+push; direct: push) |
-| `every SCHEDULE` | No | Self-schedule recurring runs (`4h`, `day at 9am`, `weekday at 9am`) |
+| `worktree` | No | Isolate work in a worktree, cherry-pick back to `main` after verification |
+| `direct` | No | Work on `main` in place, no landing step |
+| `pr` | No | Named worktree + feature branch, push, open a PR, poll CI |
+| `auto` | No | Land autonomously (PR: request auto-merge; worktree: cherry-pick and push; direct: push) |
+| `every SCHEDULE` | No | Self-schedule recurring runs (`4h`, `12h`, `day at 9am`, `weekday at 9am`) |
 | `now` | No | Run immediately (with `every`: run now AND schedule) |
-| `--force` | No | Bypass triage redirect and review reject |
-| `--rounds N` | No | Max review/refine cycles (default 1; `0` skips review) |
+| `--force` | No | Bypass a triage redirect and a review rejection |
+| `--rounds N` | No | Maximum review/refine cycles (default 1; `0` skips review with a warning) |
+| `--no-claim` | No | Treat any `#N` in the description as a mere mention, not an issue to claim |
+
+The three landing flags (`worktree`, `direct`, `pr`) are mutually exclusive and override the `execution.landing` default in `.claude/zskills-config.json`. When no flag is given, the mode comes from that config (`cherry-pick` maps to `worktree`, `pr` to `pr`, `direct` to `direct`); with no config, the default is `direct`. `direct` mode is rejected when `execution.main_protected` is `true` — use `pr` or `worktree` instead.
+
+If the description references an issue in claim position (a leading `#N`, or `Fix #N …`), `/do` claims that issue so a parallel run won't duplicate the work. A bare `#N` elsewhere in the description triggers a warning (or, if that issue is currently being worked by another run, a stop) — pass `--no-claim` when the reference is deliberate and you are not working that issue.
 
 ## Subcommands
 
@@ -33,11 +74,11 @@ Cancel `/do` cron(s). Bare `/do stop` cancels all. With a query (`/do stop Check
 
 ### `next [query]`
 
-Check next fire time(s). Bare `/do next` shows all. With a query, shows the matching cron's schedule.
+Show next fire time(s). Bare `/do next` shows all. With a query, shows the matching cron's schedule.
 
 ### `now [query]`
 
-Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if multiple). With a query, triggers the matching cron.
+Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if there are several). With a query, triggers the matching cron.
 
 ## Examples
 
@@ -45,7 +86,7 @@ Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if 
 /do Add example models for Integrator and Derivative blocks
 /do Sort the screenshots in session-sequence-snapshots
 /do Refactor color constants in main.css worktree
-/do Update the presentation with Phase 3 results auto
+/do Update the presentation auto
 /do Make sure docs are up to date every day at 9am
 /do Check for broken links in examples every 12h now
 /do Add dark mode to editor pr
@@ -58,19 +99,17 @@ Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if 
 
 ## Common Patterns
 
-- **Quick content task:** `/do Sort the screenshots` -- direct mode, no ceremony
-- **Isolated refactor:** `/do Refactor color constants worktree` -- work in a worktree, verify, no auto-land
-- **PR with auto-merge:** `/do Add dark mode pr auto` -- create a PR and request auto-merge
-- **Recurring maintenance:** `/do Check for broken links every 12h now` -- schedule and run immediately
-- **Bypass gates:** `/do Fix the tooltip bug --force` -- skip triage and review for a known-simple fix
+- **Quick content task:** `/do Sort the screenshots` — direct mode, no ceremony
+- **Isolated refactor:** `/do Refactor color constants worktree` — work in a worktree, verify, no auto-land
+- **PR with auto-merge:** `/do Add dark mode pr auto` — open a PR and request auto-merge
+- **Recurring maintenance:** `/do Check for broken links every 12h now` — schedule and run immediately
+- **Bypass gates:** `/do Fix the tooltip bug --force` — skip the triage and review checks for a known-simple fix
 
 ## Tips & Gotchas
 
-- `/do` runs a triage gate (Phase 0a) that may redirect to `/draft-plan`, `/run-plan`, or `/fix-issues` if the task is too large or references issues/plans -- use `--force` to bypass
-- A fresh-agent review (Phase 0b) checks the inline plan before execution -- `--rounds 0` skips this
-- When no landing flag is given, the mode comes from `execution.landing` in config (`cherry-pick` maps to `worktree`, `pr` maps to `pr`, `direct` maps to `direct`)
-- `direct` mode is incompatible with `execution.main_protected: true`
-- Verification (`/verify-changes`) runs on all code changes regardless of the `auto` flag -- `auto` controls landing, not whether to verify
-- PR mode dispatches `/land-pr` for the full PR lifecycle (push, CI poll, fix cycle)
-- Quoted descriptions (`/do "Now fix the tooltip bug"`) bypass meta-command detection
-- `--force` and `--rounds N` persist into cron prompts verbatim when used with `every`
+- `/do` may redirect a task that's too large (to `/draft-plan`), references a plan file (to `/run-plan`), or is issue-batch work (to `/fix-issues`) — pass `--force` to proceed anyway.
+- A fresh review agent checks `/do`'s plan before any work begins — `--rounds 0` skips this with a warning.
+- Verification runs on all code changes regardless of `auto`; content-only changes skip the test suite and get a focused diff review instead.
+- PR mode runs the same local verification gate as the other modes before opening the PR, then dispatches `/land-pr` for the PR lifecycle (push, CI poll, fix cycle on failure).
+- Quoted descriptions (`/do "Now fix the tooltip bug"`) are taken verbatim and bypass the `stop`/`next`/`now` subcommand detection.
+- `--force` and `--rounds N` persist into the cron prompt verbatim when used with `every`, so every scheduled fire keeps the same behavior.

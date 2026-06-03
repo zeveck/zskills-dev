@@ -91,7 +91,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 
 ## Phase 0 — Foundations (rubric, companion graph, usage map, scaffolds)
 
-_Status: pending._ One-time shared groundwork every later phase consumes. No catalog doc is rewritten in this phase.
+_Status: ✅ Done._ One-time shared groundwork every later phase consumes. No catalog doc is rewritten in this phase.
 
 - [ ] **Land the Rubric** (`docs/reports/doc-rewrite-evidence/RUBRIC.md`): R1–R7 above, plus the finalized **banned-term list** (seed from R5; expand by grepping the current docs for internals vocabulary). This is the file phase implementers and verifiers are pointed at. Also emit the list as a grep-able artifact `docs/reports/doc-rewrite-evidence/banned-terms.txt` — one `grep -E` pattern per line, properly escaped (`materialiser`, `sentinel`, `Phase 0a`, `WI [0-9]`, `\$\{CLAUDE_PLUGIN_ROOT\}`, …) — so every later phase's "banned-term grep clean" acceptance is the concrete command `grep -nEf docs/reports/doc-rewrite-evidence/banned-terms.txt <phase docs>`.
 - [ ] **Build the canonical companion-skill graph** (`.../COMPANIONS.md`): for each skill, its typical companion skills and the "which skill for which input" mapping, reconciled against the CLAUDE.md decision table. Source-cited.
@@ -105,7 +105,7 @@ _Status: pending._ One-time shared groundwork every later phase consumes. No cat
 
 ## Phase 1 — Execution peers: do, quickfix, commit, land-pr, cleanup-merged
 
-_Status: pending._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — they must read as co-equal. `land-pr` is `user-invocable: false` and must say so plainly without dumping its result-code list.
+_Status: ✅ Done._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — they must read as co-equal. `land-pr` is `user-invocable: false` and must say so plainly without dumping its result-code list.
 
 - [ ] Run the per-doc pipeline on each of `do.md`, `quickfix.md`, `commit.md`, `land-pr.md`, `cleanup-merged.md`.
 - [ ] `do.md` / `quickfix.md`: present as parallel peers; describe verification/behavior uniformly (R4 — no "regardless of mode").

@@ -188,3 +188,12 @@
 ---
 
 _Un-enumerated extras beyond the soft cap: 0 (seed set only; later phases append)._
+
+### `/quickfix` SKILL.md frames `/do` as "for larger tasks" (tiers), contradicting "PEERS, not tiers"
+
+- **Type:** source inconsistency — surface, don't patch
+- **What diverges:** `skills/quickfix/SKILL.md:40` (the "Coexistence" note) describes `/do` as the choice "for larger tasks," i.e. a *tier* relationship. But CLAUDE.md's decision table is emphatic that `/quickfix` and `/do` are **co-equal PEERS** ("They are PEERS, not TIERS … Pick by project policy, not task size"), and the memory anchor `feedback_quickfix_is_light_not_heavy` reinforces it.
+- **Evidence:** `skills/quickfix/SKILL.md:40` ("…for larger tasks…") vs. CLAUDE.md "## Which skill for which input" → "`/quickfix` vs `/do`: **They are PEERS, not TIERS.**"
+- **Why it matters / doc impact:** The Phase 1 `quickfix.md`/`do.md` rewrites followed CLAUDE.md (peers, size-agnostic) over the SKILL.md line. If the SKILL.md prose stays, a future doc pass could re-import the tiers framing. The fix belongs in `skills/quickfix/SKILL.md` (align its Coexistence note to peers), with a `metadata.version` bump.
+- **Orchestrator's hypothesis:** Surprising — a stale framing in the skill source that the canonical decision table already overrides.
+- **Question for the user:** Confirm and file a `skills/quickfix/SKILL.md` prose fix (align the Coexistence note to the peers framing)?
