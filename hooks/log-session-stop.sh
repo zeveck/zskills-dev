@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # log-session-stop.sh — Stop / SubagentStop hook. Session-logging.
 #
 # Re-renders the session transcript JSONL (the `transcript_path` field of
@@ -491,6 +491,14 @@ def load_permissions(log_dir, session_id):
 
 
 def main():
+    # Security: tighten the process umask BEFORE any file creation so the
+    # ".tmp" write and the os.replace final markdown both land at mode 0o600
+    # (owner read/write only). Session transcripts contain verbatim user
+    # prompts and Bash tool I/O — including any credential a user cat-ed —
+    # so they must never be world-readable on a shared /tmp. Setting it here
+    # (rather than chmod after os.replace) also closes the tmp-window race.
+    os.umask(0o077)
+
     raw = os.environ.get("ZSKILLS_HOOK_INPUT", "")
     try:
         hook_input = json.loads(raw) if raw else None

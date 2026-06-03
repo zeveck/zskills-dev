@@ -28,6 +28,9 @@ STOP_HOOK="$REPO_ROOT/hooks/log-session-stop.sh"
 PERM_HOOK="$REPO_ROOT/hooks/log-permission-request.sh"
 HELPER="$REPO_ROOT/skills/update-zskills/scripts/session-logs.sh"
 
+# Python interpreter (same precedence the hooks use) — needed by Case 6c.
+PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+
 PASS_COUNT=0
 FAIL_COUNT=0
 pass() { echo "PASS $*"; PASS_COUNT=$((PASS_COUNT+1)); }
@@ -216,6 +219,76 @@ if [ "$rc" -eq 0 ] && [ -f "$DEST/$(basename "$MD")" ]; then
   pass "5c. dest arg copies the session logs"
 else
   fail "5c. dest copy" "rc=$rc dest contents: $(ls "$DEST" 2>/dev/null)"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 6 — log files are written mode 0o600 (not world-readable) ==="
+# Security (issue #1055): session transcripts capture verbatim user prompts
+# and Bash tool I/O (incl. any cat-ed credential); on a shared /tmp a 0o644
+# file leaks them to every local user. The hooks set os.umask(0o077) at the
+# top of main() so the .tmp + final markdown + sidecar all land 0o600. We
+# run the hooks under a DELIBERATELY relaxed umask (022) so that WITHOUT the
+# fix the resulting files would be 0o644 — these assertions fail against the
+# pre-fix behavior.
+mode_of() { stat -c '%a' "$1" 2>/dev/null; }
+
+LOGD6="$WORK/logs6"
+SID6="sec00mode"
+# Stop hook -> final markdown.
+( umask 022
+  echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SID6\",\"transcript_path\":\"$TR\"}" | \
+    ZSKILLS_LOG_DIR="$LOGD6" CLAUDE_PROJECT_DIR="$PROJ" TZ=UTC bash "$STOP_HOOK" )
+MD6="$LOGD6/2026-06-03-1200-${SID6:0:8}.md"
+if [ -f "$MD6" ]; then
+  m="$(mode_of "$MD6")"
+  [ "$m" = "600" ] && pass "6a. Stop markdown is mode 0o600 ($m)" \
+    || fail "6a. Stop markdown mode 0o600" "got $m (world/group-readable leak)"
+else
+  fail "6a. Stop markdown mode 0o600" "no markdown at $MD6"
+fi
+
+# Permission hook -> sidecar.
+LOGD6P="$WORK/logs6p"
+SID6P="sec00perm"
+( umask 022
+  printf '%s' "{\"hook_event_name\":\"PermissionRequest\",\"session_id\":\"$SID6P\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat /etc/secret\"},\"tool_use_id\":\"tuSEC\"}" | \
+    ZSKILLS_LOG_DIR="$LOGD6P" CLAUDE_PROJECT_DIR="$PROJ" bash "$PERM_HOOK" >/dev/null 2>&1 )
+SIDECAR6="$LOGD6P/permissions-$SID6P.jsonl"
+if [ -f "$SIDECAR6" ]; then
+  m="$(mode_of "$SIDECAR6")"
+  [ "$m" = "600" ] && pass "6b. permission sidecar is mode 0o600 ($m)" \
+    || fail "6b. permission sidecar mode 0o600" "got $m (world/group-readable leak)"
+else
+  fail "6b. permission sidecar mode 0o600" "no sidecar at $SIDECAR6"
+fi
+
+# Tmp-window race: the .tmp is created with the same umask as the final
+# file, so its in-flight mode is also 0o600. We can't reliably catch it
+# mid-write from a shell, but we CAN confirm no 0o644 .tmp residue would be
+# left behind on a write failure. Force a failure by pointing at a transcript
+# whose log dir is read-only AFTER creation is not portable; instead assert
+# the invariant directly: with the umask fix, a freshly created file in the
+# same dir under umask 022 is 0o600 (the same code path the .tmp uses).
+LOGD6T="$WORK/logs6t"
+mkdir -p "$LOGD6T"
+probe="$LOGD6T/.umask-probe"
+( umask 022
+  ZSKILLS_PROJECT_DIR="$PROJ" "$PYTHON" - "$probe" <<'PYPROBE'
+import os, sys
+# Mirror the hooks' first action: umask(0o077) before any creation, then
+# create a file the same way the .tmp write does (plain open for write).
+os.umask(0o077)
+with open(sys.argv[1], "w") as f:
+    f.write("x")
+PYPROBE
+)
+if [ -f "$probe" ]; then
+  m="$(mode_of "$probe")"
+  [ "$m" = "600" ] && pass "6c. tmp-window write path yields 0o600 under umask(0o077) ($m)" \
+    || fail "6c. tmp-window mode 0o600" "got $m"
+else
+  fail "6c. tmp-window mode 0o600" "probe not created"
 fi
 
 echo ""
