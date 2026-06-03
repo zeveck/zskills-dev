@@ -125,8 +125,8 @@ if snapshot_worktree_repo "$PR_CLONE"; then
       "$PR_STAGE/skills/zskills-dashboard/scripts/zskills_monitor/static/index.html"
     assert_prod_url "A.run-plan SKILL.md issue-filing prose" \
       "$PR_STAGE/skills/run-plan/SKILL.md"
-    assert_prod_url "A.INSPECTING_AND_MONITORING.md demo URL" \
-      "$PR_STAGE/docs/guides/INSPECTING_AND_MONITORING.md"
+    assert_prod_url "A.inspecting-and-monitoring.md demo URL" \
+      "$PR_STAGE/docs/guides/inspecting-and-monitoring.md"
   else
     fail "0a. build-plugin-release.sh FAILED in isolated clone — output below:"
     sed 's/^/      /' "$TMP/pr-build.out"
@@ -149,8 +149,8 @@ if snapshot_worktree_repo "$BP_CLONE"; then
       "$BP_CLONE/skills/zskills-dashboard/scripts/zskills_monitor/static/index.html"
     assert_prod_url "B.run-plan SKILL.md issue-filing prose" \
       "$BP_CLONE/skills/run-plan/SKILL.md"
-    assert_prod_url "B.INSPECTING_AND_MONITORING.md demo URL" \
-      "$BP_CLONE/docs/guides/INSPECTING_AND_MONITORING.md"
+    assert_prod_url "B.inspecting-and-monitoring.md demo URL" \
+      "$BP_CLONE/docs/guides/inspecting-and-monitoring.md"
   else
     fail "0b. build-prod.sh FAILED in isolated clone — output below:"
     sed 's/^/      /' "$TMP/bp-build.out"
