@@ -11,7 +11,14 @@
 # Scope (user-facing onboarding only):
 #   - docs/README.md            → "Start here" (position 0, single entry)
 #   - docs/guides/*.md          → "Guides"
-#   - docs/skills/*.md          → "Skills"
+#   - docs/skills/*.md          → "Skills" (user-facing skills)
+#   - docs/skills/<name>.md     → "Internal Skills" when the source skill
+#                                 skills/<name>/SKILL.md carries
+#                                 `user-invocable: false` in frontmatter.
+#                                 Classification is by reading frontmatter,
+#                                 NOT a hand-curated name list. (docs/skills/
+#                                 README.md is the section index and always
+#                                 stays under "Skills".)
 #
 # Deliberately excluded (agent/dev artifacts OR optional add-ons, not docs a new user needs):
 #   - docs/skills/block-diagram/ (optional block-diagram add-on; users who need it visit the addon repo separately)
@@ -67,6 +74,7 @@ SECTIONS = [
     ('Start here',            None),  # special: single README entry
     ('Guides',                'docs/guides'),
     ('Skills',                'docs/skills'),
+    ('Internal Skills',       'docs/skills'),  # subset of docs/skills, split by frontmatter
 ]
 
 # Curated per-section item order. Paths listed appear first (in this order);
@@ -92,6 +100,38 @@ DISPLAY_NAME_OVERRIDES = {
 
 FRONTMATTER_RE = re.compile(r'^---\n.*?\n---\n', re.DOTALL)
 H1_RE          = re.compile(r'^# (.+)$', re.MULTILINE)
+# Matches a frontmatter line `user-invocable: false` (any inline whitespace).
+USER_INVOCABLE_FALSE_RE = re.compile(
+    r'^user-invocable:\s*false\s*$', re.MULTILINE
+)
+
+
+def is_internal_skill(rel_path):
+    """A docs/skills/<name>.md doc is 'internal' iff its source skill
+    skills/<name>/SKILL.md declares `user-invocable: false` in frontmatter.
+
+    Classification is by reading frontmatter — NOT a hand-curated name list.
+    docs/skills/README.md is the section index (no matching source skill) and
+    is never classified internal. Returns False when there is no matching
+    source skill (e.g. README.md) or the skill is user-invocable.
+    """
+    base = os.path.basename(rel_path)
+    if base == 'README.md':
+        return False
+    name = os.path.splitext(base)[0]
+    skill_md = os.path.join(REPO_ROOT, 'skills', name, 'SKILL.md')
+    if not os.path.isfile(skill_md):
+        return False
+    try:
+        with open(skill_md, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except OSError:
+        return False
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return False
+    frontmatter = m.group(0)
+    return bool(USER_INVOCABLE_FALSE_RE.search(frontmatter))
 
 
 def list_md_direct(rel_dir):
@@ -145,6 +185,14 @@ def gather_section(label, rel_dir):
         ) else []
         return items
     paths = list_md_direct(rel_dir)
+    # docs/skills is split across two sections by frontmatter classification:
+    #   - "Skills"           → user-facing skills + the README section index
+    #   - "Internal Skills"  → docs whose source skill is user-invocable:false
+    if rel_dir == 'docs/skills':
+        if label == 'Internal Skills':
+            paths = [p for p in paths if is_internal_skill(p)]
+        else:  # label == 'Skills'
+            paths = [p for p in paths if not is_internal_skill(p)]
     return [(derive_name(p), p) for p in paths]
 
 

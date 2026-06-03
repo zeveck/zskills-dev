@@ -1,65 +1,108 @@
 # /commit
 
-> Safe commit workflow with optional scope hint. Inventories all changes, classifies related vs. unrelated files, traces dependencies, protects other agents' work, and optionally pushes, lands worktree commits, or opens a PR via `/land-pr`.
+> Commit your current work safely, and optionally push it, open a pull
+> request, or land worktree commits onto main.
 
-## Usage
+## What it does
 
-```
-/commit [pr] [scope] [push|land] [auto]
-```
+`/commit` is the user-facing way to turn the changes in your working tree
+into a clean commit. It is built to commit *your* work without picking up or
+harming changes that other sessions or agents left in the tree.
 
-## Arguments
+When you run it, the skill looks at everything that has changed, decides
+which files belong to the work you are committing and which are unrelated,
+and stages only the related ones — always by name, never with a
+catch-all `git add`. It traces dependencies as it goes: if a file you are
+committing depends on another uncommitted file, that file is pulled in too,
+so you do not ship a commit that references something that was left behind.
+Unrelated changes are left untouched. If a single file mixes your work with
+someone else's, the skill stops and asks rather than guessing.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `pr` | No | Push current branch and create a PR to main (must be FIRST token) |
-| `scope` | No | Free-text scope hint to guide which files to commit (e.g., `skill updates`, `parser reset button fix`) |
-| `push` | No | Commit and push to remote |
-| `land` | No | Cherry-pick worktree commits into main (worktree only) |
-| `auto` | No | Auto-merge the resulting PR (PR mode only) |
+Before the commit is written it runs the full test suite when code was
+staged (it skips tests for content-only changes like Markdown or images),
+drafts a commit message in the style of your recent history, and has a
+fresh reviewer look over the staged diff to catch missing files, stray
+files, or problems in the change. If anything looks wrong, it stops and
+reports instead of committing.
 
-## Subcommands
+Beyond the basic commit, `/commit` can also:
 
-### `pr`
+- **Push** the commit to the remote.
+- **Open a pull request** to main (`/commit pr`) — push the current branch,
+  create the PR, watch its CI, and fix failures, by handing off to the
+  `/land-pr` skill described under "Companion skills" below.
+- **Land** worktree commits onto main by cherry-picking them
+  (`/commit land`), running tests, and recording that the worktree's work
+  has been merged.
 
-Push the current branch and create a PR to main. Requires a clean working tree. The `pr` token must be the first argument. Everything after `pr` is the scope hint.
+If you do not type a mode, `/commit` reads your project's configured default
+landing behavior and acts accordingly — so on a project set up to land work
+through pull requests, a bare `/commit` opens a PR for you without you
+retyping `pr` each time.
 
-### `push`
+## Typical usage
 
-Commit all related changes and push to the remote.
-
-### `land`
-
-Cherry-pick worktree commits onto main. Only available when running in a worktree. Handles the full landing flow: cherry-pick, test suite, `.landed` marker.
-
-## Examples
+The common cases, from lightest to heaviest:
 
 ```
 /commit
 /commit skill updates
 /commit push
-/commit parser reset button fix push
-/commit land
 /commit pr
-/commit pr fix pr comments
 /commit pr auto
 ```
 
-## Common Patterns
+- `/commit` — commit the related changes; figure out the scope from the
+  diffs.
+- `/commit skill updates` — the same, but the free-text **scope hint**
+  (`skill updates`) guides which files count as related. The hint narrows
+  the search; the skill still checks the diffs.
+- `/commit push` — commit, then push to the remote.
+- `/commit pr` — push the current branch and open a pull request to main.
+  This is the recommended way for you to land work as a PR (it requires a
+  clean working tree, so commit first).
+- `/commit pr auto` — the same, plus request that the PR auto-merge once
+  CI passes.
 
-- **Basic commit:** `/commit` -- inventories changes, classifies related vs. unrelated, commits related files
-- **Scoped commit:** `/commit skill updates` -- scope hint guides which files are related
-- **Commit and push:** `/commit push` -- commit then push to remote
-- **Land worktree work:** `/commit land` -- cherry-pick worktree commits to main, run tests, write `.landed` marker
-- **Open a PR:** `/commit pr` -- push branch and create a PR
-- **PR with auto-merge:** `/commit pr auto` -- push, create PR, request auto-merge
+To land a feature branch as a PR, `/commit pr` is the path to reach for. It
+is one of the supported entry points for opening pull requests; you do not
+call the underlying landing machinery yourself.
 
-## Tips & Gotchas
+## Companion skills
 
-- `pr` is recognized ONLY as the first token to prevent false-triggering on scope hints containing "pr"
-- When no mode token is supplied, the skill consults `execution.landing` in config
-- The skill traces import dependencies -- if file A imports file B and both are uncommitted, both are staged
-- Unrelated changes in the working tree are left alone -- only related files are staged
-- `auto` is only meaningful in PR mode; it has no effect with `push` or `land`
-- `/commit land` dispatches the full landing script: try cherry-pick (no stash), run tests, write `.landed` marker
-- Never uses `git add .` or `git add -A` -- stages files by name only
+`/commit` is the shared landing step for staged work, and several skills use
+it that way:
+
+- **`/land-pr`** — the skill `/commit pr` hands off to in order to push the
+  branch, create the pull request, monitor CI, and run the fix cycle on a
+  failure. `/land-pr` is an internal helper you do not type directly; reach
+  for it through `/commit pr`.
+- **`/do`** and **`/quickfix`** — peer skills for one-commit changes. They
+  carry a change through triage, review, and landing, and call `/commit` to
+  land their work. Pick between them by project policy: when the project
+  protects its main branch, use `/do` (which works in an isolated
+  worktree); otherwise either works.
+- **`/run-plan`** and **`/fix-issues`** — larger orchestration skills that
+  also land their work through `/commit` and `/land-pr`.
+- **`/cleanup-merged`** — run this *after* a PR you opened with `/commit pr`
+  has merged, to bring your local clone back up to date.
+- **`/update-zskills`** — configures the project settings `/commit` reads,
+  such as the default landing behavior and the commit co-author trailer.
+
+## Arguments
+
+`/commit` takes optional positional tokens. Order matters only for `pr`,
+which must come first.
+
+| Argument | What it does |
+|----------|--------------|
+| `pr` | Push the current branch and open a pull request to main. Must be the **first** token — this prevents a scope hint that happens to contain "pr" from triggering PR mode. Requires a clean working tree. (`skills/commit/SKILL.md:28`, `skills/commit/SKILL.md:25`, `skills/commit/SKILL.md:468`) |
+| `scope` | A free-text hint (e.g. `skill updates`, `parser reset button fix`) that guides which files count as related. Advisory — the skill still reads the diffs. (`skills/commit/SKILL.md:20`, `skills/commit/SKILL.md:464`) |
+| `push` | Commit, then push to the remote. (`skills/commit/SKILL.md:22`, `skills/commit/SKILL.md:419`) |
+| `land` | Cherry-pick the current worktree's commits onto main, run tests, and record that the work has landed. Only valid when you are in a worktree. (`skills/commit/SKILL.md:24`, `skills/commit/modes/land.md:10`) |
+| `auto` | In PR mode, request that the pull request auto-merge once CI passes. Has no effect with `push` or `land`. (`skills/commit/SKILL.md:154`, `skills/commit/SKILL.md:41`) |
+
+If you give no mode token at all, `/commit` reads your project's configured
+default landing behavior to decide what to do — on a project that lands
+through pull requests, a bare `/commit` behaves like `/commit pr`.
+(`skills/commit/SKILL.md:31`, `skills/commit/SKILL.md:139`)

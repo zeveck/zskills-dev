@@ -1,8 +1,10 @@
 # Z Skills Reference
 
-Per-skill reference for the **23 user-facing Z Skills**, plus the 2 internal
-helpers they dispatch. Looking for how to *combine* these skills into
-end-to-end workflows? See [Workflows](../guides/workflows.md).
+Per-skill reference for the **23 user-facing Z Skills**, plus the **2 internal
+helpers** they dispatch (`/land-pr` and `/manual-testing` — not for direct use;
+in the docs viewer they appear under their own **Internal Skills** section).
+Looking for how to *combine* these skills into end-to-end workflows? See
+[Workflows](../guides/workflows.md).
 
 <details>
 <summary><strong>Quick reference table</strong> — alphabetical jump list (click to expand)</summary>
@@ -12,6 +14,7 @@ end-to-end workflows? See [Workflows](../guides/workflows.md).
 | [`/briefing`](briefing.md) | Generate a project briefing with status, commits, worktrees |
 | [`/cleanup-merged`](cleanup-merged.md) | Post-PR-merge local normalization |
 | [`/commit`](commit.md) | Safe commit workflow with optional push, land, or PR |
+| [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work |
 | [`/do`](do.md) | Lightweight task dispatcher for ad-hoc work |
 | [`/doc`](doc.md) | Audit and fix documentation gaps |
 | [`/draft-plan`](draft-plan.md) | Draft plans through iterative adversarial review |
@@ -19,7 +22,6 @@ end-to-end workflows? See [Workflows](../guides/workflows.md).
 | [`/fix-issues`](fix-issues.md) | Orchestrate batch bug-fixing sprints |
 | [`/fix-report`](fix-report.md) | Review sprint results, land fixes, close issues |
 | [`/investigate`](investigate.md) | Deep debugging for complex bugs |
-| [`/manual-testing`](manual-testing.md) | Browser-based manual testing recipes |
 | [`/plans`](plans.md) | Plan dashboard: view status, find next ready plan |
 | [`/qe-audit`](qe-audit.md) | Quality engineering audit for test coverage gaps |
 | [`/quickfix`](quickfix.md) | Ship an in-flight edit as a one-commit PR |
@@ -35,12 +37,14 @@ end-to-end workflows? See [Workflows](../guides/workflows.md).
 
 #### Internal helpers
 
-Dispatched by other skills — not designed for direct user invocation. Listed for reference only.
+Dispatched by other skills — not designed for direct user invocation (both carry
+`user-invocable: false`). In the docs viewer they appear under their own
+**Internal Skills** section. Listed here for reference only.
 
 | Skill | Description |
 |-------|-------------|
-| [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work |
 | [`/land-pr`](land-pr.md) | PR landing helper (rebase, push, create-or-detect, monitor CI, optional auto-merge) |
+| [`/manual-testing`](manual-testing.md) | Browser-based manual testing recipes (uses the `playwright-cli` tool) |
 
 </details>
 
@@ -74,7 +78,7 @@ Skills for testing, auditing, and verifying changes.
 - [/verify-changes](verify-changes.md) -- Full verification: diffs, test coverage, test runs, manual checks
 - [/qe-audit](qe-audit.md) -- Quality engineering audit for test coverage gaps and bugs
 - [/investigate](investigate.md) -- Deep root-cause debugging for complex bugs
-- [/manual-testing](manual-testing.md) -- Browser-based manual testing recipes (uses the `playwright-cli` tool)
+- [/manual-testing](manual-testing.md) -- Browser-based manual testing recipes (uses the `playwright-cli` tool) *(internal helper)*
 
 ### Git & Landing
 
@@ -82,7 +86,7 @@ Skills for committing, landing, and cleaning up branches.
 
 - [/commit](commit.md) -- Safe commit workflow with push, land, or PR modes
 - [/cleanup-merged](cleanup-merged.md) -- Post-PR-merge local normalization and branch cleanup
-- [/create-worktree](create-worktree.md) -- Create isolated git worktrees for agent work *(helper)*
+- [/create-worktree](create-worktree.md) -- Create isolated git worktrees for agent work
 
 ### Content & Documentation
 

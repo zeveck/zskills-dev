@@ -1,0 +1,26 @@
+materialiser
+materialise
+materialize
+sentinel
+atomic(ally)?
+Phase [0-9]
+Phase [0-9][a-z]
+WI [0-9]
+Tier [12]
+[Tt]wo-[Tt]ier
+\$\{CLAUDE_PLUGIN_ROOT\}
+lock-LAST
+D[0-9]+\b
+flock
+collect\.py
+render-index
+build-catalog\.sh
+git-common-dir
+static-grep
+git-tokenwalk
+preset-owned
+disable-model-invocation
+subagent_type
+inject-bash-timeout
+verify-response-validate
+idempoten(t|cy|tly)

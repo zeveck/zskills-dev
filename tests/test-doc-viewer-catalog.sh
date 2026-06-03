@@ -8,7 +8,9 @@
 #   - The committed docs/DocsRegistry.js byte-matches a fresh run (drift gate)
 #   - Per-section item ordering is path-ascending (sort stability)
 #   - Excluded dirs (docs/plans, docs/reports, docs/evals, docs/issues, docs/tracking) emit zero entries
-#   - Catalog scope: Guides + Skills only (user-facing onboarding; ~35 entries)
+#   - Catalog scope: Guides + Skills + Internal Skills (user-facing onboarding; ~35 entries)
+#   - Internal Skills section holds the user-invocable:false skills (land-pr,
+#     manual-testing today), absent from the user-facing Skills section
 #   - inspecting-and-monitoring.md is present (Phase 5 dependency)
 #   - tests/run-all.sh registers this file
 #
@@ -91,11 +93,11 @@ else
   diff -u "$REGISTRY" "$TMP1" | head -80
 fi
 
-# Section ordering — user-facing scope only.
-EXPECTED_ORDER='Start here Guides Skills'
+# Section ordering — user-facing scope (Internal Skills appended after Skills).
+EXPECTED_ORDER='Start here Guides Skills Internal Skills'
 ACTUAL_ORDER=$(grep -oE 'section: "[^"]+"' "$REGISTRY" | sed 's/section: "\(.*\)"/\1/' | tr '\n' ' ' | sed 's/ $//')
 if [ "$ACTUAL_ORDER" = "$EXPECTED_ORDER" ]; then
-  pass "3 sections present in fixed order"
+  pass "4 sections present in fixed order"
 else
   fail "section order mismatch — expected '$EXPECTED_ORDER', got '$ACTUAL_ORDER'"
 fi
@@ -106,6 +108,44 @@ if [ "$ENTRY_COUNT" -ge 25 ] && [ "$ENTRY_COUNT" -le 50 ]; then
   pass "catalog has $ENTRY_COUNT entries (in expected 25..50 range)"
 else
   fail "catalog has $ENTRY_COUNT entries, expected 25..50 (Start here + Guides + Skills only)"
+fi
+
+# Internal Skills section membership — the user-invocable:false docs live
+# here, NOT in the user-facing Skills section. Today that set is exactly
+# land-pr + manual-testing (classification is by source-skill frontmatter,
+# enumerated by the generator — this asserts the live result).
+INTERNAL_BLOCK=$(awk '
+  /section: "Internal Skills"/ { in_sec=1; next }
+  in_sec && /^    \]/          { exit }
+  in_sec                       { print }
+' "$REGISTRY")
+SKILLS_BLOCK=$(awk '
+  /section: "Skills"/          { in_sec=1; next }
+  in_sec && /^    \]/          { exit }
+  in_sec                       { print }
+' "$REGISTRY")
+for doc in land-pr manual-testing; do
+  if printf '%s\n' "$INTERNAL_BLOCK" | grep -q "\"docs/skills/$doc.md\""; then
+    pass "Internal Skills section contains docs/skills/$doc.md"
+  else
+    fail "Internal Skills section missing docs/skills/$doc.md"
+  fi
+  if printf '%s\n' "$SKILLS_BLOCK" | grep -q "\"docs/skills/$doc.md\""; then
+    fail "docs/skills/$doc.md still in user-facing Skills section (should be Internal Skills)"
+  else
+    pass "docs/skills/$doc.md absent from user-facing Skills section"
+  fi
+done
+# README is the section index — it stays under Skills, never Internal Skills.
+if printf '%s\n' "$SKILLS_BLOCK" | grep -q '"docs/skills/README.md"'; then
+  pass "docs/skills/README.md remains in Skills section (section index)"
+else
+  fail "docs/skills/README.md missing from Skills section"
+fi
+if printf '%s\n' "$INTERNAL_BLOCK" | grep -q '"docs/skills/README.md"'; then
+  fail "docs/skills/README.md wrongly classified into Internal Skills"
+else
+  pass "docs/skills/README.md not classified as Internal Skills"
 fi
 
 # Internal/optional dirs must be excluded — this is an onboarding viewer.

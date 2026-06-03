@@ -1,12 +1,12 @@
 ---
 title: User-Doc Rewrite — docs/skills then docs/guides
 created: 2026-06-02
-status: active
+status: complete
 ---
 
 # Plan: User-Doc Rewrite (docs/skills → docs/guides)
 
-> **Landing mode: PR** (`main_protected: true`). **Executed by the top-level orchestrator, not `/run-plan`.** The per-doc pipeline fans out several agents per doc, and a `/run-plan` phase implementer is itself a subagent that cannot dispatch sub-subagents (Anthropic design) — so it could not run the pipeline. The orchestrator dispatches the agents directly, does each phase's work in a worktree, and lands each phase as an auto-merged PR via `/land-pr`. Mode is automatic under locked-main — never pass a redundant `pr` token.
+> **Landing mode: PR** (`main_protected: true`). **Executed via `/run-plan … finish auto`**, which runs at the top level and therefore has `Agent` access — so the orchestrator can fan out the per-doc pipeline directly (a `/run-plan` *phase implementer* is a subagent and could not, but `/run-plan` itself drives the phases at top level). The run uses **one persistent worktree** for the whole plan, **commits per phase** in that worktree, and lands a **single final auto-merged PR** at the end (not a PR per phase). Phases are **cron-chunked, one phase per fire**. Within each phase the orchestrator dispatches the per-doc implementer agents plus a phase verifier, and spot-checks citations itself. Mode is automatic under locked-main — never pass a redundant `pr` token.
 
 ## Overview
 
@@ -49,7 +49,7 @@ These rules are the standard each rewritten doc is held to. They are referenced 
 
 ## The per-doc pipeline (how each doc gets rewritten and proven)
 
-Each doc is rewritten through three roles, all dispatched by the **top-level orchestrator** (which has `Agent` access). This is *why* the plan is executed by the orchestrator and not `/run-plan`: a `/run-plan` phase implementer is itself a subagent and **cannot dispatch sub-subagents** (Anthropic design), so it could not fan out the pipeline. The orchestrator runs the roles as separate agents per doc (or per small group) and spot-checks their output. The orchestrator may scale the agent count to the work — the role separation, not a fixed headcount, is what matters:
+Each doc is rewritten through three roles, all dispatched by the **top-level orchestrator** (which has `Agent` access). This is *why* the plan runs as `/run-plan … finish auto` rather than relying on a phase implementer: `/run-plan` drives each phase at the top level, so the orchestrator can fan out the pipeline — whereas a `/run-plan` *phase implementer* is itself a subagent and **cannot dispatch sub-subagents** (Anthropic design). The orchestrator runs the roles as separate agents per doc (or per small group) and spot-checks their output. The orchestrator may scale the agent count to the work — the role separation, not a fixed headcount, is what matters:
 
 1. **Extract + write (a dispatched implementer agent).** Reads the *full* source for each skill in the group, then commits, alongside the rewritten doc, a **fact sheet**: every factual claim the doc makes, each tied to a `SKILL.md:LINE` citation + quote. Arguments come from `argument-hint`; companion skills from the Phase-0 graph; typical-usage from the Phase-0 usage map. **The fact sheet proves a line was *located*, not that it *supports* the claim** — a skimming agent can grep a real line, quote it verbatim, and still attach it to a doc sentence it does not back. So each entry pairs the citation with **the exact doc sentence it backs** (claim↔quote adjacency), written as `path:line: "<verbatim quote>"` so the quote is mechanically re-checkable. Citation *existence* is cheap; *correspondence* (does this line support this sentence?) is the load-bearing check — that is the verifier's job (step 2), not a mechanical guarantee. The doc may state nothing absent from its fact sheet. The agent also records any cross-mode / cross-skill surprises as discrepancy notes. (Extract and write may be one agent or two; if one, the fact sheet must still be committed as the inspectable proof-of-read.)
 
@@ -59,7 +59,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 
 ## Deliverables
 
-- **Rewritten catalog docs**, landed as thematic PRs grouped by peer-family.
+- **Rewritten catalog docs**, organized into peer-family phases and landed as a **single final PR** (`/run-plan … finish auto`, one worktree, commit-per-phase).
 - **`docs/reports/SKILL_DISCREPANCIES.md`** (outside the viewer catalog so it stays a working doc): cross-skill inconsistencies and surprising cross-mode behavior, each entry tagged with the orchestrator's **hypothesis of intent (intentional vs. surprising)** and a request for the user's ruling. Divergence ≠ bug — some is deliberate (e.g. `/do`'s `stop [query]`/`next [query]` disambiguators exist because `/do` *could* fan out parallel crons in one session; most schedulable skills correctly use bare `every`/`stop`/`next`). Entries never assert a verdict; they ask. **Intake is bounded** to avoid a judgment swamp: log an entry only when the inconsistency (a) would change a user-facing doc claim, or (b) looks like a real skill bug — pure stylistic variation is not logged. Soft-cap ~20 entries; beyond that, record the *count* of un-enumerated extras rather than listing every one.
 - **Per-doc fact sheets + verdict ledgers** committed as review evidence (kept under `docs/reports/doc-rewrite-evidence/` so they're out of the catalog).
 
@@ -82,7 +82,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 - Each phase = one peer-family. The implementer reads every source file at HEAD (line numbers shift; roles don't).
 - Acceptance is checked by the verifier's ledger **and** the orchestrator's spot-check before the phase's PR lands.
 - `docs/reports/SKILL_DISCREPANCIES.md` accumulates across phases; the final phase consolidates and presents it.
-- **Phases land strictly serially.** Each phase's PR is fully merged and its tracking markers cleaned before the next phase's agents are dispatched. No per-doc agent dispatches `/land-pr` — only the orchestrator lands, once per phase (avoids the serial-`requires.land-pr` deadlock CLAUDE.md warns about).
+- **One worktree, commit-per-phase, single final PR.** `/run-plan … finish auto` does all phases in **one persistent worktree**, **commits per phase** there, and lands a **single auto-merged PR** at the end — not a PR per phase. Phases are **cron-chunked, one phase per fire**, so the work runs serially within that one worktree/branch. No per-doc agent dispatches `/land-pr`; the final landing is a single `/run-plan`-driven PR (which avoids the serial-`requires.land-pr` deadlock CLAUDE.md warns about, since there is only one landing for the whole plan).
 - **Catalog regen on H1 change.** The viewer nav is generated into `docs/DocsRegistry.js` by `scripts/build-catalog.sh` (DO NOT hand-edit), and `tests/test-doc-viewer-catalog.sh` byte-diffs it as a drift gate; the nav entry `name` derives from each doc's H1. So if a rewrite changes a doc's H1, re-run `bash scripts/build-catalog.sh` and commit the regenerated `docs/DocsRegistry.js` in the SAME PR, or the drift gate fails the landing.
 - **`inspecting-and-monitoring.md` parity gate.** `tests/test-doc-viewer-parity.sh` asserts the rendered `.md` carries every distinctive token from the hand-built `.html`. A rewrite that drops tokens trips it; if a drop is deliberate, update `HTML_ONLY_OK_TOKENS` with a reason.
 - **`bash tests/run-all.sh` must pass before each phase PR lands** (catches the catalog drift gate, parity gate, and any conformance gate touched).
@@ -91,7 +91,7 @@ Each doc is rewritten through three roles, all dispatched by the **top-level orc
 
 ## Phase 0 — Foundations (rubric, companion graph, usage map, scaffolds)
 
-_Status: pending._ One-time shared groundwork every later phase consumes. No catalog doc is rewritten in this phase.
+_Status: ✅ Done._ One-time shared groundwork every later phase consumes. No catalog doc is rewritten in this phase.
 
 - [ ] **Land the Rubric** (`docs/reports/doc-rewrite-evidence/RUBRIC.md`): R1–R7 above, plus the finalized **banned-term list** (seed from R5; expand by grepping the current docs for internals vocabulary). This is the file phase implementers and verifiers are pointed at. Also emit the list as a grep-able artifact `docs/reports/doc-rewrite-evidence/banned-terms.txt` — one `grep -E` pattern per line, properly escaped (`materialiser`, `sentinel`, `Phase 0a`, `WI [0-9]`, `\$\{CLAUDE_PLUGIN_ROOT\}`, …) — so every later phase's "banned-term grep clean" acceptance is the concrete command `grep -nEf docs/reports/doc-rewrite-evidence/banned-terms.txt <phase docs>`.
 - [ ] **Build the canonical companion-skill graph** (`.../COMPANIONS.md`): for each skill, its typical companion skills and the "which skill for which input" mapping, reconciled against the CLAUDE.md decision table. Source-cited.
@@ -105,7 +105,7 @@ _Status: pending._ One-time shared groundwork every later phase consumes. No cat
 
 ## Phase 1 — Execution peers: do, quickfix, commit, land-pr, cleanup-merged
 
-_Status: pending._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — they must read as co-equal. `land-pr` is `user-invocable: false` and must say so plainly without dumping its result-code list.
+_Status: ✅ Done._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — they must read as co-equal. `land-pr` is `user-invocable: false` and must say so plainly without dumping its result-code list.
 
 - [ ] Run the per-doc pipeline on each of `do.md`, `quickfix.md`, `commit.md`, `land-pr.md`, `cleanup-merged.md`.
 - [ ] `do.md` / `quickfix.md`: present as parallel peers; describe verification/behavior uniformly (R4 — no "regardless of mode").
@@ -120,7 +120,7 @@ _Status: pending._ The `/do` ↔ `/quickfix` peer pair is the anchor (R7) — th
 
 ## Phase 2 — Planning peers: draft-plan, run-plan, refine-plan, draft-tests, plans
 
-_Status: pending._ The plan-authoring family; cross-references between them must be consistent (R6).
+_Status: ✅ Done._ The plan-authoring family; cross-references between them must be consistent (R6).
 
 - [ ] Run the per-doc pipeline on `draft-plan.md`, `run-plan.md`, `refine-plan.md`, `draft-tests.md`, `plans.md`.
 - [ ] `run-plan.md`: fix the `auto` description (mode-conflated — cherry-pick mode has no PR to auto-merge); replace cron-cadence mechanics with user-relevant "long phases don't burn context".
@@ -131,7 +131,7 @@ _Status: pending._ The plan-authoring family; cross-references between them must
 
 ## Phase 3 — Backlog/decompose peers: fix-issues, fix-report, work-on-plans, research-and-plan, research-and-go
 
-_Status: pending._ The "drive a backlog / decompose a goal" family.
+_Status: ✅ Done._ The "drive a backlog / decompose a goal" family.
 
 - [ ] Run the per-doc pipeline on `fix-issues.md`, `fix-report.md`, `work-on-plans.md`, `research-and-plan.md`, `research-and-go.md`.
 - [ ] `research-and-plan` ↔ `research-and-go`: present as the stop-after-draft vs. continue-into-execution pair, uniformly.
@@ -142,7 +142,7 @@ _Status: pending._ The "drive a backlog / decompose a goal" family.
 
 ## Phase 4 — Diagnose/verify peers: investigate, qe-audit, verify-changes, session-report
 
-_Status: pending._
+_Status: ✅ Done._
 
 - [ ] Run the per-doc pipeline on `investigate.md`, `qe-audit.md`, `verify-changes.md`, `session-report.md`.
 - [ ] `session-report.md`: add the missing `handoff` mode (source `argument-hint: "[handoff]"`).
@@ -153,7 +153,7 @@ _Status: pending._
 
 ## Phase 5 — Infra/meta peers: update-zskills, create-worktree, briefing, zskills-dashboard, doc
 
-_Status: pending._ (`manual-testing.md` excluded — owned by #1012.) This phase also picks up **`doc.md`** — the 25th skill doc, which earlier drafts left unassigned.
+_Status: ✅ Done._ (`manual-testing.md` excluded — owned by #1012.) This phase also picks up **`doc.md`** — the 25th skill doc, which earlier drafts left unassigned.
 
 - [ ] Run the per-doc pipeline on `update-zskills.md`, `create-worktree.md`, `briefing.md`, `zskills-dashboard.md`, `doc.md`.
 - [ ] `create-worktree.md`: drop the made-up "Two-Tier Contract / Tier 1 / Tier 2" terminology.
@@ -165,7 +165,7 @@ _Status: pending._ (`manual-testing.md` excluded — owned by #1012.) This phase
 
 ## Phase 6 — Nav: Internal Skills section (catalog-generator change) + docs/skills/README.md
 
-_Status: pending._ **This phase is NOT docs-only** — the viewer nav is machine-generated, so an "Internal Skills" section requires generator + test code changes. Block-diagram exclusion already holds for free.
+_Status: ✅ Done._ **This phase is NOT docs-only** — the viewer nav is machine-generated, so an "Internal Skills" section requires generator + test code changes. Block-diagram exclusion already holds for free.
 
 **The mechanism (verified against source):** the nav comes from `docs/DocsRegistry.js`, generated by `scripts/build-catalog.sh` (header: *DO NOT EDIT BY HAND*) from three hard-coded sections — `Start here`, `Guides`, `Skills` (`build-catalog.sh` `SECTIONS`, ~L66-70). `tests/test-doc-viewer-catalog.sh` asserts the section list is **exactly** `Start here Guides Skills` (L95) and byte-diffs `DocsRegistry.js` against a fresh generator run (drift gate, L86-92). So a 4th section is a **code change**, and the test must move with it.
 
@@ -185,29 +185,28 @@ _Status: pending._ **This phase is NOT docs-only** — the viewer nav is machine
 
 ## Phase 7 — Guides (secondary): README, installing-zskills, switching-install-lanes, tracking-overview, inspecting-and-monitoring, workflows
 
-_Status: pending._ Guides are less broken than skill docs but carry the heaviest hedge-soup (`installing-zskills`) and the worst single doc (`tracking-overview`). `inspecting-and-monitoring.md` is rewritten **except** its dev/prod-URL + install-path content (→ #1002).
+_Status: ✅ Done._ Guides are less broken than skill docs but carry the heaviest hedge-soup (`installing-zskills`) and the worst single doc (`tracking-overview`). `inspecting-and-monitoring.md` is rewritten **except** its dev/prod-URL + install-path content (→ #1002).
 
-- [ ] `tracking-overview.md`: reconcile against `docs/tracking/TRACKING_NAMING.md` + current hook — the flat-vs-per-pipeline-subdir layout examples are wrong; the "suffix matching" section is obsolete; the "enforced on commit/cherry-pick/push identically" claim needs the on-main scoping checked (R2). Likely a near-rewrite.
-- [ ] `installing-zskills.md`: de-hedge the lede (R3) — "pick one lane; you can't run both" without "end-state/not-tiered/not-deprecated" defensiveness; replace materialiser/sentinel/`${CLAUDE_PLUGIN_ROOT}` prose with plain user-facing behavior.
-- [ ] `switching-install-lanes.md`: strip "D25 / lock-LAST / basename-gated / sentinel-gated" vocabulary.
-- [ ] `workflows.md`: the dashed-`--auto`-belongs-to-`/land-pr` statement is actually **correct** (CLAUDE.md flag convention: `/land-pr` is the one skill taking `--auto` with dashes). The real defect is the over-broad "never type a dashed flag yourself" generalization — carve out the user-facing `--force` (`/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`) and `--rounds N` (`/do`).
-- [ ] `README.md` (guides index): align with the rewritten guides.
+- [x] `tracking-overview.md`: reconcile against `docs/tracking/TRACKING_NAMING.md` + current hook — the flat-vs-per-pipeline-subdir layout examples are wrong; the "suffix matching" section is obsolete; the "enforced on commit/cherry-pick/push identically" claim needs the on-main scoping checked (R2). Likely a near-rewrite.
+- [x] `installing-zskills.md`: de-hedge the lede (R3) — "pick one lane; you can't run both" without "end-state/not-tiered/not-deprecated" defensiveness; replace materialiser/sentinel/`${CLAUDE_PLUGIN_ROOT}` prose with plain user-facing behavior.
+- [x] `switching-install-lanes.md`: strip "D25 / lock-LAST / basename-gated / sentinel-gated" vocabulary.
+- [x] `workflows.md`: the dashed-`--auto`-belongs-to-`/land-pr` statement is actually **correct** (CLAUDE.md flag convention: `/land-pr` is the one skill taking `--auto` with dashes). The real defect is the over-broad "never type a dashed flag yourself" generalization — carve out the user-facing `--force` (`/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`) and `--rounds N` (`/do`).
+- [x] `README.md` (guides index): align with the rewritten guides.
 
 **Acceptance:**
-- [ ] Fact sheet + clean verdict ledger per guide; banned-term grep clean; `tracking-overview` layout examples match `TRACKING_NAMING.md`; #1002-owned content left untouched and noted.
+- [x] Fact sheet + clean verdict ledger per guide; banned-term grep clean; `tracking-overview` layout examples match `TRACKING_NAMING.md`; #1002-owned content left untouched and noted.
 
 ## Phase 8 — Discrepancy review & consolidation
 
-_Status: pending._ Close the loop on the second deliverable.
+_Status: ✅ Done._ Close the loop on the second deliverable. **No user gate (per the user's "autoland" direction):** the consolidated `SKILL_DISCREPANCIES.md` ships WITH the work; the user files skill-fix issues from it on their own time post-merge. Phase 8 does not present-and-wait.
 
-- [ ] Consolidate `SKILL_DISCREPANCIES.md`: dedupe, ensure every entry carries an intent hypothesis + a user-ruling request.
-- [ ] Present to the user for ruling. For each "surprising" (likely-bug) entry the user confirms, file a GitHub issue (skill-fix, not doc). For "intentional" entries, add a one-line doc note only where user-relevant.
-- [ ] Final consistency pass: every doc's companion section still agrees with COMPANIONS.md after all rewrites.
+- [x] Consolidate `SKILL_DISCREPANCIES.md`: dedupe, ensure every entry carries an intent hypothesis + a user-ruling request. (No issues filed by the pipeline — the doc is the hand-off; the user files from it.)
+- [x] Final consistency pass: every doc's companion section still agrees with COMPANIONS.md after all rewrites.
 
 **Acceptance:**
-- [ ] `SKILL_DISCREPANCIES.md` reviewed with the user; issues filed for confirmed bugs.
-- [ ] No catalog doc contradicts another on companion skills or shared command grammar.
-- [ ] `bash tests/run-all.sh` passes (doc-conformance / link-check suites green).
+- [x] `SKILL_DISCREPANCIES.md` consolidated and coherent (every entry carries intent + a user-ruling question); it lands with the PR for the user to act on.
+- [x] No catalog doc contradicts another on companion skills or shared command grammar.
+- [x] `bash tests/run-all.sh` passes (doc-conformance / link-check / catalog / parity suites green).
 
 ## Drift Log
 
@@ -228,7 +227,7 @@ No completed phases — the plan was drafted (PR #1021) and immediately refined;
 
 **Refinement process:** `/refine-plan` with 1 round of adversarial review (reviewer + devil's-advocate, both grounded in the live repo; orchestrator verified every load-bearing finding against source before baking).
 **Convergence:** Converged at round 1 — all substantive findings dispositioned (fixed or justified); the two CRITICAL findings (Phase 6 catalog generation, missing `doc.md`) and the HIGH anti-skim hole were verified true and fixed.
-**Remaining concerns:** Execution is a large multi-PR effort; the plan is orchestrator-executed (not `/run-plan`) and lands phases strictly serially. #1002 / #1012 are OPEN — Phase 6 (manual-testing nav) and Phase 7 (inspecting-and-monitoring URLs) branch on their merge state at execution time.
+**Remaining concerns:** Execution is a large multi-phase effort run via `/run-plan … finish auto` — one persistent worktree, commit-per-phase, cron-chunked one-phase-per-fire, landing a single final auto-merged PR; phases run serially within that worktree. #1002 / #1012 are OPEN — Phase 6 (manual-testing nav) and Phase 7 (inspecting-and-monitoring URLs) branch on their merge state at execution time.
 
 ### Round History
 | Round | Reviewer | Devil's Advocate | Substantive | Resolved |

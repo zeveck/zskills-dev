@@ -25,8 +25,8 @@ export const DOCS_CATALOG = [
       { name: "Installing zskills", path: "docs/guides/installing-zskills.md" },
       { name: "Z Skills Workflows", path: "docs/guides/workflows.md" },
       { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/inspecting-and-monitoring.md" },
-      { name: "Switching install lanes (`scripts/switch-install-path.sh`)", path: "docs/guides/switching-install-lanes.md" },
-      { name: "Z Skills Tracking System Overview", path: "docs/guides/tracking-overview.md" }
+      { name: "Switching install lanes", path: "docs/guides/switching-install-lanes.md" },
+      { name: "How tracking keeps pipelines safe", path: "docs/guides/tracking-overview.md" }
     ]
   },
   {
@@ -44,8 +44,6 @@ export const DOCS_CATALOG = [
       { name: "/fix-issues", path: "docs/skills/fix-issues.md" },
       { name: "/fix-report", path: "docs/skills/fix-report.md" },
       { name: "/investigate", path: "docs/skills/investigate.md" },
-      { name: "/land-pr", path: "docs/skills/land-pr.md" },
-      { name: "/manual-testing", path: "docs/skills/manual-testing.md" },
       { name: "/plans", path: "docs/skills/plans.md" },
       { name: "/qe-audit", path: "docs/skills/qe-audit.md" },
       { name: "/quickfix", path: "docs/skills/quickfix.md" },
@@ -58,6 +56,13 @@ export const DOCS_CATALOG = [
       { name: "/verify-changes", path: "docs/skills/verify-changes.md" },
       { name: "/work-on-plans", path: "docs/skills/work-on-plans.md" },
       { name: "/zskills-dashboard", path: "docs/skills/zskills-dashboard.md" }
+    ]
+  },
+  {
+    section: "Internal Skills",
+    items: [
+      { name: "/land-pr", path: "docs/skills/land-pr.md" },
+      { name: "/manual-testing", path: "docs/skills/manual-testing.md" }
     ]
   }
 ];
