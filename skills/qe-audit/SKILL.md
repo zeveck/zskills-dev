@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.06.03+5bdda3"
+  version: "2026.06.03+050ebb"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -506,9 +506,9 @@ Run when `bash` IS present in arguments.
    - **ONLY use `todo` for bugs you just DISCOVERED during this bash
      session.** NEVER use `todo` to skip a test that was passing before
      and now fails due to your changes — that's weakening, not discovery.
-   - Run `$FULL_TEST_CMD` (resolve via the dual-lane prelude in
-     references/canonical-config-prelude.md §1 if you don't already have it in
-     your environment) before committing —
+   - Run `$FULL_TEST_CMD` (canonical form — maintainers: see
+     `references/canonical-config-prelude.md` §1 in the zskills source) before
+     committing —
      all suites must pass (todo-skipped tests are acceptable)
    - Commit all tests (passing + skipped) with descriptive message
 

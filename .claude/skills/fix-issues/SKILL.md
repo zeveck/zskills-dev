@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.03+33f652"
+  version: "2026.06.03+bd2e69"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -378,9 +378,9 @@ Do not proceed until you have read the file.
 - **Never close GH issues, update trackers, or remove worktrees** — that's
   `/fix-report`'s job.
 - **One issue per commit** — clean git history in worktrees.
-- **`$FULL_TEST_CMD` before every commit** (resolve via the dual-lane prelude in
-  references/canonical-config-prelude.md §1 if you don't already have it in
-  your environment) — not just `npm test`.
+- **`$FULL_TEST_CMD` before every commit** (canonical form — maintainers: see
+  `references/canonical-config-prelude.md` §1 in the zskills source) — not
+  just `npm test`.
 - **Never weaken tests** — fix the code, not the test. Do not loosen
   tolerances, skip assertions, or remove test cases.
 - **Never defer the hard parts** — finish all phases of the plan. Do not

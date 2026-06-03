@@ -3177,11 +3177,12 @@ echo "=== PROSE-IMPERATIVE substitution-discipline coverage (WI 5.7) ==="
 # zskills-resolve-config.sh, OR (b) a pointer to a per-skill canonical-
 # prelude config-read block (existing `CONFIG_CONTENT=$(cat ...)` pattern).
 #
-# Annotation form (Phase 2 added these inline alongside the migration):
+# Annotation form (Phase 2 added these inline alongside the migration;
+# #1049 reworded the client-facing breadcrumb to a maintainer note):
 #
-#     run `$FULL_TEST_CMD` (resolve via
-#       `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-#       if you don't already have it in your environment) before committing.
+#     run `$FULL_TEST_CMD` (canonical form — maintainers: see
+#       `references/canonical-config-prelude.md` §1 in the zskills source)
+#       before committing.
 #
 # This test re-derives the migrated-site set at execution time (line
 # numbers drift across edits) so it stays robust as files change.
@@ -3243,10 +3244,18 @@ while IFS= read -r skill_file; do
           #     config — see X)` / `(resolve via X)` — the migration introduced
           #     these in lieu of inline helper-source where the surrounding
           #     fence already had a resolver.
+          # (d) maintainer-note pointer-prose: `(canonical form — maintainers:
+          #     see references/canonical-config-prelude.md §1 ...)` — #1049
+          #     reworded the client-facing `(resolve via ...)` breadcrumb into
+          #     an explicit maintainer note so it no longer reads as a path a
+          #     client resolves. The annotation discipline is unchanged: every
+          #     prose $VAR site still carries a nearby resolution annotation;
+          #     this form is the maintainer-facing spelling of it.
           if [[ "$wline" == *"zskills-resolve-config.sh"* ]] \
              || [[ "$wline" =~ CONFIG_CONTENT=\$\(cat ]] \
              || [[ "$wline" =~ \(resolved\ from\ config ]] \
-             || [[ "$wline" =~ \(resolve\ via ]]; then
+             || [[ "$wline" =~ \(resolve\ via ]] \
+             || [[ "$wline" =~ \(canonical\ form ]]; then
             found=1
             break
           fi
