@@ -1,16 +1,16 @@
 ---
 name: do
-argument-hint: "<description> [auto] [every SCHEDULE] [now] [--rounds N] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Worktree/direct/pr landing modes via flag
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.03+c894ed"
+  version: "2026.06.03+87b14f"
 ---
 
-# /do \<description> [auto] [every SCHEDULE] [now] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
+# /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
 
 Execute small, ad-hoc tasks with structured research, verification, and
 optional isolation or autonomous landing. Can be scheduled for recurring maintenance

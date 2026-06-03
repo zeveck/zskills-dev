@@ -1830,9 +1830,9 @@ echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
 # here in tandem; AC-6.2 is a list-membership invariant, not a literal
 # count. WI 6.3 is the authoritative enumeration source.
 #
-# 1. Frontmatter shape (incl. `[guidance...]` positional tail in argument-hint)
-check       draft-tests "frontmatter argument-hint with [auto] [guidance...]" \
-  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[auto\] \[guidance\.\.\.\]"'
+# 1. Frontmatter shape (incl. `[<guidance>]` positional tail in argument-hint)
+check       draft-tests "frontmatter argument-hint with [auto] [<guidance>]" \
+  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[auto\] \[<guidance>\]"'
 # 2. Tracking marker basename matches canonical scheme `fulfilled.draft-tests.<id>`
 check_fixed draft-tests "fulfilled marker basename" \
   'fulfilled.draft-tests.$TRACKING_ID'
@@ -3667,8 +3667,9 @@ echo "=== weak-skill static invariants — doc / qe-audit / session-report ==="
 # qe-audit's `## Files to change` is already asserted at the #681 section
 # above, so it is NOT re-asserted here.)
 
-# doc — documented modes present in argument-hint/mode prose + invocation flag.
-check_fixed doc "argument-hint lists blocks|examples|newsletter modes" '[blocks|examples|newsletter|<description>]'
+# doc — compact argument-hint is just <description>; modes stay documented
+# in the body (mode-prose checks below), de-advertised from the hint.
+check_fixed doc "argument-hint is compact <description>" 'argument-hint: "<description>"'
 check_fixed doc "mode prose: /doc blocks"      '/doc blocks'
 check_fixed doc "mode prose: /doc examples"    '/doc examples'
 check_fixed doc "mode prose: /doc newsletter"  '/doc newsletter'

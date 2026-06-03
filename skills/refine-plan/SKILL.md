@@ -1,7 +1,7 @@
 ---
 name: refine-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [auto] [guidance...]"
+argument-hint: "<plan-file> [rounds N] [auto] [<guidance>]"
 description: >-
   Refine an in-progress plan by reviewing remaining phases against
   completed work. Dispatches reviewer + devil's-advocate agents to surface
@@ -9,10 +9,10 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.06.03+122677"
+  version: "2026.06.03+be05a3"
 ---
 
-# /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
+# /refine-plan \<plan-file> [rounds N] [<guidance>] — Adversarial Plan Refiner
 
 Refines an existing plan that is partially executed. Completed phases
 represent real, shipped work — they are **immutable context**, never

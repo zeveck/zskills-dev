@@ -1,17 +1,17 @@
 ---
 name: doc
 disable-model-invocation: true
-argument-hint: "[blocks|examples|newsletter|<description>]"
+argument-hint: "<description>"
 description: >-
   Audit and fix documentation gaps: block library entries, example models,
   getting-started guides, presentations, README updates. Also handles
   newsletter entries (/doc newsletter). Use when the user asks to "write a
   newsletter entry", "add to the newsletter", or "update the newsletter".
 metadata:
-  version: "2026.06.03+509cf0"
+  version: "2026.06.03+7cdafd"
 ---
 
-# /doc [blocks|examples|\<description>] — Documentation Audit & Fix
+# /doc \<description> — Documentation Audit & Fix
 
 Finds documentation gaps and fills them. Can audit all blocks, all examples,
 or document a specific feature. Knows the project's documentation structure
