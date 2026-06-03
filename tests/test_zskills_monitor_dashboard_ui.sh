@@ -116,12 +116,11 @@ else
   fail "AC: missing visibilitychange handler"
 fi
 
-# AC (#778): visibilitychange still force-refreshes both loops on focus.
-if grep -A4 'addEventListener("visibilitychange"' "$APP_JS" | grep -q 'schedulePoll(0)' \
-  && grep -A4 'addEventListener("visibilitychange"' "$APP_JS" | grep -q 'scheduleWorkPoll(0)'; then
-  pass "AC #778: focus triggers immediate schedulePoll(0)+scheduleWorkPoll(0)"
+# AC (#778): visibilitychange still force-refreshes the state poll on focus.
+if grep -A4 'addEventListener("visibilitychange"' "$APP_JS" | grep -q 'schedulePoll(0)'; then
+  pass "AC #778: focus triggers immediate schedulePoll(0)"
 else
-  fail "AC #778: visibilitychange must force-refresh both loops on focus"
+  fail "AC #778: visibilitychange must force-refresh schedulePoll(0) on focus"
 fi
 
 # AC (#778): slow background poll while hidden — named hidden interval ≈ 60s.
@@ -141,32 +140,21 @@ else
 fi
 
 # AC (#778) REGRESSION GUARD: the old hard-stop teardown is GONE. Pre-fix
-# both pollOnce and pollWorkOnce did `if (document.hidden) { pollTimer =
-# null; return; }` / `workPollTimer = null; return;` which killed the loop
-# while hidden. Assert neither nulling-then-returning teardown remains.
+# pollOnce did `if (document.hidden) { pollTimer = null; return; }` which
+# killed the loop while hidden. Assert the nulling-then-returning teardown
+# does not remain.
 if grep -Pzoq 'pollTimer\s*=\s*null;\s*\n\s*return;' "$APP_JS"; then
   fail "AC #778: pollOnce still tears down the loop (pollTimer = null; return;) when hidden"
 else
   pass "AC #778: pollOnce hidden-teardown removed (loop not killed when hidden)"
 fi
-if grep -Pzoq 'workPollTimer\s*=\s*null;\s*\n\s*return;' "$APP_JS"; then
-  fail "AC #778: pollWorkOnce still tears down the loop (workPollTimer = null; return;) when hidden"
-else
-  pass "AC #778: pollWorkOnce hidden-teardown removed (loop not killed when hidden)"
-fi
 
-# AC (#778): BOTH loops reschedule via the hidden-aware delay. pollOnce must
-# call schedulePoll(nextPollDelay()) and pollWorkOnce scheduleWorkPoll(
-# nextPollDelay()) so each keeps ticking (slowly) while hidden.
+# AC (#778): pollOnce reschedules via the hidden-aware delay
+# so the loop keeps ticking (slowly) while hidden.
 if grep -qE 'schedulePoll\(\s*nextPollDelay\(\)\s*\)' "$APP_JS"; then
   pass "AC #778: pollOnce reschedules via schedulePoll(nextPollDelay())"
 else
   fail "AC #778: pollOnce must reschedule via schedulePoll(nextPollDelay())"
-fi
-if grep -qE 'scheduleWorkPoll\(\s*nextPollDelay\(\)\s*\)' "$APP_JS"; then
-  pass "AC #778: pollWorkOnce reschedules via scheduleWorkPoll(nextPollDelay())"
-else
-  fail "AC #778: pollWorkOnce must reschedule via scheduleWorkPoll(nextPollDelay())"
 fi
 
 # AC: Esc handler present.
@@ -644,8 +632,9 @@ for ev in dragstart dragend dragenter dragleave dragover drop; do
   fi
 done
 
-# AC: Phase 7 endpoint constants present.
-for url in /api/queue /api/trigger /api/work-state/reset /api/work-state; do
+# AC: queue endpoint constant present. Other API URL constants were
+# pruned by the DASHBOARD_RUNSTATUS_CLEANUP rip.
+for url in /api/queue; do
   if grep -q "\"$url\"" "$APP_JS"; then
     pass "AC: $url URL constant present"
   else
@@ -653,10 +642,11 @@ for url in /api/queue /api/trigger /api/work-state/reset /api/work-state; do
   fi
 done
 
-# AC: cache:'no-store' on every fetch site (poll + work-state + queue + trigger + reset + plan + issue = 7).
+# AC: cache:'no-store' on every fetch site. Post run-status-rip the
+# fetch sites are poll + queue + plan + issue (modal fetches).
 NO_STORE_COUNT=$(grep -c 'cache:[[:space:]]*"no-store"' "$APP_JS" || true)
-if [ "${NO_STORE_COUNT:-0}" -ge 6 ]; then
-  pass "AC: cache:'no-store' on every fetch ($NO_STORE_COUNT ≥ 6)"
+if [ "${NO_STORE_COUNT:-0}" -ge 4 ]; then
+  pass "AC: cache:'no-store' on every fetch ($NO_STORE_COUNT ≥ 4)"
 else
   fail "AC: cache:'no-store' missing on some fetches ($NO_STORE_COUNT)"
 fi
@@ -711,11 +701,13 @@ else
   fail "AC: plans-live region missing"
 fi
 
-# AC: run-status widget root element present.
+# AC (DASHBOARD_RUNSTATUS_CLEANUP Phase 1): run-status widget root
+# element REMOVED. The pill + its supporting JS/CSS/server endpoints
+# were ripped in Phase 1; the AC is now an absence assertion.
 if grep -q 'id="run-status"' "$INDEX_HTML"; then
-  pass "AC: run-status widget root present"
+  fail "AC: run-status widget root still present (must be removed Phase 1)"
 else
-  fail "AC: run-status widget missing"
+  pass "AC: run-status widget root removed"
 fi
 
 # AC: PLAN_COLUMNS / ISSUE_COLUMNS constants in app.js.
@@ -815,20 +807,6 @@ for act in plan-up plan-down plan-left plan-right issue-up issue-down issue-left
     fail "AC: action $act missing"
   fi
 done
-
-# AC: stale-sprint clear-button POSTs reset endpoint.
-if grep -q 'clear-stale-sprint' "$APP_JS"; then
-  pass "AC: clear-stale-sprint action present"
-else
-  fail "AC: clear-stale-sprint action missing"
-fi
-
-# AC: Trigger button + work-state reset POST sites.
-if grep -q 'TRIGGER_URL' "$APP_JS" && grep -q 'WORK_STATE_RESET_URL' "$APP_JS"; then
-  pass "AC: TRIGGER_URL + WORK_STATE_RESET_URL constants present"
-else
-  fail "AC: trigger/reset constants missing"
-fi
 
 ###############################################################################
 # Block 3b — Phase 3: Completed + Backlog below-panel band (static-grep)
@@ -1621,72 +1599,6 @@ if python3 -c "import json; d=json.loads(open('$STATE_FILE').read()); slugs=[e['
   pass "AC: two-tab last-write-wins: final state matches one full payload"
 else
   fail "AC: two-tab race produced half-merged state"
-fi
-
-# AC: trigger-not-configured → 501.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-  -H "Origin: http://127.0.0.1:$PORT" \
-  -H 'Content-Type: application/json' \
-  -d '{"command":"/work-on-plans 1 phase"}' \
-  "http://127.0.0.1:$PORT/api/trigger")
-if [ "$CODE" = "501" ]; then
-  pass "AC: /api/trigger no config → 501 (UI hides Run button)"
-else
-  fail "AC: /api/trigger no-config → $CODE (expected 501)"
-fi
-
-# AC: /api/work-state surfaces trigger_configured flag.
-WS_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT/api/work-state")
-if printf '%s' "$WS_BODY" | grep -q '"trigger_configured":[[:space:]]*false'; then
-  pass "AC: /api/work-state surfaces trigger_configured=false"
-else
-  fail "AC: /api/work-state missing trigger_configured: $WS_BODY"
-fi
-
-# Configure a trigger then verify trigger_configured flips to true.
-TRIG="$MR/scripts/trig-ui.sh"
-mkdir -p "$MR/scripts"
-cat >"$TRIG" <<'EOF'
-#!/bin/bash
-echo "argv1=$1"
-EOF
-chmod +x "$TRIG"
-cat >"$MR/.claude/zskills-config.json" <<EOF
-{
-  "dev_server": { "default_port": $PORT },
-  "execution": { "landing": "pr" },
-  "dashboard": { "work_on_plans_trigger": "scripts/trig-ui.sh" }
-}
-EOF
-WS_BODY2=$(curl -sf -m 3 "http://127.0.0.1:$PORT/api/work-state")
-if printf '%s' "$WS_BODY2" | grep -q '"trigger_configured":[[:space:]]*true'; then
-  pass "AC: /api/work-state trigger_configured flips to true after config"
-else
-  fail "AC: trigger_configured did not flip: $WS_BODY2"
-fi
-
-# AC: POST /api/work-state/reset writes idle.
-cat >"$MR/.zskills/work-on-plans-state.json" <<'EOF'
-{"state":"sprint","sprint_id":"x","updated_at":"2026-04-29T00:00:00+00:00"}
-EOF
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-  -H "Origin: http://127.0.0.1:$PORT" \
-  "http://127.0.0.1:$PORT/api/work-state/reset")
-if [ "$CODE" = "200" ] && grep -q '"state":[[:space:]]*"idle"' "$MR/.zskills/work-on-plans-state.json"; then
-  pass "AC: POST /api/work-state/reset clears stale sprint"
-else
-  fail "AC: reset → $CODE; file=$(cat "$MR/.zskills/work-on-plans-state.json")"
-fi
-
-# AC: reset without Origin → 200 (Phase 5b: relaxed policy).
-# Cross-origin defense exercised by tests/test_zskills_monitor_csrf.sh
-# and the cross-origin reset case in tests/test_zskills_monitor_server.sh.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-  "http://127.0.0.1:$PORT/api/work-state/reset")
-if [ "$CODE" = "200" ]; then
-  pass "AC: POST /api/work-state/reset without Origin → 200 (relaxed in Phase 5b)"
-else
-  fail "AC: reset no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
 ###############################################################################

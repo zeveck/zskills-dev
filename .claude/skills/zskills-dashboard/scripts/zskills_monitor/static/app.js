@@ -10,8 +10,8 @@
 //
 // Phase 7 adds drag-and-drop columns for Plans (Drafted/Proposed/Accepted)
 // and Issues (Triage/Ready), POSTs the full queue back to /api/queue
-// on every reorder, polls /api/work-state for the Run/Status widget,
-// and POSTs to /api/trigger and /api/work-state/reset.
+// on every reorder, and polls /api/work-state GET for the per-plan chip
+// resolution chain.
 
 const POLL_INTERVAL_MS = 2000;
 // While the tab is hidden we keep polling, just much more slowly. The
@@ -21,16 +21,13 @@ const POLL_INTERVAL_MS = 2000;
 // 2s-cadence collection cost while nobody is watching. Tunable.
 const HIDDEN_POLL_INTERVAL_MS = 60000;
 // Reschedule delay for the recursive poll loops: fast when visible, slow
-// heartbeat when hidden. The loop is NEVER torn down — see pollOnce /
-// pollWorkOnce, which reschedule via this on every tick.
+// heartbeat when hidden. The loop is NEVER torn down — see pollOnce, which
+// reschedules via this on every tick.
 function nextPollDelay() {
   return document.hidden ? HIDDEN_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
 }
 const STATE_URL = "/api/state";
-const WORK_STATE_URL = "/api/work-state";
 const QUEUE_URL = "/api/queue";
-const TRIGGER_URL = "/api/trigger";
-const WORK_STATE_RESET_URL = "/api/work-state/reset";
 
 // After a successful POST, suppress the next /api/state poll to avoid
 // flicker from a stale GET that started before the POST landed.
@@ -410,7 +407,6 @@ function formatLocalTime(iso) {
 // --------------------------------------------------------------- snapshot
 
 let lastSnapshot = null;
-let lastWorkState = null;
 // Repo URL ("https://github.com/<owner>/<repo>") for entry-link
 // construction. Populated from /api/state.repo_url; empty when origin
 // is missing, unparseable, or running in fixture mode.
@@ -421,7 +417,6 @@ const lastFingerprint = {
   branches: null,
   issues: null,
   activity: null,
-  workState: null,
 };
 
 // Issue #802 — unread-dot indicator. lastViewed[tab] holds the per-tab
@@ -449,8 +444,6 @@ const currentTabFingerprint = {
 let activeTab = "plans";
 let pollTimer = null;
 let pollAbort = null;
-let workPollTimer = null;
-let workPollAbort = null;
 let suppressNextStatePollUntil = 0;
 // updated_at (ISO string) returned by the most recent successful POST
 // /api/queue. Used by applySnapshot to discard stale GET snapshots that
@@ -515,31 +508,9 @@ async function fetchState() {
   }
 }
 
-async function fetchWorkState() {
-  const ctrl = new AbortController();
-  workPollAbort = ctrl;
-  try {
-    const res = await fetch(WORK_STATE_URL, {
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (_err) {
-    return null;
-  } finally {
-    if (workPollAbort === ctrl) workPollAbort = null;
-  }
-}
-
 function schedulePoll(delay) {
   if (pollTimer) clearTimeout(pollTimer);
   pollTimer = setTimeout(pollOnce, delay);
-}
-
-function scheduleWorkPoll(delay) {
-  if (workPollTimer) clearTimeout(workPollTimer);
-  workPollTimer = setTimeout(pollWorkOnce, delay);
 }
 
 async function pollOnce() {
@@ -559,29 +530,6 @@ async function pollOnce() {
   // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
   // visible (POLL_INTERVAL_MS). The loop is never stopped.
   schedulePoll(nextPollDelay());
-}
-
-async function pollWorkOnce() {
-  const ws = await fetchWorkState();
-  if (ws) {
-    lastWorkState = ws;
-    applyWorkState(ws);
-  } else {
-    // Issue #892 — fail OPEN, not stuck-locked. A null fetch (network
-    // error / server restart / abort) used to leave lastWorkState stale
-    // at state==="sprint". Clearing to null lets every lastWorkState
-    // consumer (per-plan chip lock, run-status panel) short-circuit on a
-    // falsy work-state. Only re-apply if the state actually changes (it
-    // was previously a sprint), so a transient failure during idle is a
-    // no-op.
-    if (lastWorkState) {
-      lastWorkState = null;
-      applyWorkState(null);
-    }
-  }
-  // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
-  // visible (POLL_INTERVAL_MS). The loop is never stopped.
-  scheduleWorkPoll(nextPollDelay());
 }
 
 function applySnapshot(snap) {
@@ -713,14 +661,6 @@ function updateTabDots() {
       if (unread) sr.removeAttribute("hidden");
       else sr.setAttribute("hidden", "");
     }
-  }
-}
-
-function applyWorkState(ws) {
-  const fp = JSON.stringify(ws);
-  if (fp !== lastFingerprint.workState) {
-    lastFingerprint.workState = fp;
-    renderRunStatus(ws);
   }
 }
 
@@ -2363,125 +2303,6 @@ function renderActivity(activity) {
   }
 }
 
-// ----------------------------------------------------------- run-status
-
-function renderRunStatus(ws) {
-  const root = $("run-status");
-  if (!root) return;
-  clear(root);
-  root.classList.remove("run-status-stale");
-  // Issue #995 — clear() removes children but does NOT reset `hidden`,
-  // so we must unhide on every render. The end-of-function guard below
-  // re-hides only when no children were appended (idle + no trigger + no
-  // warning — the demo's case). Without this top-level unhide, a state
-  // transition from idle-empty to scheduled would leave hidden=true and
-  // the scheduled pill invisible.
-  root.hidden = false;
-  const state = (ws && ws.state) || "idle";
-  const warning = ws && ws.warning;
-
-  if (state === "scheduled") {
-    const sched = ws.schedule || "every ?h";
-    const next = ws.next_fire_at ? formatLocalTime(ws.next_fire_at) : "?";
-    root.appendChild(el("span", { cls: "run-label", text: "Schedule:" }));
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Running " + sched + " · next fire " + next,
-    }));
-    // Issue #930 — only render Stop when a /work-on-plans trigger is
-    // configured. Without trigger_configured, POST /api/trigger returns
-    // 501 and the click is dead UI (symmetric with the idle Run controls
-    // gate below).
-    if (ws && ws.trigger_configured) {
-      const stop = el("button", {
-        cls: "run-stop-btn",
-        attrs: { type: "button", "data-action": "run-stop" },
-        text: "Stop",
-      });
-      root.appendChild(stop);
-    }
-    return;
-  }
-  if (state === "sprint") {
-    const prog = ws.progress || {};
-    const done = (prog.done != null) ? prog.done : 0;
-    const total = (prog.total != null) ? prog.total : 0;
-    const cur = prog.current_slug || "?";
-    root.appendChild(el("span", { cls: "run-label", text: "Sprint:" }));
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "in progress: " + done + "/" + total + " plans done · current: " + cur,
-    }));
-    return;
-  }
-  if (state === "stale-scheduled") {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Schedule appears stale — restart with /work-on-plans every 4h",
-    }));
-    return;
-  }
-  if (state === "stale-sprint") {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", {
-      cls: "run-text",
-      text: "Sprint appears abandoned (last update " + (ws.updated_at ? relativeTime(ws.updated_at) : "?") + ")",
-    }));
-    const clearBtn = el("button", {
-      cls: "clear-stale-btn",
-      attrs: { type: "button", "data-action": "clear-stale-sprint" },
-      text: "Clear stale sprint state",
-    });
-    root.appendChild(clearBtn);
-    return;
-  }
-
-  // idle (default)
-  if (warning) {
-    root.classList.add("run-status-stale");
-    root.appendChild(el("span", { cls: "run-text", text: warning }));
-  }
-  const triggerConfigured = !!(ws && ws.trigger_configured);
-  if (triggerConfigured) {
-    root.appendChild(el("span", { cls: "run-label", text: "Idle:" }));
-    const nInput = el("input", {
-      cls: "run-n-input",
-      attrs: {
-        type: "number",
-        min: "1",
-        max: "99",
-        value: "3",
-        id: "run-n",
-        "aria-label": "Number of plans to run",
-      },
-    });
-    root.appendChild(nInput);
-    const runBtn = el("button", {
-      cls: "run-btn primary",
-      attrs: { type: "button", "data-action": "run-top-n" },
-      text: "▶ Run top N",
-    });
-    root.appendChild(runBtn);
-  }
-  // Issue #988 — the "Copy and run:" snippet that previously rendered on
-  // the no-trigger branch is gone. Idle dashboard renders nothing here
-  // when no /work-on-plans trigger is configured; the docs explain how
-  // to feed the queue (matching the Issues / Branches columns, which
-  // have always been state-only with no inline how-to).
-
-  // Issue #995 — fall-through reaches here when state===idle and
-  // trigger_configured is false (and no warning) — no children were
-  // appended. Hide the empty container so its border + padding don't
-  // draw a visible "phantom pill" (the demo's case). The early-return
-  // arms above all append children and skip this guard; root.hidden
-  // was unhidden at the top of the function so those paths render
-  // normally.
-  if (!root.firstChild) {
-    root.hidden = true;
-  }
-}
-
 // ---------------------------------------------------------------- toasts
 
 function showToast(message, kind, opts) {
@@ -2570,9 +2391,28 @@ async function postQueue(queues, opts) {
     }
     return out;
   };
-  const plansForPayload = allowPlansCompleted
+  // Server-owned key strip: `plans.skipped` (and any other future
+  // server-owned key) is OWNED by the server (#813 / #733 / Phase-1
+  // queue-POST preserve-by-default refactor). The client must never echo
+  // a stale snapshot of it back, or the server's three clear-paths
+  // compete with the client's stale view and × clicks visually fail.
+  // deepCloneQueues today only populates PLAN_COLUMNS keys (no `skipped`
+  // key), so this is belt-and-suspenders — but pin the contract so a
+  // future refactor that extends queues.plans cannot accidentally start
+  // echoing the key.
+  const stripServerOwnedPlanKeys = (obj) => {
+    const out = {};
+    const SERVER_OWNED = new Set(["skipped"]);
+    for (const k of Object.keys(obj || {})) {
+      if (SERVER_OWNED.has(k)) continue;
+      out[k] = obj[k];
+    }
+    return out;
+  };
+  const plansAfterCompletedRule = allowPlansCompleted
     ? Object.assign({}, queues.plans)  // pass `completed` through
     : stripCompleted(queues.plans);
+  const plansForPayload = stripServerOwnedPlanKeys(plansAfterCompletedRule);
   const payload = {
     default_mode: queues.default_mode || "phase",
     plans: plansForPayload,
@@ -2826,72 +2666,6 @@ async function togglePlanMode(slug) {
 // Escalate a running (claimed) plan's mode to finish. One-way: never sets
 // back to phase or inherit. Issue #814. /work-on-plans re-reads the chip
 // each round, so this takes effect at the next phase dispatch.
-// -------------------------------------------------------------- trigger
-
-async function postTrigger(command) {
-  let res;
-  try {
-    res = await fetch(TRIGGER_URL, {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command }),
-    });
-  } catch (err) {
-    showToast("Trigger failed: " + (err && err.message ? err.message : err), "err");
-    return false;
-  }
-  if (res.status === 501) {
-    showToast(
-      "No /work-on-plans trigger configured — set dashboard.work_on_plans_trigger in zskills-config.json.",
-      "info"
-    );
-    return false;
-  }
-  if (!res.ok) {
-    let body = "";
-    try {
-      const data = await res.json();
-      body = (data && (data.stderr || data.error)) || "";
-    } catch (_e) {
-      try { body = await res.text(); } catch (_ignore) { /* */ }
-    }
-    showToast("Trigger error (" + res.status + "): " + body.slice(0, 240), "err");
-    return false;
-  }
-  let data = null;
-  try { data = await res.json(); } catch (_e) { /* */ }
-  if (data && data.status === "error") {
-    showToast("Trigger script error: " + (data.stderr || "(no stderr)").slice(0, 240), "err");
-    return false;
-  }
-  showToast("Triggered.", "info");
-  // Force a fresh work-state poll so the widget updates.
-  scheduleWorkPoll(0);
-  return true;
-}
-
-async function postWorkStateReset() {
-  let res;
-  try {
-    res = await fetch(WORK_STATE_RESET_URL, {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-  } catch (err) {
-    showToast("Reset failed: " + (err && err.message ? err.message : err), "err");
-    return false;
-  }
-  if (!res.ok) {
-    showToast("Reset failed (" + res.status + ")", "err");
-    return false;
-  }
-  showToast("Sprint state cleared.", "info");
-  scheduleWorkPoll(0);
-  return true;
-}
 
 // -------------------------------------------------------- drag-and-drop
 
@@ -3469,26 +3243,6 @@ async function handleAction(action, target) {
   if (action === "issue-right") return moveIssue(num, "right");
   if (action === "issue-remove") return removeIssue(num);
 
-  if (action === "run-top-n") {
-    const input = $("run-n");
-    let n = 3;
-    if (input) {
-      const v = parseInt(input.value, 10);
-      if (Number.isFinite(v) && v >= 1 && v <= 99) n = v;
-    }
-    // Issue #988 — the dashboard no longer carries a default-mode chip.
-    // Trigger fires the bare `/work-on-plans N`; the skill resolves its
-    // own default (`finish` post-#988) at dispatch time.
-    const cmd = "/work-on-plans " + n;
-    return postTrigger(cmd);
-  }
-  if (action === "run-stop") {
-    return postTrigger("/work-on-plans stop");
-  }
-  if (action === "clear-stale-sprint") {
-    return postWorkStateReset();
-  }
-
   // Issue #675 — Section-nav pill: scroll to the target section. If the
   // target column is collapsed, expand it first via applyCollapseStateToColumn.
   if (action === "section-nav-pill") {
@@ -3712,7 +3466,6 @@ function onCardActivate(card) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     schedulePoll(0);
-    scheduleWorkPoll(0);
   }
 });
 
@@ -3785,7 +3538,6 @@ function boot() {
   bindTabEvents();                                       // NEW
   setActiveTab(readTabFromHash(), { pushHash: false });  // NEW
   schedulePoll(0);
-  scheduleWorkPoll(0);
 
   // Persist activity-strip resize height across reloads.
   var actStrip = document.getElementById("activity-strip");

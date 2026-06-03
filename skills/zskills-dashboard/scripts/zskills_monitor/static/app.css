@@ -713,41 +713,7 @@ code, pre, .mono {
   padding-bottom: 0;
 }
 
-.run-status {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-}
-
-/* Issue #995 — explicit hide so `display: flex` above doesn't defeat
-   the [hidden] attribute set by renderRunStatus when no run-state pill
-   content was rendered (idle + no trigger + no warning). */
-.run-status[hidden] {
-  display: none;
-}
-
-.run-status.run-status-stale {
-  border-color: var(--orange);
-}
-
-.run-status .run-label {
-  color: var(--text-dim);
-}
-
-.run-status .run-text {
-  color: var(--text);
-}
-
-.run-btn,
 .copy-btn,
-.run-stop-btn,
-.clear-stale-btn,
 .add-mini-btn {
   background: var(--surface);
   color: var(--text-dim);
@@ -760,35 +726,12 @@ code, pre, .mono {
 }
 .copy-btn { margin-left: auto; }
 
-.run-btn:hover,
-.run-btn:focus-visible,
 .copy-btn:hover,
 .copy-btn:focus-visible,
-.run-stop-btn:hover,
-.run-stop-btn:focus-visible,
-.clear-stale-btn:hover,
-.clear-stale-btn:focus-visible,
 .add-mini-btn:hover,
 .add-mini-btn:focus-visible {
   border-color: var(--accent);
   outline: none;
-}
-
-.run-btn.primary {
-  background: var(--accent);
-  color: #0d1117;
-  border-color: var(--accent);
-}
-
-.run-n-input {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  width: 56px;
-  font-size: 0.8rem;
-  font-family: inherit;
 }
 
 /* Columns layout */

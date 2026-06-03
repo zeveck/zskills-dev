@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.02+59a592"
+  version: "2026.06.02+65dd5d"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -574,36 +574,13 @@ must be empty.
 
 **Read-only boundary.** The server reads `.claude/zskills-config.json`
 (never writes); writes only to `.zskills/*` (its own state — PID file,
-log file, monitor-state.json, tracking markers). The
-`dashboard.work_on_plans_trigger` field is declared in
-`config/zskills-config.schema.json` and added by `/update-zskills` on
-install/update (Step 3.6 backfill). The server treats absent/missing
-fields as empty rather than mutating user config.
+log file, monitor-state.json, tracking markers). The server treats
+absent/missing fields as empty rather than mutating user config.
 
-The dashboard reads `.claude/zskills-config.json` for two fields:
+The dashboard reads `.claude/zskills-config.json` for one field:
 
 - `dev_server.default_port` (integer) — default port when neither
   `DEV_PORT` env nor a stub callout overrides. Read by `port.sh`.
-- `dashboard.work_on_plans_trigger` (string, optional) — relative path
-  to a user-owned trigger script. When set, the dashboard's "Run"
-  button posts to `/api/trigger`, which spawns the script with the
-  selected `/work-on-plans` invocation as argv[1]. **No default script
-  is shipped** — this is plumbing the consumer must wire. If the field
-  is absent or empty, the Run button is hidden client-side and
-  `/api/trigger` returns 501.
-
-Example `dashboard.work_on_plans_trigger` (consumer-authored):
-
-```bash
-#!/bin/bash
-# scripts/work-on-plans-trigger.sh — consumer-owned plumbing for the
-# dashboard's Run button. argv[1] is the /work-on-plans command line.
-exec >>".zskills/work-on-plans-trigger.log" 2>&1
-echo "[$(date -Iseconds)] trigger: $1"
-# Drop a request file your session-watching tool can pick up:
-mkdir -p .zskills/triggers
-printf '%s\n' "$1" > ".zskills/triggers/$(date -u +%Y%m%dT%H%M%SZ).cmd"
-```
 
 ## Tracking markers
 

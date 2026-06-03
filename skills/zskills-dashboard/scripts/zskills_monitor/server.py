@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import errno
 import fcntl
 import json
@@ -67,9 +68,6 @@ DEFAULT_PORT_FALLBACK = 8080
 SLUG_RE = re.compile(r"^[a-z0-9-]+$")
 ISSUE_RE = re.compile(r"^[0-9]+$")
 
-# Trigger-command allowlist regex (URL-decoded).
-TRIGGER_CMD_RE = re.compile(r"^/work-on-plans(\s|$)")
-
 # State-file column shapes.
 # NOTE: `completed` is intentionally NOT in either tuple — Completed is
 # DERIVED per-snapshot from plan frontmatter `completed:` field (plans) /
@@ -93,9 +91,6 @@ ISO_RE = re.compile(r"^[0-9T:+\-]+$")
 
 # /api/issue gh subprocess timeout
 GH_ISSUE_TIMEOUT_SECS = 15
-
-# /api/trigger subprocess timeout
-TRIGGER_TIMEOUT_SECS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -220,14 +215,9 @@ def resolve_port(
 # Config load (READ-ONLY on .claude/zskills-config.json)
 # ---------------------------------------------------------------------------
 #
-# The server NEVER writes to .claude/zskills-config.json. The
-# `dashboard.work_on_plans_trigger` field is declared in the schema and
-# added by /update-zskills on install/update against existing configs
-# (see skills/update-zskills/SKILL.md Step 3.6). If the field is absent
-# at server startup (consumer hasn't run /update-zskills since the field
-# was introduced), the server treats it as empty — the Run button is
-# hidden, /api/trigger returns 501. No config mutation, no json.dumps
-# reformatting churn.
+# The server NEVER writes to .claude/zskills-config.json. Read-only is
+# the invariant: every consumer of `_read_config` below treats absent or
+# malformed values as defaults rather than mutating the user's config.
 
 
 def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
@@ -610,46 +600,6 @@ def _validate_completed_plan_slugs(
 
 
 # ---------------------------------------------------------------------------
-# Trigger-config validation (startup + POST /api/trigger)
-# ---------------------------------------------------------------------------
-
-
-def validate_trigger_config(
-    main_root: pathlib.Path,
-    cfg: Dict[str, Any],
-) -> Optional[Dict[str, str]]:
-    """Validate `dashboard.work_on_plans_trigger` if set. Returns an
-    `errors[]` entry on failure, else None.
-    """
-    dashboard = cfg.get("dashboard")
-    if not isinstance(dashboard, dict):
-        return None
-    trig = dashboard.get("work_on_plans_trigger", "")
-    if not trig:
-        return None
-    try:
-        resolved = (main_root / trig).resolve() if not pathlib.Path(trig).is_absolute() else pathlib.Path(trig).resolve()
-    except (OSError, RuntimeError) as exc:
-        return {
-            "source": "dashboard.work_on_plans_trigger",
-            "message": f"path could not be resolved: {exc}",
-        }
-    try:
-        resolved.relative_to(main_root.resolve())
-    except ValueError:
-        return {
-            "source": "dashboard.work_on_plans_trigger",
-            "message": f"trigger path escapes MAIN_ROOT: {trig}",
-        }
-    if not resolved.is_file() or not os.access(resolved, os.X_OK):
-        return {
-            "source": "dashboard.work_on_plans_trigger",
-            "message": f"trigger path not executable: {trig}",
-        }
-    return None
-
-
-# ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
 
@@ -840,12 +790,6 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if decoded_path == "/api/queue":
             self._handle_queue_post()
             return
-        if decoded_path == "/api/trigger":
-            self._handle_trigger_post()
-            return
-        if decoded_path == "/api/work-state/reset":
-            self._handle_work_state_reset()
-            return
         self._send_json(404, {"error": f"unknown POST path: {decoded_path}"})
 
     # ------------------------------------------------------------- handlers
@@ -947,16 +891,6 @@ class MonitorHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json(500, {"error": f"collect_snapshot failed: {exc!r}"})
             return
-        # Re-validate trigger config on every state read; surfaces config
-        # errors live without restart.
-        cfg = _read_config(main_root)
-        trig_err = validate_trigger_config(main_root, cfg)
-        if trig_err is not None:
-            errs = list(snapshot.get("errors", []))
-            errs.append(trig_err)
-            snapshot["errors"] = sorted(
-                errs, key=lambda r: (r.get("source", ""), r.get("message", ""))
-            )
         # Per route table: Cache-Control: no-store
         self._send_json(200, snapshot, no_store=True)
 
@@ -1068,118 +1002,50 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": completed_err})
                 return
         with _state_lock(main_root):
+            # READER CONTRACT: `_read_monitor_state` returns the FULL
+            # top-level dict, unfiltered. The preserve-by-default refactor
+            # below (#813 / #733 / Phase 1 of DASHBOARD_RUNSTATUS_CLEANUP)
+            # depends on this — every key the writer does not own
+            # (`plans.skipped`, `issues.skipped`, `issues.reconsider`, and
+            # any future schema additions) is carried through by virtue of
+            # the deep-copy base. If a future refactor narrows the reader
+            # to writer-owned keys, the preservation invariant collapses
+            # silently. Do NOT pass through a filtering wrapper here.
             existing = _read_monitor_state(main_root)
             existing_dm = existing.get("default_mode", "phase")
+            # Build the new document by deep-copying the existing dict as
+            # the BASE. This is the load-bearing piece: it preserves every
+            # nested key the handler does not own — `plans.skipped`,
+            # `issues.skipped`, `issues.reconsider`, and any schema
+            # additions a future writer introduces — without per-key
+            # bookkeeping. The handler then overlays ONLY the writer-owned
+            # column allow-lists on top.
+            new_doc = copy.deepcopy(existing)
+            if not isinstance(new_doc.get("plans"), dict):
+                new_doc["plans"] = {}
+            if not isinstance(new_doc.get("issues"), dict):
+                new_doc["issues"] = {}
+            # Overlay writer-owned plan columns from the payload.
+            for c in PLAN_COLUMNS:
+                new_doc["plans"][c] = payload["plans"].get(c, [])
             # Persist plans.completed alongside the writable columns when
-            # the per-slug status gate accepted it. Empty completed array
-            # is preserved as `[]` so a subsequent POST omitting completed
-            # cleanly resets it. Issue #905 / #853.
-            plans_out: Dict[str, Any] = {
-                c: payload["plans"].get(c, []) for c in PLAN_COLUMNS
-            }
+            # the per-slug status gate accepted it (#905 / #853 — drag-to-
+            # Completed safety hatch). When the payload omits `completed`,
+            # the deep-copy base may carry forward a stale `completed`
+            # array; do not pop it (the next legitimate writer or the
+            # source-of-truth derivation will rewrite it).
             if "completed" in payload["plans"]:
-                plans_out["completed"] = payload["plans"]["completed"]
-            new_doc = {
-                "version": "1.2",
-                "default_mode": payload.get("default_mode", existing_dm),
-                "plans": plans_out,
-                "issues": {c: payload["issues"].get(c, []) for c in ISSUE_COLUMNS},
-                "updated_at": _now_iso(),
-            }
+                new_doc["plans"]["completed"] = payload["plans"]["completed"]
+            # Overlay writer-owned issue columns from the payload.
+            for c in ISSUE_COLUMNS:
+                new_doc["issues"][c] = payload["issues"].get(c, [])
+            # Writer-owned scalar overrides.
+            new_doc["version"] = "1.2"
+            new_doc["default_mode"] = payload.get("default_mode", existing_dm)
+            new_doc["updated_at"] = _now_iso()
             target = main_root / ".zskills" / "monitor-state.json"
             _atomic_write_json(target, new_doc)
         self._send_json(200, {"ok": True, "updated_at": new_doc["updated_at"], "state_updated_at": new_doc["updated_at"]})
-
-    def _handle_trigger_post(self) -> None:
-        if not self._origin_ok():
-            self._send_json(403, {"error": "Origin check failed"})
-            return
-        body_bytes, err = self._read_request_body()
-        if err is not None or body_bytes is None:
-            self._send_json(400, {"error": err or "unreadable body"})
-            return
-        try:
-            payload = json.loads(body_bytes.decode("utf-8") or "null")
-        except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as exc:
-            self._send_json(400, {"error": f"json parse: {exc}"})
-            return
-        if not isinstance(payload, dict) or "command" not in payload:
-            self._send_json(400, {"error": "body must be {command: <str>}"})
-            return
-        command = payload.get("command", "")
-        if not isinstance(command, str):
-            self._send_json(400, {"error": "command must be a string"})
-            return
-        if not TRIGGER_CMD_RE.match(command):
-            self._send_json(400, {"error": "command must start with /work-on-plans"})
-            return
-        ctx = self._ctx()
-        main_root: pathlib.Path = ctx["main_root"]
-        cfg = _read_config(main_root)
-        trig_path = ""
-        if isinstance(cfg.get("dashboard"), dict):
-            trig_path = cfg["dashboard"].get("work_on_plans_trigger", "")
-        if not trig_path:
-            self._send_json(501, {"command": command})
-            return
-        # Path resolution: against MAIN_ROOT, follow symlinks, then
-        # re-check inside MAIN_ROOT.
-        try:
-            if pathlib.Path(trig_path).is_absolute():
-                resolved = pathlib.Path(trig_path).resolve()
-            else:
-                resolved = (main_root / trig_path).resolve()
-        except (OSError, RuntimeError) as exc:
-            self._send_json(500, {"error": f"trigger path resolve failed: {exc}"})
-            return
-        try:
-            resolved.relative_to(main_root.resolve())
-        except ValueError:
-            self._send_json(500, {"error": "trigger path escapes MAIN_ROOT"})
-            return
-        if not resolved.is_file() or not os.access(resolved, os.X_OK):
-            self._send_json(
-                500, {"error": f"trigger path not executable: {trig_path}"}
-            )
-            return
-        # Environment scrubbing
-        env = {
-            k: v for k, v in os.environ.items()
-            if k in {"PATH", "HOME", "USER", "LANG"}
-        }
-        if "PATH" not in env:
-            env["PATH"] = "/usr/bin:/bin"
-        try:
-            result = subprocess.run(
-                [str(resolved), command],
-                cwd=str(main_root),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=TRIGGER_TIMEOUT_SECS,
-                shell=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            stderr_text = (
-                exc.stderr.decode("utf-8", errors="replace")
-                if isinstance(exc.stderr, (bytes, bytearray))
-                else (exc.stderr or "")
-            )
-            self._send_json(504, {"error": "trigger timeout", "stderr": stderr_text})
-            return
-        except (subprocess.SubprocessError, OSError) as exc:
-            self._send_json(500, {"error": f"trigger invoke failed: {exc}"})
-            return
-        status = "triggered" if result.returncode == 0 else "error"
-        self._send_json(
-            200,
-            {
-                "status": status,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode,
-            },
-        )
 
     def _handle_work_state_get(self) -> None:
         ctx = self._ctx()
@@ -1188,14 +1054,6 @@ class MonitorHandler(BaseHTTPRequestHandler):
         def err_log(msg: str) -> None:
             sys.stderr.write(f"[work-state] {msg}\n")
 
-        # Phase 7: surface whether a /work-on-plans trigger is configured
-        # so the Run/Status widget can pick the right idle render.
-        cfg = _read_config(main_root)
-        trigger_configured = False
-        if isinstance(cfg.get("dashboard"), dict):
-            trig = cfg["dashboard"].get("work_on_plans_trigger", "")
-            trigger_configured = bool(trig)
-
         with _state_lock(main_root):
             doc, was_unparseable = _read_work_state(main_root, error_log=err_log)
             target = main_root / ".zskills" / "work-on-plans-state.json"
@@ -1203,10 +1061,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 # Bootstrap-write idle.
                 idle = {"state": "idle", "updated_at": _now_iso()}
                 _atomic_write_json(target, idle)
-                self._send_json(
-                    200,
-                    {"state": "idle", "trigger_configured": trigger_configured},
-                )
+                self._send_json(200, {"state": "idle"})
                 return
             stale, reason = _is_stale(doc)
             if stale:
@@ -1214,28 +1069,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 _atomic_write_json(target, idle)
                 self._send_json(
                     200,
-                    {
-                        "state": "idle",
-                        "warning": reason,
-                        "trigger_configured": trigger_configured,
-                    },
+                    {"state": "idle", "warning": reason},
                 )
                 return
-        out = dict(doc)
-        out["trigger_configured"] = trigger_configured
-        self._send_json(200, out)
-
-    def _handle_work_state_reset(self) -> None:
-        if not self._origin_ok():
-            self._send_json(403, {"error": "Origin check failed"})
-            return
-        ctx = self._ctx()
-        main_root: pathlib.Path = ctx["main_root"]
-        with _state_lock(main_root):
-            target = main_root / ".zskills" / "work-on-plans-state.json"
-            idle = {"state": "idle", "updated_at": _now_iso()}
-            _atomic_write_json(target, idle)
-        self._send_json(200, idle)
+        self._send_json(200, dict(doc))
 
 
 # ---------------------------------------------------------------------------
@@ -1314,8 +1151,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     (main_root / ".zskills").mkdir(parents=True, exist_ok=True)
 
     # Note: .claude/zskills-config.json is READ-ONLY for the server.
-    # The dashboard.work_on_plans_trigger field is added by
-    # /update-zskills (schema migration), not bootstrapped here.
+    # Every consumer of `_read_config` treats absent values as defaults
+    # rather than mutating the user's config.
 
     port = resolve_port(main_root, cli_port=args.port)
 
