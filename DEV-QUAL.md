@@ -2,9 +2,10 @@
 # DEV-QUAL — zskills maintainer manual-acceptance checklist
 
 This file is the **maintainer-facing manual dev-quality checklist** for
-zskills. It holds (1) the five manual install scenarios a human runs to
-accept a release across both distribution lanes, and (2) how to run the
-autonomous `scripts/dogfood-plugin-install.sh`.
+zskills. It holds the five manual install scenarios a human runs to
+accept a release across both distribution lanes. (The autonomous
+`scripts/dogfood-plugin-install.sh` install dogfood is documented separately
+in `RELEASING.md`.)
 
 Like `RELEASING.md`, this is **dev-maintainer-only and prod-stripped**: its
 entire content sits inside `<!-- prod-strip:start --> … <!-- prod-strip:end
@@ -86,7 +87,11 @@ and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md`.
   the lock is written by `switch-install-path.sh`. The defining signal of
   the legacy lane is the **mirror present**, not the lock value.)
 - A subsequent `/update-zskills` (no arg, smart-detect) reports "already
-  installed" and pulls/updates rather than re-installing.
+  installed" and pulls/updates rather than re-installing. It now ALSO runs
+  the bundled consumer post-install verifier's cheap structural tier
+  (read-only, NON-FATAL) at the end, printing per-check `PASS`/`WARN`/`FAIL`
+  lines, a `Result: N PASS, M WARN, K FAIL` line, and an `Overall: PASS`
+  summary on a healthy legacy install.
 
 ---
 
@@ -140,6 +145,10 @@ writing the 5 consumer artifacts, and **no `.claude/skills/` mirror**.
 - `.claude/zskills-install-lane` is `plugin` if a switch has run; on a pure
   fresh plugin install the materialiser does not write the lock — the
   defining signal is the materialised artifacts + absent mirror.
+- A bare `/update-zskills` on the plugin lane runs the bundled consumer
+  post-install verifier's cheap structural tier (read-only, NON-FATAL)
+  before printing the plugin-lane explanation, reporting `Overall: PASS` —
+  confirming the consumer-side install is healthy in this environment.
 
 ---
 
