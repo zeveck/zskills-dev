@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # log-permission-request.sh — PermissionRequest hook. Session-logging.
 #
 # Fires ONLY when a permission dialog would appear (Claude Code does NOT
@@ -126,6 +126,14 @@ def summarize_input(tool_name, tool_input):
 
 
 def main():
+    # Security: tighten the process umask BEFORE any file creation so the
+    # permission sidecar lands at mode 0o600 (owner read/write only). The
+    # sidecar records verbatim tool-input summaries (Bash commands, URLs
+    # with tokens, file paths) and must never be world-readable on a shared
+    # /tmp. The explicit os.open mode below is belt-and-suspenders in case
+    # the umask is relaxed by a future caller.
+    os.umask(0o077)
+
     raw = os.environ.get("ZSKILLS_HOOK_INPUT", "")
     try:
         hook_input = json.loads(raw) if raw else None
@@ -158,7 +166,11 @@ def main():
         return
     sidecar = os.path.join(log_dir, f"permissions-{session_id}.jsonl")
     try:
-        with open(sidecar, "a") as f:
+        # Explicit creation mode 0o600 (owner read/write only) — the umask
+        # set at the top of main() already enforces this, but passing the
+        # mode to os.open makes it robust even if the umask is relaxed.
+        fd = os.open(sidecar, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a") as f:
             f.write(json.dumps(event) + "\n")
     except OSError:
         return
