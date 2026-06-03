@@ -82,9 +82,14 @@ ROLLBACK_BRANCH="test-rollback-base-$$"
 # Every path we may create. Populated per-case; cleanup iterates.
 WT_PATHS=()
 BRANCHES=()
+# Synthetic in-repo dirs (case 17's relative --root parent) that canonicalise
+# back INTO MAIN_ROOT and so are NOT covered by the WT_PATHS /tmp-only rm guard.
+# Trap-registered separately so an interrupted run still removes them (#1036).
+SYNTH_DIRS=()
 
 register_wt() { WT_PATHS+=("$1"); }
 register_branch() { BRANCHES+=("$1"); }
+register_synth_dir() { SYNTH_DIRS+=("$1"); }
 
 cleanup() {
   local p b
@@ -99,6 +104,16 @@ cleanup() {
   for b in "${BRANCHES[@]:-}"; do
     [ -z "$b" ] && continue
     git -C "$MAIN_ROOT" branch -D "$b" 2>/dev/null || true
+  done
+  # Synthetic in-repo dirs (case 17). Same /tmp-or-MAIN_ROOT guard as the
+  # straight-line cleanup at the end of case 17 — defence-in-depth so a
+  # malformed entry can never rm outside the repo or /tmp (#1036).
+  local d
+  for d in "${SYNTH_DIRS[@]:-}"; do
+    [ -z "$d" ] && continue
+    case "$d" in
+      /tmp/*|"$MAIN_ROOT"/*) rm -rf -- "$d" 2>/dev/null || true ;;
+    esac
   done
   git -C "$MAIN_ROOT" worktree prune 2>/dev/null || true
 
@@ -642,6 +657,12 @@ git -C "$MAIN_ROOT" branch -D "$BRANCH_16" 2>/dev/null || true
 SLUG_17="cwdinv-${SLUG_BASE}-c17"
 PREFIX_17="do"
 REL_ROOT_17="../${PROJECT_NAME}/cwdinv-root-${SLUG_BASE}"
+# The synthetic root-parent canonicalises back into MAIN_ROOT. Compute and
+# trap-register it BEFORE the worktree-create below, so an interrupted run
+# (killed between create and the straight-line cleanup at the end of this
+# case) still removes the leaked cwdinv-root-* dir from the repo root (#1036).
+SYNTH_ROOT_PARENT_17="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_17")"
+register_synth_dir "$SYNTH_ROOT_PARENT_17"
 # Expected = realpath-m of REL_ROOT_17/PREFIX_17-SLUG_17 resolved against MAIN_ROOT.
 EXPECTED_WT_17="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_17/${PREFIX_17}-${SLUG_17}")"
 BR_17="${PREFIX_17}-${SLUG_17}"
@@ -689,7 +710,8 @@ git -C "$MAIN_ROOT" worktree remove --force "$NESTED_WT_17" 2>/dev/null || true
 git -C "$MAIN_ROOT" branch -D "$NESTED_BR_17" 2>/dev/null || true
 
 # Remove the synthetic root-parent dir so it doesn't leak into main repo.
-SYNTH_ROOT_PARENT_17="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_17")"
+# (SYNTH_ROOT_PARENT_17 was computed + trap-registered above; this is the
+# straight-line success-path cleanup, kept idempotent alongside the trap.)
 case "$SYNTH_ROOT_PARENT_17" in
   /tmp/*|"$MAIN_ROOT"/*) rm -rf -- "$SYNTH_ROOT_PARENT_17" 2>/dev/null || true ;;
 esac
