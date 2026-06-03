@@ -1,4 +1,0 @@
-Canary 11 — scope-violation test fixture
-This file intentionally contains a typo on line 3.
-The quick brown fox jumps over hte lazy dog.
-End of fixture.
