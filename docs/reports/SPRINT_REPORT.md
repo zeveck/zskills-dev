@@ -36,3 +36,27 @@ status: complete
 - Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-080624-dq30m8
 - Issue claims released cleanly.
 - Cron: `*/30 * * * *` — next fire ~30 min.
+
+## Sprint — 2026-06-02 19:23 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr | **Sprint:** sprint-20260602-214439-dashqueu
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #1012 | /manual-testing — user-invocable: false + re-scope to general playwright-cli UI verification | /tmp/zskills-fix-issue-1012 (fix/issue-1012) | 54d2ff3 | 7383/7383 pass | PASS (fresh verifier: diff+acceptance audit, version+mirror recheck, full suite) | N/A (no app UI/editor/styles files) |
+| #1002 | Build pipeline: rewrite_dev_urls broaden + promote to shared finalizer + CANARY strip parity + 3 new tests | /tmp/zskills-fix-issue-1002 (fix/issue-1002) | b65c00f | 7410/7410 pass (new: rewrite 15/15, prod-tree 10/10, strip-parity 5/5) | PASS (fresh verifier: symptom-fix proven non-tautological, both judgment calls confirmed, build-stage grep 0 non-allowlisted hits) | N/A (build scripts + tests) |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex (need /run-plan)
+(none)
+
+### Skipped — Cherry-Pick Conflict
+(none)
+
+### Not Fixed
+(none)
+
+**Per-fire summary:** Picked #1012 (actionable), #1002 (actionable) from a 2-candidate dashboard Ready pool (#1012, #1002). 0 skips. Both researched on-demand (auto mode), implemented, independently verified, committed. Landing PRs dispatched in Phase 6.
