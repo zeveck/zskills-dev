@@ -60,3 +60,23 @@ status: complete
 (none)
 
 **Per-fire summary:** Picked #1012 (actionable), #1002 (actionable) from a 2-candidate dashboard Ready pool (#1012, #1002). 0 skips. Both researched on-demand (auto mode), implemented, independently verified, committed. Landing PRs dispatched in Phase 6.
+
+## Sprint — 2026-06-03 03:28 [UNFINALIZED]
+
+**Mode:** auto | **Source:** default rubric (N=1) | **Landing:** pr | **Sprint:** sprint-20260603-055752-collectsk
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #1034 | dashboard collect.py: _read_state_file silently drops issues.skipped (dict) | /tmp/zskills-fix-issue-1034 (fix/issue-1034) | 4070ff2 | 7555/7556 (1 = known concurrent-live-server flake; passes in isolation) | PASS (fresh verifier: guard-completeness audit found all 3 column-iteration sites, non-tautology proven, mirror+version verified) | N/A (collector Python; dismiss-chip data-path covered by new round-trip test — a post-merge dashboard glance to confirm chip renders is optional) |
+
+### Skipped — Not selected this fire (N=1)
+| # | Bucket | Reason |
+|---|--------|--------|
+| #1032, #1029, #1020 | race-lost (not attempted) | claimed by concurrent pipelines; N=1 took the top unclaimed pick |
+| #67 | deferred | "GitLab support — deferred until prerequisite plans land" — Action now: none |
+
+### Not Fixed
+(none)
+
+**Per-fire summary:** Picked #1034 (actionable) — symmetric issues.skipped dict-preserve in collect.py + 3 column-iteration guards + round-trip test. Pool: 5 open candidates; #1032/#1029/#1020 held by concurrent pipelines, #67 deferred, so #1034 was the sole actionable unclaimed pick at N=1.
