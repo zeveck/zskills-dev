@@ -1,4 +1,4 @@
-// Node ESM harness for demo/demo-sim.js. Loaded by tests/test-demo-sim.sh.
+// Node ESM harness for dashboard-demo/demo-sim.js. Loaded by tests/test-demo-sim.sh.
 //
 // Mirrors the retired tests/test-demo-server-interactive.py assertion-for-
 // assertion (clock anchor, no-arrival-while-pinned, seed counts, in-flight

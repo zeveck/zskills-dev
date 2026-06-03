@@ -1,6 +1,6 @@
 #!/bin/bash
-# Headless sim-logic tests for demo/demo-sim.js (the browser-only JS port of
-# the former demo/demo_server.py Simulation). Asserts (no HTTP, no browser —
+# Headless sim-logic tests for dashboard-demo/demo-sim.js (the browser-only JS port of
+# the former dashboard-demo/demo_server.py Simulation). Asserts (no HTTP, no browser —
 # pure Simulation logic, run under node):
 #   (a) a dragged item persists across a state rebuild (no snap-back)
 #   (b) an item placed in Ready picks up a claim and eventually completes
@@ -21,13 +21,13 @@
 # Run from repo root: bash tests/test-demo-sim.sh
 # Per CLAUDE.md: the sim is pure logic (no DOM, no async I/O), so a node stub
 # harness is faster and just as accurate as a browser run. The browser path is
-# exercised separately via playwright-cli against demo/index.html.
+# exercised separately via playwright-cli against dashboard-demo/index.html.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SIM_JS="$REPO_ROOT/demo/demo-sim.js"
+SIM_JS="$REPO_ROOT/dashboard-demo/demo-sim.js"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -51,7 +51,7 @@ print_summary_and_exit() {
 }
 
 if [ ! -f "$SIM_JS" ]; then
-  fail "demo/demo-sim.js exists at expected path"
+  fail "dashboard-demo/demo-sim.js exists at expected path"
   print_summary_and_exit
 fi
 
