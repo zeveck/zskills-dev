@@ -286,6 +286,8 @@ run_suite "test-session-logging.sh" "tests/test-session-logging.sh"
 run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
 run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
 run_suite "test-sessionstart-dual-install-detect.sh" "tests/test-sessionstart-dual-install-detect.sh"
+# #1080 — UserPromptSubmit restart nudge (post-/reload-plugins half-install).
+run_suite "test-nudge-restart-to-materialise.sh" "tests/test-nudge-restart-to-materialise.sh"
 run_suite "test-synthetic-consumer-install.sh" "tests/test-synthetic-consumer-install.sh"
 run_suite "test-verify-install.sh" "tests/test-verify-install.sh"
 run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"

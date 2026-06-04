@@ -41,6 +41,12 @@ fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 EXCLUDE_BASENAMES=(
   "canary3-bad.sh"
   "session-start-materialise.sh"
+  # nudge-restart-to-materialise.sh (#1080) — PLUGIN-LANE-ONLY hook (registered
+  # in hooks/hooks.json under UserPromptSubmit, never in .claude/settings.json).
+  # Like session-start-materialise.sh, it addresses a plugin-only concern (the
+  # post-/reload-plugins half-installed state), so there is no /update-zskills
+  # mirror to byte-compare.
+  "nudge-restart-to-materialise.sh"
 )
 
 is_excluded() {

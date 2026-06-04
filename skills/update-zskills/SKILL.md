@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.04+57521a"
+  version: "2026.06.04+85d690"
 ---
 
 # Update Z Skills Infrastructure
@@ -1110,8 +1110,42 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   `/update-zskills --switch-install-path=...`).
   ```
 
+**Plugin-pre-materialise guard (`LANE == fresh` AND `$CLAUDE_PLUGIN_ROOT`
+set) — #1080.** Before the bare-preset / Default-Mode dispatch below, handle
+the half-installed plugin state: a consumer who ran `/plugin install
+zs@zskills` then `/reload-plugins` (which does NOT fire SessionStart, so the
+materialiser never ran) lands here with `LANE == fresh` (no on-disk evidence
+of either lane yet) AND `$CLAUDE_PLUGIN_ROOT` set (the plugin IS loaded).
+Running the fresh-install mirror here would copy in ~23 skills + the hooks +
+render `managed.md`, dual-installing the legacy lane alongside the plugin —
+the exact dual state the rest of the system pushes to consolidate. Instead,
+recognize "plugin-pre-materialise", direct the user to finish setup via
+`/clear` (or restart), and exit WITHOUT mirroring:
+
+```bash
+# #1080 — plugin loaded but not yet materialised (SessionStart didn't fire on
+# /reload-plugins). Keying on $CLAUDE_PLUGIN_ROOT is SAFE *in the `fresh`
+# branch specifically* because the dev repo ALWAYS carries a legacy
+# `.claude/skills/` mirror -> it is NEVER classified `fresh` (it classifies
+# `update-zskills` or `dual`). So this guard can never false-positive in the
+# dogfooding repo, even though $CLAUDE_PLUGIN_ROOT is set there too.
+if [ "$LANE" = fresh ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  echo "The zskills plugin is loaded, but setup isn't finished yet." >&2
+  echo "/reload-plugins does NOT run the one-time materialisation step, so the" >&2
+  echo "verifier/implementer agents, the timeout/validate hooks, the rendered" >&2
+  echo "rules file, and your .claude/zskills-config.json have not been written." >&2
+  echo "Run /clear (or exit and restart Claude Code) to fire the SessionStart" >&2
+  echo "hook and finish setup. Re-running /update-zskills is NOT the fix —" >&2
+  echo "it would dual-install the legacy mirror alongside the plugin." >&2
+  exit 0
+fi
+```
+
 **Else** (`LANE` is `update-zskills`, `dual`, or `fresh`, OR detection was
-unreachable): proceed to the existing behavior. **First** check for a bare
+unreachable): proceed to the existing behavior. (The `fresh` + plugin-loaded
+sub-case was intercepted by the plugin-pre-materialise guard immediately
+above; a `fresh` arrival WITHOUT `$CLAUDE_PLUGIN_ROOT` is a genuine legacy
+first-time install and proceeds normally.) **First** check for a bare
 preset: if `$PRESET_ARG` is non-empty AND `$MODE` is NOT `install`, jump to
 **`## Bare-preset config-only short-circuit`** (config-only — no audit, no
 pull, no fill) and exit there. Otherwise (no preset, or `install <preset>`)
