@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.03+728b94"
+  version: "2026.06.04+7a1cf0"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -60,7 +60,7 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   Verification (`/verify-changes`) runs on ALL code changes regardless
   of the `auto` flag — `auto` controls autonomous landing (push/merge),
   not whether to verify. Mirrors the broad-autonomy convention in
-  `/quickfix`, `/run-plan`, `/fix-issues`.
+  `/run-plan`, `/fix-issues`.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -105,7 +105,7 @@ trailing flags from the END backward:
 - `worktree` — recognized at the end (landing flag)
 - `direct` — recognized at the end (landing flag)
 - `pr` — recognized at the end (landing flag; use extended pattern with `.!?` punctuation, since task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
-- `auto` — recognized anywhere (case-insensitive positional token; broad-autonomy opt-in across all 3 modes. Mirrors /quickfix, /run-plan, /fix-issues.)
+- `auto` — recognized anywhere (case-insensitive positional token; broad-autonomy opt-in across all 3 modes. Mirrors /run-plan, /fix-issues.)
 - `every <schedule>` — recognized at the end (e.g., `every 4h`, `every day at 9am`)
 - `now` — recognized at the end (only meaningful with `every`: run now AND schedule)
 
@@ -217,7 +217,7 @@ source of truth for the canonical strip).
 # Entry-point unset guard (WI 2a.3 test seam) — keep first so any code path
 # that later reads _ZSKILLS_TEST_* env vars (triage, review, cron-prompt
 # construction) sees the production-cleared values when the harness flag
-# is absent. Symmetric to /quickfix WI 1a.3a.
+# is absent.
 if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
   unset _ZSKILLS_TEST_TRIAGE_VERDICT _ZSKILLS_TEST_REVIEW_VERDICT
 fi
@@ -237,7 +237,7 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])--no-claim($|[[:space:]]) ]]; then
   NO_CLAIM=1
 fi
 # Issue #297: positional `auto` token (case-insensitive, anywhere in the
-# args) opts /do pr into /land-pr's auto-merge path. Mirrors /quickfix,
+# args) opts /do pr into /land-pr's auto-merge path. Mirrors
 # /run-plan, /fix-issues. Pre-parsed here so Phase 1.5's strip chain and
 # Phase 2 mode dispatch both see AUTO_FLAG.
 # AUTO_FLAG is consumed by:
@@ -904,7 +904,7 @@ fi
 The `sed -E` lines strip `auto`, `--force`, `--no-claim`, and `--rounds N`
 (numeric N only) from `TASK_DESCRIPTION` so they don't leak into downstream
 prompts.
-`auto` is the positional auto-merge opt-in (issue #297; mirrors /quickfix,
+`auto` is the positional auto-merge opt-in (issue #297; mirrors
 /run-plan, /fix-issues) — it is pre-parsed at WI 2a.0 into `AUTO_FLAG`,
 read by `modes/pr.md` to inject `--auto` into the `/land-pr` invocation,
 and stripped here so it never appears as user prose in the task prompt.

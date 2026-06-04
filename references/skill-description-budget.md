@@ -62,11 +62,6 @@ Documented exceptions:
   not for interactive human use" framing to prevent humans from
   invoking it directly; that framing is non-negotiable and pushes
   the description over the 350 default.
-- **`/quickfix` — 400 bytes.** Full-lifecycle framing from PR #164.
-  The description enumerates the multi-stage workflow (research →
-  fix → land) to disambiguate quickfix from neighboring one-shot
-  skills; the enumeration earns the additional budget.
-
 Per-skill numbers are informational only — the conformance test
 enforces only the aggregate budget, not any per-skill cap. Some skills
 legitimately need more description budget than others; the aggregate
@@ -89,8 +84,8 @@ When trimming a description, preserve all of:
   passed"). These are part of the skill's contract.
 - **Version/conformance discipline** — see CLAUDE.md
   `## Skill versioning` for the surrounding governance around skill
-  edits. The SKILL.md descriptions of `/land-pr` and `/quickfix` in
-  particular encode policy decisions that have already survived
+  edits. The SKILL.md description of `/land-pr` in
+  particular encodes policy decisions that have already survived
   adversarial review; trimming them carelessly re-opens settled
   design.
 

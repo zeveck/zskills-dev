@@ -236,25 +236,14 @@ else
   fail "C17: STOP message recommends worktree alternative" "envelope=$HOOK_OUT"
 fi
 
-# ── C18: deny message must lead with /do pr, NOT /quickfix (issue #398) ──
-# /quickfix is no-worktree by design, so recommending it as the primary
-# alternative for an agent-dispatched edit creates a denial loop. The deny
-# message must (a) recommend /do pr as the primary worktree-routed alt,
-# and (b) if /quickfix is mentioned at all, qualify it as user-edited-only.
+# ── C18: deny message must recommend /do pr (issue #398) ──
+# The deny message must recommend /do pr as the primary worktree-routed
+# alternative for an agent-dispatched edit.
 run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/CLAUDE.md")"
 if [[ "$HOOK_OUT" == *'/do pr'* ]]; then
   pass "C18a: STOP message recommends /do pr (issue #398)"
 else
   fail "C18a: STOP message recommends /do pr (issue #398)" "envelope=$HOOK_OUT"
-fi
-# If /quickfix appears, it must appear with a qualifier — never as a bare
-# "Light, one-commit fix in flight: /quickfix" recommendation. We assert
-# either /quickfix is absent OR the message also contains the words
-# "no-worktree" or "NOT a valid" near it, indicating the qualification.
-if [[ "$HOOK_OUT" != *'/quickfix'* ]] || [[ "$HOOK_OUT" == *'no-worktree'* ]] || [[ "$HOOK_OUT" == *'NOT a valid'* ]]; then
-  pass "C18b: STOP message does not recommend /quickfix as a bare alternative (issue #398)"
-else
-  fail "C18b: STOP message does not recommend /quickfix as a bare alternative (issue #398)" "envelope=$HOOK_OUT"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────

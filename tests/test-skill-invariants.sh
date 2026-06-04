@@ -76,9 +76,9 @@ has_assign() {
   return 1
 }
 
-# (file, var) pairs covering #606's 4 siblings, plus #629's 2 additional
-# siblings (/quickfix $ZSKILLS_PIPELINE_ID, /draft-tests $ROUND_N and
-# $PREV_INPUT) that were added via comments on #606 but missed by PR #626.
+# (file, var) pairs covering #606's 4 siblings, plus #629's additional
+# siblings (/draft-tests $ROUND_N and $PREV_INPUT) that were added via
+# comments on #606 but missed by PR #626.
 # Issue #629 chose targeted pairs over extending FAMILY_VARS_RE so that
 # legitimate env-inherited reads of these var names in OTHER skills
 # (e.g., a skill called by /fix-issues that reads ZSKILLS_PIPELINE_ID
@@ -89,7 +89,6 @@ ISSUE_606_PAIRS=(
   "skills/draft-plan/SKILL.md|ROUND"
   "skills/fix-issues/modes/sync.md|TRACKING_ID"
   "skills/run-plan/subcommands/stop-next-status.md|PLAN_FILE"
-  "skills/quickfix/SKILL.md|ZSKILLS_PIPELINE_ID"
   "skills/draft-tests/modes/draft.md|ROUND_N"
   "skills/draft-tests/modes/draft.md|PREV_INPUT"
 )
@@ -412,7 +411,7 @@ check 'no skill prescribes isolation: worktree (use skills/create-worktree/scrip
 # are visible to the hook. Pattern matches `> "…/.zskills/tracking/<basename>"`
 # where <basename> starts with a letter (rules out `$PIPELINE_ID/...`
 # which begins with `$`). Pinned to the writer shape `> "…"` so prose
-# and comment hits in skills/{quickfix,research-and-go,session-report,
+# and comment hits in skills/{research-and-go,session-report,
 # verify-changes,run-plan}/SKILL.md don't false-positive. See
 # plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md for baseline-zero proof.
 check 'no skill writes flat-layout tracking markers (post-UNIFY_TRACKING_NAMES)' \

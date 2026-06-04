@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.04+9bc9da"
+  version: "2026.06.04+81a7d5"
 ---
 
 # Update Z Skills Infrastructure
@@ -124,7 +124,7 @@ Behavior by invocation:
 - `--with-block-diagram-addons` — install/update core skills + block-diagram
   add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
 
-Without an add-on flag, only the 24 core skills are installed/updated.
+Without an add-on flag, only the 23 core skills are installed/updated.
 If core is already installed, adding an add-on flag just copies the
 add-on skills (the audit detects core is satisfied and skips it).
 
@@ -557,7 +557,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 3.5. **Backfill `commit.co_author` if absent.** If the existing config
    does not contain a `"commit"` block with a `"co_author"` field (e.g.
    configs written before this field was introduced), splice in the
-   default so downstream skills (`/quickfix`, `/commit`) can rely on the
+   default so downstream skills (`/commit`) can rely on the
    field resolving. Default value:
    `"Claude Opus 4.7 (1M context) <noreply@anthropic.com>"`. Match the
    same style used for other optional-field backfills — a targeted
@@ -818,7 +818,7 @@ Check each Tier-1 script at its owner's path — NOT at root `scripts/`:
 - `.claude/skills/commit/scripts/write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
 - `.claude/skills/create-worktree/scripts/worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
 - `.claude/skills/create-worktree/scripts/create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
-- `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
+- `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do` before persisting ID)
 - `.claude/skills/update-zskills/scripts/apply-preset.sh` — required by the preset UX (Step F); **config-only** — updates `execution.landing`/`execution.main_protected` in config (the hook reads `main_protected` at runtime; apply-preset does not touch it)
 - `.claude/skills/run-plan/scripts/compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
 - `.claude/skills/update-zskills/scripts/statusline.sh` — session statusline helper (optional but should be installed if the user has it)

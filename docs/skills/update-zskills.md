@@ -35,7 +35,7 @@ The two everyday forms are `/update-zskills install` to set a project up from sc
 
 `/update-zskills` is the setup skill that configures and is referenced by nearly every other skill; it has no "before" step, but it underpins the rest of the catalog.
 
-- **`/commit`**, **`/do`**, **`/quickfix`**, **`/fix-issues`**, **`/run-plan`** — the execution skills whose landing behavior is governed by the `execution.landing` and `execution.main_protected` config fields that `/update-zskills` writes.
+- **`/commit`**, **`/do`**, **`/fix-issues`**, **`/run-plan`** — the execution skills whose landing behavior is governed by the `execution.landing` and `execution.main_protected` config fields that `/update-zskills` writes.
 - **`/create-worktree`** — the shared worktree-setup helper installed and kept current as part of the infrastructure these skills call.
 - **`/briefing`**, **`/plans`**, **`/zskills-dashboard`** — status and catalog skills that depend on the Python helpers and config `/update-zskills` puts in place.
 - **`/verify-changes`** — the change-soundness gate that, like the others, relies on the rules and test config this skill installs.

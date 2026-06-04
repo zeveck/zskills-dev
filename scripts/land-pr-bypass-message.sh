@@ -47,7 +47,6 @@ auto-merge handling).
 
 Use one of the caller skills instead:
 - /commit pr        (general PR landing from a feature branch)
-- /quickfix         (one-shot bug fix to PR-and-land)
 - /do pr            (action-based PR workflow)
 - /fix-issues pr    (PR-mode CI fix-up)
 
@@ -64,7 +63,7 @@ STOP: direct gh pr create / merge --auto from agent Bash bypasses /land-pr.
 
 A requires.land-pr.* marker for this branch is present in the tracking
 tree. That means a caller skill on this pipeline (e.g., /run-plan,
-/commit pr, /do pr, /fix-issues pr, /quickfix) declared an intent to
+/commit pr, /do pr, /fix-issues pr) declared an intent to
 land the PR via /land-pr - and you are running gh pr create / gh pr
 merge --auto directly instead. Don't do that. The caller pipeline
 expects /land-pr to do the work; bypassing it skips rebase, CI

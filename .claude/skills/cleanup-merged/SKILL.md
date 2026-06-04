@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `--force`) — they are always skipped.
 metadata:
-  version: "2026.06.01+07db32"
+  version: "2026.06.03+400f9a"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -70,8 +70,8 @@ never deletes a branch with unpushed commits.
   a named branch that is not yet confirmed merged (local: `git branch
   -D`). `--force` has no effect on un-named branches (the full-scan path
   ignores it) and **NEVER** overrides the protected-skip — see below.
-  Dashed form (issue #810) — matches the `--force` convention in `/do`,
-  `/work-on-plans`, and `/quickfix`.
+  Dashed form (issue #810) — matches the `--force` convention in `/do`
+  and `/work-on-plans`.
 - **Protected branches** — config field in `.claude/zskills-config.json`:
   ```json
   { "cleanup": { "protected_branches": ["docs/run-order-guide"] } }
@@ -128,7 +128,7 @@ for arg in "$@"; do
     all)    SCOPE="all" ;;
     # `--force` MUST appear BEFORE the `--*|-*` unknown-flag catchall,
     # else it would be rejected as an unknown flag. Issue #810: dashed
-    # form normalised across /do, /work-on-plans, /quickfix, /cleanup-merged.
+    # form normalised across /do, /work-on-plans, /cleanup-merged.
     --force) FORCE=1 ;;
     --dry-run|-n)
       echo "DEPRECATED: --dry-run/-n is now the default. Just run /cleanup-merged (no args) for preview."
@@ -775,7 +775,7 @@ mode needs a separate normalize step.
 Any time a PR has merged on GitHub and you want your local clone to
 reflect it. Typical cadence:
 
-- After `/quickfix`, `/do pr`, `/commit pr`, or any PR-mode skill,
+- After `/do pr`, `/commit pr`, or any PR-mode skill,
   once the PR has merged.
 - Before starting a new feature so you're branching off up-to-date
   main.

@@ -115,14 +115,14 @@ they were.
 ## Slash prefix
 
 The plugin install lists skills under a `/zs:` prefix — you type `/zs:run-plan`,
-`/zs:quickfix`, and so on, and the slash menu shows the prefixed names. The
-`/update-zskills` install uses the bare names: `/run-plan`, `/quickfix`.
+`/zs:do`, and so on, and the slash menu shows the prefixed names. The
+`/update-zskills` install uses the bare names: `/run-plan`, `/do`.
 
 This only affects what you type. When one skill triggers another, or when a
 scheduled "Run /fix-issues ..." prompt fires, both the bare and the `/zs:` form
 are recognized, so those paths work the same either way. The one place the
-prefix shows is reading skill text that says `/quickfix` and then typing it: on
-the plugin install you type `/zs:quickfix`. If that translation is a recurring
+prefix shows is reading skill text that says `/do` and then typing it: on
+the plugin install you type `/zs:do`. If that translation is a recurring
 annoyance for your team, the `/update-zskills` install (bare names, matching the
 text) is the lower-friction choice.
 

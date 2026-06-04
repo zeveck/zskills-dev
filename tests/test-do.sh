@@ -26,10 +26,9 @@
 # /do redirects/rejects in Phase 0a/0b. Phase 0c (cron registration) is
 # textually placed AFTER 0a/0b in the skill, so a redirect/reject exits
 # before any CronCreate call. The static ordering guard (Case 2) is the
-# load-bearing structural assertion; the seam tests (covered upstream in
-# /quickfix Cases 47/48 — /do is symmetric) verify dynamic behavior.
+# load-bearing structural assertion; the seam tests verify dynamic behavior.
 #
-# Mirror house-style of tests/test-quickfix.sh: per-case fixture, capture
+# House-style: per-case fixture, capture
 # stderr, pass/fail helpers, cleanup trap.
 #
 # Run from repo root: bash tests/test-do.sh
@@ -254,14 +253,12 @@ fi
 # would still pass. Convert to behavioral extract-and-run: pull `/do`'s
 # REAL verdict-parser regexes out of the ```regex fence in Phase 0b and
 # match them against APPROVE / `REVISE -- r` / `REJECT -- r` / malformed
-# inputs, asserting the parse outcome per input. Mirror of
-# test-quickfix.sh Case 52.
+# inputs, asserting the parse outcome per input.
 #
 # The verdict-parser fence is the lone ```regex block, which lives in the
 # `## Phase 0b` section (between `## Phase 0b` and `## Phase 0c`). It is a
 # ```regex fence (NOT ```bash), so the bash-only `extract_fence_between`
-# lib helper does not apply; we use a scoped awk for the regex fence, as
-# Case 52 does on the quickfix side.
+# lib helper does not apply; we use a scoped awk for the regex fence.
 # ────────────────────────────────────────────────────────────────────
 VERDICT_REGEX_BODY=$(awk '
   /^## Phase 0b/       { in_section = 1; next }
@@ -368,7 +365,7 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 9 — `--rounds notanumber` → ROUNDS stays at default 1
-# (greedy-fallthrough per WI 2a.0). Symmetric to /quickfix Case 45.
+# (greedy-fallthrough per WI 2a.0).
 #
 # Extracts the pre-flight pre-parse fence and runs it against the
 # fixture input `fix the bug --rounds in production`. Asserts ROUNDS=1.
@@ -452,9 +449,8 @@ fi
 # `_ZSKILLS_TEST_TRIAGE_VERDICT` (or `_ZSKILLS_TEST_REVIEW_VERDICT`) set
 # in the environment but WITHOUT `_ZSKILLS_TEST_HARNESS=1` proceeds
 # normally — the env vars are unset by the entry-point guard and ignored.
-# Symmetric to /quickfix Case 47(e). Closes the round-2 follow-up
-# flagged in known-concerns: the harness-companion test was previously
-# only covered for /quickfix.
+# Closes the round-2 follow-up flagged in known-concerns: the
+# harness-companion test for the entry-point guard.
 #
 # Approach: extract the pre-flight fence (which contains the unset
 # guard), wrap it as a script that echoes the var states AFTER the
@@ -566,7 +562,7 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 14 — Phase 1.5 Step 2 strips positional `auto` from
-# TASK_DESCRIPTION (issue #297; symmetric to /quickfix's `auto` strip).
+# TASK_DESCRIPTION (issue #297).
 #
 # Run input `fix tooltip auto pr` and assert output `fix tooltip` —
 # both `auto` and `pr` are stripped to leave the bare description.
@@ -585,9 +581,9 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 15 — Pre-flight pre-parse sets AUTO_FLAG=1 when positional
-# `auto` is in $ARGUMENTS (issue #297). Symmetric to /quickfix's
-# WI 1.2 AUTO_FLAG. Run pre-flight against `fix tooltip auto pr`
-# and assert AUTO_FLAG=1. Also negative case: no `auto` → AUTO_FLAG=0.
+# `auto` is in $ARGUMENTS (issue #297). Run pre-flight against
+# `fix tooltip auto pr` and assert AUTO_FLAG=1. Also negative case:
+# no `auto` → AUTO_FLAG=0.
 # ────────────────────────────────────────────────────────────────────
 AUTOFLAG_SCRIPT="$TEST_TMPDIR/autoflag.sh"
 {
@@ -612,7 +608,7 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 16 — modes/pr.md conditionally injects --auto into LAND_ARGS
-# when AUTO_FLAG=1 (issue #297; mirrors /quickfix's
+# when AUTO_FLAG=1 (issue #297; via
 # `[ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"`).
 #
 # Static-grep against skills/do/modes/pr.md for the conditional. This

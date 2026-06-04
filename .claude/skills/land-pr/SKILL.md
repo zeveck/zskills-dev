@@ -1,19 +1,19 @@
 ---
 name: land-pr
 user-invocable: false
-description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
+description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.03+02a28c"
+  version: "2026.06.03+cc70d4"
 ---
 
 # /land-pr — land a feature branch as a PR
 
 `/land-pr` owns the rebase → push → create-or-detect → monitor → merge
 sequence for a feature branch that is already in a presentable state.
-Eight callers dispatch into this skill via the Skill tool: the five
+Seven callers dispatch into this skill via the Skill tool: the four
 implementation callers (`/run-plan`, `/commit pr`, `/do pr`,
-`/fix-issues pr`, `/quickfix`) and the three drafting callers
+`/fix-issues pr`) and the three drafting callers
 (`/draft-plan`, `/refine-plan`, `/draft-tests` — added per issue #581 so
 their worktree-committed plan/spec files reach main under
 `landing: pr` + `main_protected: true`). `/land-pr` is a helper, not a
@@ -36,7 +36,7 @@ the PR_LANDING_UNIFICATION plan copy from these references.
 
 ## Reporting back to the user
 
-When this skill returns to the orchestrator (via the result file written in Step 9), the orchestrator typically composes a user-facing summary of the landing outcome. **NEVER instruct the user to type `/land-pr` in that summary.** This skill carries `user-invocable: false` for a reason — the slash runtime will not dispatch it from a human-typed slash command in any useful way. If the PR landed cleanly, just report the PR URL + merge status. If the PR is in a non-terminal state (CI failing, OPEN/BEHIND, rebase conflict), recommend `/commit pr` to retry the landing (it dispatches `/land-pr` internally with the right arguments), or — for low-level recovery — `git push` + `gh pr create` directly. The other 7 caller skills (`/run-plan`, `/do pr`, `/fix-issues pr`, `/quickfix`, `/draft-plan`, `/refine-plan`, `/draft-tests`) all dispatch `/land-pr` internally and are valid recommendations depending on the workflow that originated the PR.
+When this skill returns to the orchestrator (via the result file written in Step 9), the orchestrator typically composes a user-facing summary of the landing outcome. **NEVER instruct the user to type `/land-pr` in that summary.** This skill carries `user-invocable: false` for a reason — the slash runtime will not dispatch it from a human-typed slash command in any useful way. If the PR landed cleanly, just report the PR URL + merge status. If the PR is in a non-terminal state (CI failing, OPEN/BEHIND, rebase conflict), recommend `/commit pr` to retry the landing (it dispatches `/land-pr` internally with the right arguments), or — for low-level recovery — `git push` + `gh pr create` directly. The other 6 caller skills (`/run-plan`, `/do pr`, `/fix-issues pr`, `/draft-plan`, `/refine-plan`, `/draft-tests`) all dispatch `/land-pr` internally and are valid recommendations depending on the workflow that originated the PR.
 
 ## When invoked
 
@@ -49,8 +49,8 @@ Phase 6 verify caller skills follow it.
 
 ## Argument parsing (WI 1.2)
 
-Parse `$ARGUMENTS` using the bash-regex idiom that matches `/quickfix`
-and `/do`. Required: `--branch`, `--title`, `--body-file`, `--result-file`.
+Parse `$ARGUMENTS` using the bash-regex idiom that matches `/do`
+and `/commit`. Required: `--branch`, `--title`, `--body-file`, `--result-file`.
 Optional: `--auto` (bool, default false), `--worktree-path`,
 `--landed-source` (default `land-pr`), `--ci-timeout` (default 600),
 `--no-monitor` (skip CI poll, return after create), `--pr <num>` (resume
@@ -58,7 +58,7 @@ mode: skip rebase/push/create, jump to monitor), `--issue <num>`
 (passes through to `.landed` schema), `--tracking-id <id>` (when present,
 write `fulfilled.land-pr.<id>` on successful merge to satisfy a parent
 skill's `requires.land-pr.<id>` marker — `/run-plan` PR mode passes this;
-the other 4 callers do not, preserving their no-fulfillment behavior).
+the other 3 callers do not, preserving their no-fulfillment behavior).
 
 ```bash
 ARGS=( "$@" )
@@ -190,7 +190,7 @@ The schema is canonical across all callers:
 ```text
 status: <required>      # landed | pr-ready | pr-ci-failing | pr-failed | conflict | pr-state-unknown
 date: <required>        # ISO-8601 in configured tz: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
-source: <required>      # caller skill name (run-plan, commit, do, fix-issues, quickfix, land-pr)
+source: <required>      # caller skill name (run-plan, commit, do, fix-issues, land-pr)
 method: <required>      # always "pr" in this plan's scope
 branch: <required>      # feature branch name
 pr: <optional>          # PR URL; present only after pr-push-and-create.sh succeeds
@@ -356,7 +356,7 @@ If `$NO_MONITOR` is true and PR creation succeeded, set
 
 **Use case for `--no-monitor`:** caller wants to report the PR URL
 mid-flight, or split the create-and-monitor flow across two cron-fired
-turns. None of the 5 callers in this plan use `--no-monitor` — it is
+turns. None of the 4 callers in this plan use `--no-monitor` — it is
 reserved for future callers.
 
 ```bash
@@ -1105,7 +1105,7 @@ AND the PR is actually merged on main. Match the row-6 gate from Step 8's
 
 Any other state (pr-ready, pr-ci-failing, push-failed, rebase-conflict,
 pr-state-unknown, etc.) means the work isn't actually landed — do NOT
-fulfill. The 4 non-/run-plan callers never pass `--tracking-id`, so this
+fulfill. The 3 non-/run-plan callers never pass `--tracking-id`, so this
 block is a no-op for them (preserves current behavior exactly).
 
 ```bash

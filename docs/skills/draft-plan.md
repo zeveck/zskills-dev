@@ -48,7 +48,7 @@ For work where the design itself is still open, start with an interactive conver
 - **`/refine-plan`** adjusts a plan that is already mid-execution when reality has drifted from what the plan assumed -- it sits between `/draft-plan` and `/run-plan` for in-flight corrections.
 - **`/draft-tests`** is the test-spec sibling of the plan-authoring family, using the same adversarial drafting to produce test specifications.
 - **`/research-and-plan`** is the tool to reach for when a goal is broad enough to decompose into several sub-plans; `/draft-plan` will hand off to it when the task is too big for one plan.
-- For a one-commit change where the approach is already settled, `/do` (or `/quickfix`, where the project allows editing main in place) is lighter than drafting a full plan.
+- For a one-commit change where the approach is already settled, `/do` is lighter than drafting a full plan.
 
 ## Arguments
 
@@ -67,7 +67,7 @@ For work where the design itself is still open, start with an interactive conver
 
 `brainstorm` and `quiz` are mutually exclusive -- both are pre-draft interviews, and asking for both at once is an error rather than a silent drop of one. Because they are recognized only at the front of the arguments, a description word like "build a quiz app" does not trigger either mode; to enable a mode you must lead with the flag, not append it.
 
-`auto` mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and `/quickfix`. It controls only whether the plan lands automatically -- it does not skip the review rounds or the brainstorm/quiz dialogue.
+`auto` mirrors the same token in `/run-plan`, `/do`, and `/fix-issues`. It controls only whether the plan lands automatically -- it does not skip the review rounds or the brainstorm/quiz dialogue.
 
 ## Examples
 
@@ -90,5 +90,5 @@ For work where the design itself is still open, start with an interactive conver
 - Drafting against an existing plan file modernizes it rather than starting blank -- the old plan's intent is treated as research input, and the review checks that nothing from it was lost.
 - If a plan does not converge within the round budget, it is still written, with a "remaining concerns" section, and you decide whether to proceed or refine further.
 - If the goal is broad enough to decompose into multiple sub-plans, reach for `/research-and-plan` instead.
-- Reserve `/draft-plan` for work with non-trivial design surface (integration points, multiple commands, staged phases). A single, settled change is lighter as a `/do` or `/quickfix`.
+- Reserve `/draft-plan` for work with non-trivial design surface (integration points, multiple commands, staged phases). A single, settled change is lighter as a `/do`.
 - Choose between the interview modes by the bottleneck: `brainstorm` when the design surface is fuzzy and you want to co-design it, `quiz` when you know roughly what you want but the requirements need to be drawn out precisely.

@@ -239,8 +239,8 @@ Exit with error directing the user to inspect `$WORKTREE_PATH`.
 **Step A6.5 — Verify (before push/land):**
 
 `/do pr` runs the SAME local verification gate as its worktree/direct
-siblings (`/do` Phase 3) and as the other PR-mode callers (`/quickfix`
-Phase 5.5, `/run-plan`, `/fix-issues`, `/commit`) BEFORE handing off to
+siblings (`/do` Phase 3) and as the other PR-mode callers
+(`/run-plan`, `/fix-issues`, `/commit`) BEFORE handing off to
 `/land-pr`. Issue #1014 — `/do pr` was previously the only PR-mode caller
 with no local verification gate: it relied solely on CI through
 `/land-pr`. CI (via `/land-pr`'s `pr-monitor.sh`) is the **backstop**, not
@@ -408,7 +408,7 @@ description.
 - `$LANDED_SOURCE = "do"`
 - `$WORKTREE_PATH` set (the per-task worktree from Step A5)
 - `--auto` is gated on the positional `auto` token (issue #297 — matches
-  /quickfix, /run-plan, /fix-issues). Without `auto`, auto-merge stays
+  /run-plan, /fix-issues). Without `auto`, auto-merge stays
   OFF and the PR settles at `pr-ready` after CI passes; with `auto`,
   `LAND_ARGS` includes `--auto` and `/land-pr`'s existing auto-merge
   path takes over.
@@ -441,9 +441,9 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="do.$TASK_SLUG"
-# Echo (do not env-export) the pipeline id — matches /quickfix's tier-2
-# transcript-propagation idiom (`skills/quickfix/SKILL.md:672`) and
-# satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
+# Echo (do not env-export) the pipeline id — the tier-2
+# transcript-propagation idiom (the `echo "ZSKILLS_PIPELINE_ID=..."` line
+# below) satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
 # which forbids the env-export side-channel form.
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
@@ -473,7 +473,7 @@ LAND_OUTCOME=__init__
 LANDED_SOURCE="do"
 LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --tracking-id=$TASK_SLUG"
 # Issue #297: positional `auto` token (parsed in pre-flight pre-parse)
-# opts /do pr into /land-pr's auto-merge path. Mirrors /quickfix,
+# opts /do pr into /land-pr's auto-merge path. Mirrors
 # /run-plan, /fix-issues.
 [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
 

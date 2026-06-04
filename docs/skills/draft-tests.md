@@ -39,7 +39,7 @@ A bare plan name (no slash) is resolved against the project's plans directory, s
 - **`/draft-plan`** — the sister skill. `/draft-plan` drafts the plan; `/draft-tests` adds the test specs to it. Same adversarial-review approach, scoped to test specs. Run `/draft-tests` on a plan `/draft-plan` produced.
 - **`/run-plan`** — what executes the plan afterward. The test specs `/draft-tests` writes ride along inside the phases `/run-plan` runs, so the implementing agent picks them up automatically.
 - **`/refine-plan`** — the other plan-adjusting skill. `/refine-plan` adjusts a plan mid-flight; `/draft-tests` is the narrower tool that only adds test specs. Both leave completed phases untouched.
-- **`/do`, `/quickfix`** — for one-off changes that don't need a plan at all; reach for these instead of the plan-authoring family when the work is a single pass.
+- **`/do`** — for one-off changes that don't need a plan at all; reach for it instead of the plan-authoring family when the work is a single pass.
 
 ## Arguments
 
@@ -78,4 +78,4 @@ If no plan file is found, `/draft-tests` reports the usage line and stops.
 - Completed phases are never modified. A gap in already-completed work is surfaced as a new backfill phase at the end of the plan, not by editing the finished phases.
 - The test specs go inside the plan's phases; there is no separate test document to maintain and nothing extra to wire up for `/run-plan`.
 - Sections after the last phase are left exactly as they were, so trailing notes and appendices survive untouched.
-- `auto` controls whether the result lands automatically — the same `auto` token used by `/draft-plan`, `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, and `/refine-plan`. It does not skip or shorten the review.
+- `auto` controls whether the result lands automatically — the same `auto` token used by `/draft-plan`, `/run-plan`, `/do`, `/fix-issues`, and `/refine-plan`. It does not skip or shorten the review.

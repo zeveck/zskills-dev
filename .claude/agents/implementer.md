@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Dispatch to implement bug fixes / features / refactors. Tooling identical to verifier (Read, Grep, Glob, Bash, Edit, Write) with Layer 0 Bash-timeout auto-extension via PreToolUse hook so long test runs don't trigger the bg+Monitor stall pattern. Dispatched by /fix-issues PR mode, /do PR mode, /land-pr fix-cycle, /quickfix, /run-plan when implementing changes — never auto-invoked.
+description: Dispatch to implement bug fixes / features / refactors. Tooling identical to verifier (Read, Grep, Glob, Bash, Edit, Write) with Layer 0 Bash-timeout auto-extension via PreToolUse hook so long test runs don't trigger the bg+Monitor stall pattern. Dispatched by /fix-issues PR mode, /do PR mode, /land-pr fix-cycle, /run-plan when implementing changes — never auto-invoked.
 tools: Read, Grep, Glob, Bash, Edit, Write
 model: inherit
 hooks:

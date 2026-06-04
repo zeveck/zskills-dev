@@ -12,7 +12,7 @@ Once it decides to proceed, `/do` dispatches a fresh review agent to sanity-chec
 
 How the result reaches `main` depends on the landing mode (see Arguments). The common shape in a protected-`main` repo is a pull request: `/do` opens a worktree, makes the change there, runs the verification gate locally, opens a PR, and watches CI. Output is brief and inline — `/do` writes no persistent report file; the commit (or PR) is the artifact.
 
-`/do` and `/quickfix` are co-equal peers: same lifecycle, same one-commit-PR shape, same landing path. The only difference is where the work happens — `/quickfix` edits in place on `main` (valid only when `main` is unprotected), while `/do` isolates the work. Pick by project policy, not task size.
+`/do` is the everyday workhorse for one-commit changes: it isolates the work in a worktree, runs the verification gate, and lands a single-commit PR. Reach for it whenever a change is small enough not to warrant a full plan but you still want the review-and-verify lifecycle around it.
 
 ## Usage
 
@@ -39,7 +39,6 @@ A description alone runs the task immediately. Add a landing flag (`pr`, `worktr
 
 ## Companion skills
 
-- **`/quickfix`** — the peer skill. Same lifecycle and one-commit-PR shape; `/quickfix` works in place on `main`, `/do` isolates the work. Choose by whether `main` is protected.
 - **`/draft-plan`** — where `/do` redirects you when a task is too big for a single pass. `/draft-plan` researches and decomposes plan-scale work.
 - **`/run-plan`** — where `/do` redirects you when the description references an existing plan file; `/run-plan` executes plans.
 - **`/fix-issues`** — for working a backlog of issues rather than a single ad-hoc task; `/do` redirects issue-batch work here.

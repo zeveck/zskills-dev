@@ -266,7 +266,7 @@
 
 <nav>
   <span class="logo">Z Skills</span>
-  <a href="#skills">24 Skills</a>
+  <a href="#skills">23 Skills</a>
   <a href="#quickstart">Typical Workflow</a>
   <a href="#workflows">Workflows</a>
   <a href="#schedulable">Schedulable</a>
@@ -281,12 +281,12 @@
 <!-- HERO -->
 <section class="hero" style="margin-bottom: 6px; padding-bottom: 20px;">
   <h1>Z Skills System</h1>
-  <p>Z Skills turns Claude Code into a disciplined engineering team. 24 core skills (22 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
-  <p>Currently: 22 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
+  <p>Z Skills turns Claude Code into a disciplined engineering team. 23 core skills (21 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
+  <p>Currently: 21 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
   <p style="font-size: 0.95em; color: var(--text-dim);">Install via the plugin marketplace (<code>/plugin install zs@zskills</code>, slash prefix <code>/zs:</code>) or the <code>/update-zskills</code> script (bare slash prefix). Both lanes are first-class and permanent &mdash; full setup in the <a href="https://github.com/zeveck/zskills">README</a>.</p>
 </section>
 
-<!-- ALL 24 SKILLS -->
+<!-- ALL 23 SKILLS -->
 <section id="skills" class="fade-in" style="margin-top: 0; padding-top: 0;">
       <div class="skill-mini-grid" style="grid-template-columns: 1fr; max-width: 600px; margin: 0 auto 24px;">
         <div class="skill-mini" style="border-color: var(--accent); border-width: 2px;">
@@ -332,10 +332,6 @@
         <div class="skill-mini" style="border-color: var(--green);">
           <h5><code>/do</code></h5>
           <p>Lightweight dispatcher for ad-hoc tasks. Worktree isolation, auto-push, cron scheduling. For work too small for <code>/run-plan</code>.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--green);">
-          <h5><code>/quickfix</code></h5>
-          <p>Low-ceremony PR from main. Picks up in-flight edits (or dispatches an agent to write them), commits on a feature branch, pushes, opens the PR, exits. No worktree. PR-only. For changes small enough that leaving main is more ceremony than the edit is worth.</p>
         </div>
       </div>
 
@@ -403,7 +399,7 @@
       <div class="skill-mini-grid">
         <div class="skill-mini" style="border-color: var(--border);">
           <h5><code>/land-pr</code> <span style="font-size: 0.7em; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-weight: 400; margin-left: 6px;">helper</span></h5>
-          <p>PR landing helper &mdash; rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by <code>/run-plan</code>, <code>/commit pr</code>, <code>/do pr</code>, <code>/fix-issues</code>, and <code>/quickfix</code>. <code>user-invocable: false</code> hides it from the <code>/</code> menu.</p>
+          <p>PR landing helper &mdash; rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by <code>/run-plan</code>, <code>/commit pr</code>, <code>/do pr</code>, and <code>/fix-issues</code>. <code>user-invocable: false</code> hides it from the <code>/</code> menu.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--border);">
           <h5><code>/create-worktree</code> <span style="font-size: 0.7em; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-weight: 400; margin-left: 6px;">helper</span></h5>
@@ -703,7 +699,7 @@
 
 <!-- CLOSING -->
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>24 core skills (22 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>23 core skills (21 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
   <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6 / 4.7) &mdash; Z Skills System.</p>
 </section>

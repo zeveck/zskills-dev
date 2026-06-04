@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tests for the multi-issue claim acquire/release fan-out introduced in
-# PR #863 (skills/do, skills/quickfix). Exercises:
+# PR #863 (skills/do). Exercises:
 #
 #   1. Multi-issue acquire fans out N independent claim acquires via
 #      claim-issue.sh — each issue gets its own claim dir.
@@ -12,10 +12,10 @@
 #      no-op per claim-issue.sh).
 #
 # These tests drive claim-issue.sh directly rather than running the full
-# /do or /quickfix lifecycle — the loop semantics under test are pure
+# /do lifecycle — the loop semantics under test are pure
 # bash that the SKILL.md fences inline verbatim.
 #
-# Run from repo root: bash tests/test-do-quickfix-multi-issue-fanout.sh
+# Run from repo root: bash tests/test-do-multi-issue-fanout.sh
 
 set -u
 
@@ -164,7 +164,7 @@ cleanup_dirs+=("$REPO_C")
 cd "$REPO_C" || exit 1
 
 ISSUE_NUMS=(700 701 702)
-PIPELINE_ID="quickfix.test-release"
+PIPELINE_ID="do.test-release"
 # Acquire all three.
 for ISSUE_NUM in "${ISSUE_NUMS[@]}"; do
   bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID" 2>/dev/null

@@ -6,7 +6,7 @@
 
 Skill distribution repo and presentation site for Z Skills.
 
-- `skills/` — source skill definitions (24 core)
+- `skills/` — source skill definitions (23 core)
 - `block-diagram/` — add-on skills (3)
 - `.claude/skills/` — installed skill copies (what Claude Code reads)
 - `hooks/` — source hook scripts
@@ -120,4 +120,4 @@ guarded against accidental recursive deletion.
 
 See `## Skill versioning` for the verifier subagent's interaction with `block-stale-skill-version.sh` (Plan B PreToolUse backstop): the verifier's frontmatter `inject-bash-timeout.sh` hook composes with project hooks per Anthropic's documented additive behavior, so verifier `git commit` is gated identically to orchestrator-side commits.
 
-**Impl-agent dispatch.** Impl agents (those dispatched to write code, run tests, and/or commit changes by `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, `/run-plan`, and `/quickfix`'s agent-dispatched mode) MUST be dispatched with `subagent_type: "implementer"`. The implementer agent (`.claude/agents/implementer.md`) clones verifier's frontmatter hook (`inject-bash-timeout.sh`), so its Bash calls auto-extend to a 600s timeout. This prevents the bg+Monitor stall pattern that would otherwise fire when a long test suite exceeds the Bash tool's default 120s timeout — symmetric to the Layer 0 protection that verifier dispatches already get. Conformance tripwires in `tests/test-skill-conformance.sh` (section "implementer subagent — impl-dispatch site pins") assert each impl-dispatch site declares `subagent_type: "implementer"`; the assertion fails closed if a future edit drops the directive. (Renamed from `fixer` in PR #366 — the agent isn't only for bug fixes; it also builds new features and refactors.)
+**Impl-agent dispatch.** Impl agents (those dispatched to write code, run tests, and/or commit changes by `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, and `/run-plan`) MUST be dispatched with `subagent_type: "implementer"`. The implementer agent (`.claude/agents/implementer.md`) clones verifier's frontmatter hook (`inject-bash-timeout.sh`), so its Bash calls auto-extend to a 600s timeout. This prevents the bg+Monitor stall pattern that would otherwise fire when a long test suite exceeds the Bash tool's default 120s timeout — symmetric to the Layer 0 protection that verifier dispatches already get. Conformance tripwires in `tests/test-skill-conformance.sh` (section "implementer subagent — impl-dispatch site pins") assert each impl-dispatch site declares `subagent_type: "implementer"`; the assertion fails closed if a future edit drops the directive. (Renamed from `fixer` in PR #366 — the agent isn't only for bug fixes; it also builds new features and refactors.)

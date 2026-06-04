@@ -24,8 +24,8 @@ cannot dispatch sub-subagents (Anthropic design).
 This inherits the Layer 0 Bash-timeout extension (see
 `.claude/agents/implementer.md` + the "Verifier-cannot-run rule" section in
 CLAUDE.md) so the fix-cycle agent's Bash calls to run long test suites
-don't trigger the bg+Monitor stall pattern. All 5 caller sites
-(`/fix-issues pr`, `/do pr`, `/run-plan` pr mode, `/quickfix`, and any
+don't trigger the bg+Monitor stall pattern. All 4 caller sites
+(`/fix-issues pr`, `/do pr`, `/run-plan` pr mode, and any
 orchestrator-direct fix-cycle invocation) MUST honor this shape.
 
 If the agent's fix attempt requires nested agent dispatch, it must
@@ -120,8 +120,7 @@ attempt didn't produce a fix commit.
 - **Customize `<CALLER_WORK_CONTEXT>` with session-specific context.**
   /run-plan passes the current phase's plan content. /commit pr
   passes the commit message and changed-file list. /do pr passes the
-  task description. /fix-issues pr passes the issue body. /quickfix
-  passes its description and triage notes.
+  task description. /fix-issues pr passes the issue body.
 - **Pass `${CI_LOG_FILE}` verbatim from the result file.** Don't
   re-derive it — the path is what `pr-monitor.sh` chose.
 - **If `${CI_LOG_FILE}` is empty,** include

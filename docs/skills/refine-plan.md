@@ -50,7 +50,7 @@ The natural flow is `/draft-plan` (create) → `/run-plan` (execute) → `/refin
 | `auto` | No | After the refined plan is committed, open a pull request, monitor CI, and auto-merge. Without `auto`, the refined plan is committed but no PR is opened — you land it yourself. |
 | `guidance...` | No | Any trailing free text becomes guidance that steers what the review focuses on. It is treated as priming for the review, not as fact to act on blindly. |
 
-The default of 2 rounds is lighter than `/draft-plan`'s 3, because this is a refinement pass on an existing plan rather than blank-slate creation. The `auto` token mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, and `/draft-plan`.
+The default of 2 rounds is lighter than `/draft-plan`'s 3, because this is a refinement pass on an existing plan rather than blank-slate creation. The `auto` token mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and `/draft-plan`.
 
 ## Examples
 
