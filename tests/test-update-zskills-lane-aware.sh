@@ -137,6 +137,21 @@ got="$(detect_install_state "$P1")"
   && pass "AC1b. pure-plugin fixture has NO .claude/skills mirror (gap-fill would flip it)" \
   || fail "AC1b. .claude/skills mirror unexpectedly present on plugin fixture"
 
+# AC1c (#1064) — a plugin consumer who ships their OWN non-zskills skill
+# (e.g. social-seo) must STILL resolve LANE==plugin. The consumer skill is a
+# .claude/skills/<name>/SKILL.md that is NOT in the zskills-owned anchor set,
+# so it must not count as /update-zskills evidence. (Before the fix the
+# bare-wildcard loop matched it → plugin install mis-classified → Step 0.7
+# branch would not fire.)
+P1c="$TMP/plugin-consumer-skill"
+base_fixture "$P1c"
+write_sentinelled_hook "$P1c/.claude/hooks/inject-bash-timeout.sh"
+write_sentinelled_managed "$P1c/.claude/rules/zskills/managed.md"
+write_unsentinelled_skill "$P1c/.claude/skills/social-seo/SKILL.md"   # consumer's OWN skill
+got="$(detect_install_state "$P1c")"
+[ "$got" = plugin ] && pass "AC1c. plugin + consumer's own non-zskills skill → LANE==plugin (#1064)" \
+  || fail "AC1c. expected plugin, got $got (consumer skill mis-counted as legacy evidence)"
+
 # ── AC2 — preset config-only on plugin lane ───────────────────────────────
 P2="$TMP/plugin-preset"
 base_fixture "$P2"

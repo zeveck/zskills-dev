@@ -59,6 +59,44 @@ fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1));
 # future genuinely-dangling entry failing-closed.
 D4_TEMPLATE_ONLY="block-unsafe-project.sh block-agents.sh"
 
+# ── Marketplace self-reference gate (#1065) ──────────────────────────────────
+# The `.template`-only allowance above is only safe when the plugin is served
+# from a PUBLISHED prod tree (where finalize_prod_tree's D4 step has already
+# generated the suffixless siblings). But `.claude-plugin/marketplace.json`'s
+# `zs` source can point AT THIS DEV REPO (`zeveck/zskills-dev`). When it does,
+# a real `claude plugin install zs@zskills` clones the DEV tree — which has NOT
+# run D4 — so any `.template`-only hook is genuinely MISSING at runtime and the
+# plugin errors on every Bash/Agent call (#1065). In that self-referencing
+# state the `.template` allowance is VOID: every registered script MUST exist
+# suffixless in-tree. We detect the self-reference and, when present, clear the
+# Gap-1 allow-list so a re-removed sibling fails closed.
+zs_source_repo() {
+  # Echo the `zs` plugin source repo from a marketplace.json (empty if absent).
+  "$PYTHON" - "$1" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+for p in data.get("plugins", []):
+    if not isinstance(p, dict):
+        continue
+    if p.get("name") == "zs":
+        src = p.get("source", {})
+        if isinstance(src, dict):
+            print(src.get("repo", ""))
+        break
+PY
+}
+MARKETPLACE_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
+ZS_SRC_REPO="$(zs_source_repo "$MARKETPLACE_JSON")"
+# Gap-1 allow-list: void when the marketplace self-references the dev repo.
+GAP1_TEMPLATE_ONLY="$D4_TEMPLATE_ONLY"
+if [ "$ZS_SRC_REPO" = "zeveck/zskills-dev" ]; then
+  GAP1_TEMPLATE_ONLY=""
+fi
+
 # Gap-2 shim-sourcing exclusion: SessionStart materialiser. It carries its OWN
 # dual-install probe (detect-install-state.sh) and is NOT a double-fire-prone
 # PreToolUse hook, so it legitimately does NOT source the conditional-skip shim.
@@ -150,8 +188,10 @@ PY
     if [ -f "$path" ]; then
       :  # (a) script exists in-tree
     elif [ -f "$tmpl" ]; then
-      # (b) committed .template sibling — only allowed for the named D4 pair.
-      if in_list "$name" "$D4_TEMPLATE_ONLY"; then
+      # (b) committed .template sibling — only allowed for the named D4 pair,
+      # AND only when the marketplace does NOT self-reference the dev repo
+      # (GAP1_TEMPLATE_ONLY is cleared in that case — #1065).
+      if in_list "$name" "$GAP1_TEMPLATE_ONLY"; then
         :
       else
         echo "DANGLING(template-not-allowlisted): $name" >&2
@@ -174,6 +214,24 @@ else
   sed 's/^/      /' /tmp/.gap1.err
 fi
 rm -f /tmp/.gap1.err
+
+# 1b (#1065) — when the marketplace `zs` source self-references the dev repo,
+# the `.template`-only allowance is VOID: every D4 pair member MUST exist
+# suffixless in-tree (a dev-marketplace clone is a runnable plugin). This
+# fails closed if someone re-removes a sibling while the self-reference stands.
+if [ "$ZS_SRC_REPO" = "zeveck/zskills-dev" ]; then
+  missing_siblings=""
+  for name in $D4_TEMPLATE_ONLY; do
+    [ -f "$REPO_ROOT/hooks/$name" ] || missing_siblings="$missing_siblings $name"
+  done
+  if [ -z "$missing_siblings" ]; then
+    pass "1b. marketplace self-references zeveck/zskills-dev → all D4 hook siblings present suffixless in-tree (runnable dev-marketplace clone)"
+  else
+    fail "1b. marketplace self-references dev but these D4 siblings are MISSING suffixless in-tree (#1065):$missing_siblings"
+  fi
+else
+  pass "1b. marketplace zs source is '$ZS_SRC_REPO' (not the dev repo) → .template-only D4 allowance applies"
+fi
 
 # ──────────────────────────────────────────────────────────────────────────
 echo ""
