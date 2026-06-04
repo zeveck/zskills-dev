@@ -14,8 +14,10 @@
 #   3. Sidecar + in-situ merge — a permission event whose ts falls BETWEEN
 #      two transcript events renders a [PERMISSION]-tagged line at the right
 #      position; grep -c returns the expected count.
-#   4. Config toggle — logging.enabled=false => both hooks no-op (no files
-#      written) and still exit 0.
+#   4. Config toggle / OFF-by-default — session logging is OFF unless the
+#      consumer opts in (logging.enabled:true). Asserts both hooks no-op
+#      (no files written, exit 0) for: explicit logging.enabled=false, an
+#      ABSENT logging.enabled field, and an empty config object {}.
 #   5. Helper — no args prints the resolved dir; dest arg copies the logs.
 
 set -u
@@ -43,7 +45,10 @@ trap cleanup EXIT
 
 PROJ="$WORK/proj"
 mkdir -p "$PROJ/.claude"
-echo '{}' > "$PROJ/.claude/zskills-config.json"
+# Session logging is OFF by default (absent logging.enabled => off), so the
+# renderer-positive cases (1, 3, 5, 6) MUST opt in explicitly. The
+# absent-field default is asserted separately in Case 4b/4c.
+echo '{"logging":{"enabled":true}}' > "$PROJ/.claude/zskills-config.json"
 
 # Synthetic transcript: user @00, assistant+tool @05, tool_result @08,
 # assistant @10. A permission event at @07 (between @05 and @08) is used in
@@ -173,7 +178,8 @@ fi
 
 # ──────────────────────────────────────────────────────────────────────────
 echo ""
-echo "=== Case 4 — logging.enabled=false no-ops both hooks ==="
+echo "=== Case 4 — logging OFF: explicit enabled=false AND absent field both no-op ==="
+# Explicit logging.enabled=false: both hooks no-op.
 PROJ_OFF="$WORK/proj-off"
 mkdir -p "$PROJ_OFF/.claude"
 echo '{"logging":{"enabled":false}}' > "$PROJ_OFF/.claude/zskills-config.json"
@@ -182,7 +188,7 @@ echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"off1\",\"transcript_path\":
   ZSKILLS_LOG_DIR="$LOGD4" CLAUDE_PROJECT_DIR="$PROJ_OFF" bash "$STOP_HOOK"
 rc=$?
 if [ "$rc" -eq 0 ] && [ ! -d "$LOGD4" ]; then
-  pass "4a. stop hook no-ops (exit 0, no log dir created) when disabled"
+  pass "4a. stop hook no-ops (exit 0, no log dir created) when explicitly disabled"
 else
   fail "4a. stop disabled no-op" "rc=$rc dir_exists=$([ -d "$LOGD4" ] && echo y || echo n)"
 fi
@@ -190,9 +196,47 @@ out="$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"off1","
   ZSKILLS_LOG_DIR="$LOGD4" CLAUDE_PROJECT_DIR="$PROJ_OFF" bash "$PERM_HOOK" 2>/dev/null)"
 rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$out" ] && [ ! -d "$LOGD4" ]; then
-  pass "4b. permission hook no-ops (exit 0, empty stdout, no dir) when disabled"
+  pass "4b. permission hook no-ops (exit 0, empty stdout, no dir) when explicitly disabled"
 else
   fail "4b. perm disabled no-op" "rc=$rc out=[$out] dir_exists=$([ -d "$LOGD4" ] && echo y || echo n)"
+fi
+
+# OFF-BY-DEFAULT: an absent logging.enabled field (fresh consumer config)
+# must ALSO no-op both hooks — session logging is opt-in. PROJ_ABSENT has a
+# config with NO logging block at all (exactly what /update-zskills seeds).
+PROJ_ABSENT="$WORK/proj-absent"
+mkdir -p "$PROJ_ABSENT/.claude"
+echo '{"project_name":"x"}' > "$PROJ_ABSENT/.claude/zskills-config.json"
+LOGD4A="$WORK/logs4a"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"abs1\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$LOGD4A" CLAUDE_PROJECT_DIR="$PROJ_ABSENT" bash "$STOP_HOOK"
+rc=$?
+if [ "$rc" -eq 0 ] && [ ! -d "$LOGD4A" ]; then
+  pass "4c. stop hook no-ops when logging.enabled is ABSENT (off by default)"
+else
+  fail "4c. stop absent-field no-op" "rc=$rc dir_exists=$([ -d "$LOGD4A" ] && echo y || echo n)"
+fi
+out="$(printf '%s' '{"hook_event_name":"PermissionRequest","session_id":"abs1","tool_name":"Read","tool_input":{"file_path":"x"},"tool_use_id":"t"}' | \
+  ZSKILLS_LOG_DIR="$LOGD4A" CLAUDE_PROJECT_DIR="$PROJ_ABSENT" bash "$PERM_HOOK" 2>/dev/null)"
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ] && [ ! -d "$LOGD4A" ]; then
+  pass "4d. permission hook no-ops when logging.enabled is ABSENT (off by default)"
+else
+  fail "4d. perm absent-field no-op" "rc=$rc out=[$out] dir_exists=$([ -d "$LOGD4A" ] && echo y || echo n)"
+fi
+
+# And an EMPTY config object ({}) — the most minimal fresh state — also off.
+PROJ_EMPTY="$WORK/proj-empty"
+mkdir -p "$PROJ_EMPTY/.claude"
+echo '{}' > "$PROJ_EMPTY/.claude/zskills-config.json"
+LOGD4E="$WORK/logs4e"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"emp1\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$LOGD4E" CLAUDE_PROJECT_DIR="$PROJ_EMPTY" bash "$STOP_HOOK"
+rc=$?
+if [ "$rc" -eq 0 ] && [ ! -d "$LOGD4E" ]; then
+  pass "4e. stop hook no-ops on empty config {} (off by default)"
+else
+  fail "4e. stop empty-config no-op" "rc=$rc dir_exists=$([ -d "$LOGD4E" ] && echo y || echo n)"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -309,7 +353,9 @@ echo "=== Case 7 — cross-context agreement (issue #1059 regression test) ==="
 # asserts the reader still finds the logs (via the registry, NOT recompute).
 CC_PROJ="$WORK/ccproj"
 mkdir -p "$CC_PROJ/.claude"
-echo '{}' > "$CC_PROJ/.claude/zskills-config.json"
+# Opt in (logging is off by default); leave logging.dir blank so the per-OS
+# default resolution under test is exercised unchanged.
+echo '{"logging":{"enabled":true}}' > "$CC_PROJ/.claude/zskills-config.json"
 ( cd "$CC_PROJ" && git init -q . )
 # Write: blank logging.dir, no ZSKILLS_LOG_DIR -> per-OS default under
 # XDG_CACHE_HOME=cacheA; a deliberately DIFFERENT TMPDIR.
@@ -354,7 +400,7 @@ echo ""
 echo "=== Case 8 — registry semantics: header, append, dedup, union ==="
 RS_PROJ="$WORK/rsproj"
 mkdir -p "$RS_PROJ/.claude"
-echo '{}' > "$RS_PROJ/.claude/zskills-config.json"
+echo '{"logging":{"enabled":true}}' > "$RS_PROJ/.claude/zskills-config.json"
 ( cd "$RS_PROJ" && git init -q . )
 RS_REG="$RS_PROJ/.zskills/session-log-dirs"
 RS_A="$WORK/rs-logA"
@@ -414,7 +460,7 @@ echo ""
 echo "=== Case 9 — registry race-safe under concurrent writers ==="
 RC_PROJ="$WORK/rcproj"
 mkdir -p "$RC_PROJ/.claude"
-echo '{}' > "$RC_PROJ/.claude/zskills-config.json"
+echo '{"logging":{"enabled":true}}' > "$RC_PROJ/.claude/zskills-config.json"
 ( cd "$RC_PROJ" && git init -q . )
 RC_REG="$RC_PROJ/.zskills/session-log-dirs"
 RC_DIR="$WORK/rc-log"
@@ -457,7 +503,8 @@ echo '{}' > "$WT_MAIN/.claude/zskills-config.json"
 WT_LEAF="$WORK/wt-leaf"
 ( cd "$WT_MAIN" && git worktree add -q "$WT_LEAF" -b leafbranch ) 2>/dev/null
 mkdir -p "$WT_LEAF/.claude"
-echo '{}' > "$WT_LEAF/.claude/zskills-config.json"
+# The Stop hook runs with CLAUDE_PROJECT_DIR=WT_LEAF, so the leaf must opt in.
+echo '{"logging":{"enabled":true}}' > "$WT_LEAF/.claude/zskills-config.json"
 WT_LOG="$WORK/wt-log"
 # Write from the WORKTREE (CLAUDE_PROJECT_DIR = worktree path).
 echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"wtsess01\",\"transcript_path\":\"$TR\"}" | \

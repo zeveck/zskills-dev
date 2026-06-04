@@ -162,8 +162,8 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "default": true,
-          "description": "Master toggle for session logging. When true (default), the Stop/SubagentStop hook re-renders each session transcript to per-session markdown and the PermissionRequest hook appends a per-session permission sidecar. When false, BOTH hooks no-op immediately (exit 0, no files written)."
+          "default": false,
+          "description": "Master toggle for session logging. Default false — session logging is OFF unless the consumer opts in. When true, the Stop/SubagentStop hook re-renders each session transcript to per-session markdown and the PermissionRequest hook appends a per-session permission sidecar. When false or absent, BOTH hooks no-op immediately (exit 0, no files written)."
         },
         "dir": {
           "type": "string",
