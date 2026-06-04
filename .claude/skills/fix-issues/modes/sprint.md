@@ -420,6 +420,14 @@ fi
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
+   # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
    NEW_RESEARCHED_COUNT=0
    for N in "${OPEN_NUMS[@]}"; do
      if grep -qP "(?<![0-9])#$N(?![0-9])" \
@@ -430,7 +438,7 @@ fi
      # Python json. Per memory feedback_python_is_required.md + feedback_no_jq_in_skills.md:
      # Python json is the canonical parser for non-trivial JSON here; `jq`
      # the binary is what's prohibited, not all JSON parsers.
-     ISSUE_META=$(printf '%s' "$GH_OUT" | python3 -c '
+     ISSUE_META=$(printf '%s' "$GH_OUT" | "$PYTHON" -c '
 import json, sys
 data = json.load(sys.stdin)
 target = int(sys.argv[1])
@@ -593,6 +601,7 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
+  [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
   MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
   MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
 
@@ -694,7 +703,7 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
   if [ -z "${OPEN_NUMS+x}" ]; then
     GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
       || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
-    mapfile -t OPEN_NUMS < <(printf '%s' "$GH_OUT" | python3 -c '
+    mapfile -t OPEN_NUMS < <(printf '%s' "$GH_OUT" | "$PYTHON" -c '
 import json, sys
 for it in json.load(sys.stdin):
     n = it.get("number")
@@ -721,7 +730,7 @@ for it in json.load(sys.stdin):
   # triage (so a top-of-queue plan-scale/vague item doesn't block the
   # whole queue). Python json — never bash regex on a JSON array.
   DASHBOARD_PICKS=$(OPEN_NUMS_JOINED="$(printf '%s,' "${OPEN_NUMS[@]}")" \
-    python3 -c '
+    "$PYTHON" -c '
 import json, os, sys
 state_path = sys.argv[1]
 try:

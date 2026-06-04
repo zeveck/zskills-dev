@@ -22,6 +22,14 @@ removes it from the list (one-shot: flag once, re-evaluate once, clear).
 
 ```bash
 if [ "$RECONSIDER_MODE" = "1" ]; then
+  # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
   ISSUE_NUM="$RECONSIDER_ISSUE_NUM"
 
   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -31,7 +39,7 @@ if [ "$RECONSIDER_MODE" = "1" ]; then
     exit 1
   fi
 
-  python3 - "$STATE_FILE" "$ISSUE_NUM" <<'PY'
+  "$PYTHON" - "$STATE_FILE" "$ISSUE_NUM" <<'PY'
 import sys, os, json, tempfile
 
 path, num_s = sys.argv[1], sys.argv[2]

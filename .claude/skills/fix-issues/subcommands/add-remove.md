@@ -21,6 +21,14 @@ the rest of `$ARGUMENTS` for optional column and position:
 
 ```bash
 if [ "$ADD_MODE" = "1" ]; then
+  # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
   ISSUE_NUM="$ADD_ISSUE_NUM"
 
   # Parse optional [column] — default 'ready'
@@ -54,7 +62,7 @@ if [ "$ADD_MODE" = "1" ]; then
     exit 1
   fi
 
-  python3 - "$MONITOR_STATE" "$ISSUE_NUM" "$COLUMN" "${POS:-}" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$ISSUE_NUM" "$COLUMN" "${POS:-}" <<'PY'
 import json, os, sys, tempfile, datetime
 path, num_s, col = sys.argv[1], sys.argv[2], sys.argv[3]
 pos_s = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else ""
@@ -106,6 +114,14 @@ does NOT proceed to Phase 0/1/2.
 
 ```bash
 if [ "$REMOVE_MODE" = "1" ]; then
+  # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
   ISSUE_NUM="$REMOVE_ISSUE_NUM"
 
   # Parse optional [column] — default 'ready'
@@ -124,7 +140,7 @@ if [ "$REMOVE_MODE" = "1" ]; then
     exit 1
   fi
 
-  python3 - "$MONITOR_STATE" "$ISSUE_NUM" "$COLUMN" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$ISSUE_NUM" "$COLUMN" <<'PY'
 import json, os, sys, tempfile, datetime
 path, num_s, col = sys.argv[1], sys.argv[2], sys.argv[3]
 num = int(num_s)

@@ -303,10 +303,13 @@ test_dashboard_uses_python_json_not_bash_regex() {
   else
     fail "dashboard reads monitor-state.json" "no reference to monitor-state.json"
   fi
-  if grep -qE 'python3 -c' "$SKILL_SPRINT"; then
-    pass "dashboard uses python3 -c to parse JSON"
+  # Post-#1083 the interpreter is resolved via $PYTHON (Windows MS-Store-stub
+  # guard) instead of a bare python3 — accept either the resolved "$PYTHON" -c
+  # form or a legacy bare python3 -c.
+  if grep -qE '("\$PYTHON"|python3) -c' "$SKILL_SPRINT"; then
+    pass "dashboard uses \"\$PYTHON\" -c to parse JSON"
   else
-    fail "dashboard uses python3 -c to parse JSON" "no python3 -c invocation"
+    fail "dashboard uses \"\$PYTHON\" -c to parse JSON" "no \"\$PYTHON\" -c / python3 -c invocation"
   fi
 
   # Negative assertion: the prohibited bash-regex shape MUST NOT appear

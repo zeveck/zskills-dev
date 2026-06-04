@@ -11,7 +11,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.06.04+1ffb3a"
+  version: "2026.06.04+781dfd"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
@@ -289,14 +289,15 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
    only) to emit the file:
 
    ```bash
-   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
-     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
+   [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
    export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
-   python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
+   "$PYTHON" - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
    # plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.
    import json, os, sys, pathlib, re, tempfile
    out_path = sys.argv[1]
@@ -414,7 +415,14 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
 If `$MONITOR_STATE` exists but does not parse as JSON, halt:
 
 ```bash
-python3 -c '
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+"$PYTHON" -c '
 import json, sys
 try: json.load(open(sys.argv[1]))
 except Exception as e: print(f"unparseable: {e}", file=sys.stderr); sys.exit(1)
@@ -439,7 +447,15 @@ default):
 ```bash
 # No ZSKILLS_* env vars needed: this embed operates on $MONITOR_STATE
 # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-READY_TSV=$(python3 - "$MONITOR_STATE" <<'PY'
+# $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+READY_TSV=$("$PYTHON" - "$MONITOR_STATE" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
 default = doc.get('default_mode', 'finish')
@@ -473,7 +489,15 @@ dispatch on a corrupt state file:
 ```bash
 # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
 # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-WORK_STATE_VALUE=$(python3 - "$WORK_STATE" <<'PY'
+# $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+WORK_STATE_VALUE=$("$PYTHON" - "$WORK_STATE" <<'PY'
 import json, os, sys, tempfile
 path = sys.argv[1]
 if not os.path.exists(path):

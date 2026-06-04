@@ -419,7 +419,9 @@ print("|".join(bad))
   # Stronger: the SKILL.md says rebuild must exit non-zero AND emit a
   # diagnostic when the CLI fails. Check the rebuild prose contains the
   # relevant exit-1 + ERROR-message pattern.
-  if grep -nE 'echo "ERROR:.*python3 -m zskills_monitor\.collect failed' "$SKILL_MD" > /dev/null 2>&1; then
+  # Post-#1083 the diagnostic names the resolved interpreter ('$PYTHON')
+  # instead of a bare python3 — accept either form.
+  if grep -nE 'echo "ERROR:.*('"'"'\$PYTHON'"'"'|python3) -m zskills_monitor\.collect failed' "$SKILL_MD" > /dev/null 2>&1; then
     pass "AC-9: SKILL.md prose includes loud ERROR diagnostic on CLI failure"
   else
     fail "AC-9: SKILL.md prose missing loud ERROR diagnostic"

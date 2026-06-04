@@ -153,8 +153,11 @@ test_no_override_blurb_fallback_agreement() {
 **Action now:** /draft-plan — needs design review.
 EOF
   # No record-skip — monitor-state has no entry.
-  printf '{}\n' > "$main_root/.zskills/monitor-state.json" 2>/dev/null || {
-    mkdir -p "$main_root/.zskills"; printf '{}\n' > "$main_root/.zskills/monitor-state.json"; }
+  # mkdir BEFORE the redirect: `> file 2>/dev/null` doesn't suppress a redirect
+  # failure (bash opens the target before applying 2>/dev/null), so writing into
+  # a not-yet-created .zskills/ leaked a "No such file or directory" to stderr.
+  mkdir -p "$main_root/.zskills"
+  printf '{}\n' > "$main_root/.zskills/monitor-state.json"
   local fcode chip ccode
   fcode=$(filter_effective_code "$issues_dir" "$main_root" 701)
   chip=$(chip_effective "$main_root/.zskills/monitor-state.json" "$issues_dir/ISSUES_PLAN.md" 701)

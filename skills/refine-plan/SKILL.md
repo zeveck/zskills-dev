@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.06.04+d5e26a"
+  version: "2026.06.04+478e45"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [<guidance>] — Adversarial Plan Refiner
@@ -452,8 +452,10 @@ given what's already been built. Checks these six dimensions:
    "plan-text issue, non-blocking." All three would have been caught by
    arithmetic verification at refine-plan time. Do the math. If the
    plan's "remove 154 lines, add 15, expect 357" doesn't balance, say
-   so. Example verification: `python3 -c "print(417-94-60+15)"` or
-   equivalent bash.
+   so. Example verification: `"$PYTHON" -c "print(417-94-60+15)"` (resolve
+   `$PYTHON` via the config prelude first — bare `python3` is the broken MS
+   Store stub on Windows, #1083) or equivalent bash arithmetic
+   (`echo $((417-94-60+15))`).
 
 Each finding must be **specific and actionable** — not generic concerns.
 "Phase 3 might be complex" is useless. "Phase 3 says 'implement the

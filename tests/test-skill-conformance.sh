@@ -2252,6 +2252,105 @@ else
 fi
 
 echo ""
+echo "=== No executable bare python3 in skill fenced-bash (#1083) ==="
+# Every EXECUTABLE bare `python3` invocation in a consumer skill fenced-bash
+# block hits the broken Microsoft Store App-Execution-Alias stub on Windows
+# (same root cause as #1075). Skills must resolve $PYTHON via the config prelude
+# (skills/update-zskills/scripts/zskills-resolve-config.sh exports it) and call
+# `"$PYTHON" …` instead. This tripwire fails closed on any new executable bare
+# `python3` in a skill .md fenced-bash block, so the Windows regression can't
+# creep back in.
+#
+# Fence-aware (PYTHON, repo convention — no jq): walk skills/**/*.md +
+# block-diagram/**/*.md, toggle fenced-block state on ```/~~~ openers, and flag
+# ONLY lines INSIDE a fence where `python3` appears at a COMMAND POSITION
+# (line-start after optional whitespace, or immediately after a shell
+# command-separator: | ( { ; & or a $( / <( command-substitution opener)
+# followed by an executable form: -c / -m / - (stdin) / "$ (quoted path) /
+# ' (quoted -c body) / a path or module token.
+#
+# EXEMPT (NOT flagged):
+#   - prose lines OUTSIDE any fence (a `python3` mention in prose / inline code)
+#   - `#!/usr/bin/env python3` shebangs
+#   - lines already using "$PYTHON" / zskills_resolve_python / command -v python3
+#   - echo/printf STRING mentions like `echo "ERROR: python3 -m … failed"`
+#     (python3 is NOT at a command position there — it's mid-string)
+#   - a line carrying (or immediately preceded by) an `allow-hardcoded` marker
+PY3_FENCE_FAIL=0
+PY3_FENCE_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}" <<'PYEOF'
+import os, re, sys
+repo = os.environ["ZS_REPO_ROOT"]
+roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+files = []
+for root in roots:
+    for dirpath, _dirs, fns in os.walk(root):
+        for fn in fns:
+            if fn.endswith(".md"):
+                files.append(os.path.join(dirpath, fn))
+
+# python3 at a command position, in an executable form.
+#   (^|[|(){};&]|\$\(|<\()  — start-of-(stripped)-line OR a command separator /
+#                             command-substitution opener immediately before
+#   \s*                     — optional whitespace
+#   python3\b               — the bare interpreter
+#   \s+(-c|-m|-\s|["'/]|...) — an executable continuation (flag, stdin '-',
+#                             quoted/absolute path, or a module/script token)
+CMDPOS = re.compile(
+    r'(?:^|[|(){};&]|\$\(|<\()\s*python3\b\s+'
+    r'(?:-c\b|-m\b|-\s|["\']|/|[A-Za-z0-9_.]+)'
+)
+MARKER_FRAG = "allow-hardcoded:"
+
+hits = []
+for f in sorted(files):
+    with open(f, encoding="utf-8") as fh:
+        lines = fh.readlines()
+    in_fence = False
+    prev = ""
+    for i, line in enumerate(lines, 1):
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            prev = line
+            continue
+        if not in_fence:
+            prev = line
+            continue
+        # shebangs are not executable invocations of a bare python3 on PATH
+        if stripped.startswith("#!"):
+            prev = line
+            continue
+        # allow-hardcoded exemption (this line or the line immediately above)
+        if MARKER_FRAG in line or MARKER_FRAG in prev:
+            prev = line
+            continue
+        m = CMDPOS.search(stripped)
+        if m:
+            # Defensive: if the match's python3 is actually part of "$PYTHON"
+            # or command -v python3, the regex above already won't match
+            # (different surrounding text), so a hit here is a real one.
+            rel = os.path.relpath(f, repo)
+            hits.append('%s:%d: executable bare `python3` in fenced bash — '
+                        'resolve $PYTHON via the config prelude and use '
+                        '`"$PYTHON" …` instead (#1083). Line: %s'
+                        % (rel, i, stripped.rstrip()))
+        prev = line
+for h in hits:
+    print(h)
+sys.exit(0)
+PYEOF
+)"
+if [ -n "$PY3_FENCE_HITS" ]; then
+  PY3_FENCE_FAIL=1
+  fail "executable bare python3 in skill fenced-bash (#1083)" "$(printf '%s' "$PY3_FENCE_HITS" | grep -c .) hit(s)"
+  printf '%s\n' "$PY3_FENCE_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+else
+  pass "no executable bare python3 in skill fenced-bash (all resolve \$PYTHON — #1083)"
+fi
+
+echo ""
 echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py) ==="
 # Sibling deny-list scan over non-markdown sources that the existing
 # skills/**/*.md scanner above doesn't see:
