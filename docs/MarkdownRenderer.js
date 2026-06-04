@@ -71,13 +71,26 @@ export function renderMarkdown(md, options) {
       closeList();
       const tagMatch = line.trim().match(/^<(\w+)/);
       const tag = tagMatch[1];
+      // Net open/close count for a single line — counts BOTH tags so a
+      // self-contained one-line block (e.g. `<div ...>x</div>`, and multiple
+      // such on one line) nets to 0. Without this, a one-line container line
+      // is mis-read as a bare opener and swallows/duplicates its siblings.
+      const opensRe = new RegExp(`<${tag}[\\s>]`, 'g');
+      const closesRe = new RegExp(`</${tag}>`, 'g');
+      const netDepth = (l) =>
+        (l.match(opensRe) || []).length - (l.match(closesRe) || []).length;
+      let depth = netDepth(lines[i]);
+      if (depth <= 0) {
+        // Complete block on one line — emit verbatim, do not recurse.
+        out.push(lines[i]);
+        i++;
+        continue;
+      }
       const htmlLines = [lines[i]];
       i++;
-      let depth = 1;
       while (i < lines.length && depth > 0) {
         const l = lines[i];
-        if (new RegExp(`<${tag}[\\s>]`).test(l)) depth++;
-        if (new RegExp(`</${tag}>`).test(l)) depth--;
+        depth += netDepth(l);
         htmlLines.push(l);
         i++;
       }
@@ -359,8 +372,15 @@ function inlineMarkdown(s, baseUrl) {
   // GFM task list checkboxes — prevent false matches on array[x], obj[ ] (word char before [)
   s = s.replace(/(?<!\w)\[x\]/gi, '<input type="checkbox" checked class="zl-task-checkbox">');
   s = s.replace(/(?<!\w)\[ \]/g, '<input type="checkbox" class="zl-task-checkbox">');
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Inline code. A bare slash-command (e.g. `/do`, `/draft-plan`) gets a
+  // `.skill` class so it renders in the accent color, matching how skill names
+  // already appear inside flow diagrams. Scoped to a single `/word` token so
+  // flags (`--rounds`), positional verbs (`pr`, `auto`), paths (`docs/plans/`),
+  // and config keys stay neutral.
+  s = s.replace(/`([^`]+)`/g, (_, code) =>
+    /^\/[a-z][a-z0-9-]*$/.test(code)
+      ? `<code class="skill">${code}</code>`
+      : `<code>${code}</code>`);
   // Bold
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Italic

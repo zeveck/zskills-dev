@@ -2,6 +2,18 @@
 
 > Create a git worktree for agent work, on a fresh branch off `main`. Most of the time another skill runs this for you; you rarely call it by hand.
 
+<details class="flow-cmd" open>
+<summary>How it runs — set up a worktree</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> prunes, fetches, and ff-merges main</p></div>
+<div class="flow-step"><p>It creates the worktree on a branch</p></div>
+<div class="flow-step"><p>It writes the <code>.zskills-tracked</code> marker</p></div>
+<div class="flow-step"><p>It returns the path to the caller</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/create-worktree` sets up a fresh [git worktree](https://git-scm.com/docs/git-worktree) — a separate checkout of the repository in its own directory — so an agent can work on a change in isolation, without disturbing your main checkout. You give it a short slug; it picks a directory and a branch name from that slug, creates the worktree there, and prints the worktree's absolute path so the caller can `cd` into it and start working.

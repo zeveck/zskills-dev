@@ -16,6 +16,10 @@ Practical guides for installing zskills and working with it day to day. Start wi
 
 - **[Switching install lanes](switching-install-lanes.md)** — move an existing install from one lane to the other, in either direction, with a clean way to back out.
 
+## Reference
+
+- **[Configuring zskills](zskills-config.md)** — every field in `.claude/zskills-config.json`: landing mode, tests, dev server, paths, and what not to hand-edit.
+
 ## See also
 
 - **[Skills reference](../skills/README.md)** — per-skill details for the 21 user-facing slash commands.

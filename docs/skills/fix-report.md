@@ -2,6 +2,19 @@
 
 > The interactive review companion to `/fix-issues`. Walks you through every sprint result you haven't signed off yet — confirming fixes, landing them, closing the matching GitHub issues, updating trackers, and cleaning up. Always interactive; no arguments.
 
+<details class="flow-cmd" open>
+<summary>How it runs — interactive sign-off</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> gathers every unreviewed sprint result</p></div>
+<div class="flow-step"><p>It walks you through each fix — UI changes get a browser pass/fail check</p></div>
+<div class="flow-step"><p><strong>You</strong> approve each step</p></div>
+<div class="flow-step"><p>It lands the fixes, closes the issues, and removes the worktrees</p></div>
+<div class="flow-step"><p>It writes the final sign-off report</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/fix-issues` does the fixing; `/fix-report` clears the results. When `/fix-issues` runs a backlog — often unattended on a schedule — its results pile up unreviewed. `/fix-report` gathers all of that unreviewed work into one picture and walks you through clearing it. It covers everything outstanding, not just the most recent run: if `/fix-issues` has been working on a cron for a day, `/fix-report` presents all of it at once.

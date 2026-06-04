@@ -2,6 +2,20 @@
 
 > Full pipeline in one command: decompose a broad goal into focused sub-plans, draft each with adversarial review, then execute all of them autonomously via `/run-plan`. Walk away.
 
+<details class="flow-cmd" open>
+<summary>How it runs — decompose, plan, execute</summary>
+
+<div class="flow">
+<div class="flow-step"><p><strong>You</strong> describe the broad goal</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> researches the domain</p></div>
+<div class="flow-step"><p>It decomposes the goal into dependent sub-plans</p></div>
+<div class="flow-step"><p>Each sub-plan is drafted via <code>/draft-plan</code></p></div>
+<div class="flow-step"><p>Every plan is executed via <code>/run-plan</code> — no stop for review</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> runs a combined cross-branch check</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/research-and-go` takes a broad goal — too big to be a single plan — and carries it all the way from idea to landed code without pausing for approval. Given a plain-English description, it researches the domain, breaks the goal into focused sub-plans, identifies the dependencies between them, drafts each one through a round of adversarial review, writes a single meta-plan that ties them together, and then immediately runs that meta-plan to completion. You give it the goal once and it does the rest.

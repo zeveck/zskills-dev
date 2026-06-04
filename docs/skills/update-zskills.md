@@ -2,6 +2,18 @@
 
 > Install or update the Z Skills supporting infrastructure: the CLAUDE.md agent rules, safety hooks, helper scripts, and skill dependencies the other skills rely on.
 
+<details class="flow-cmd" open>
+<summary>How it runs — install or update</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> audits what's installed on disk</p></div>
+<div class="flow-step"><p>It reports the gaps before changing anything</p></div>
+<div class="flow-step"><p>It writes the config, hooks, and rules</p></div>
+<div class="flow-step"><p>It renders the managed rules file</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/update-zskills` sets up and maintains the shared infrastructure that every other Z Skill depends on. That infrastructure is: the agent rules file (`.claude/rules/zskills/managed.md`, which Claude Code loads automatically each session), the safety hooks under `.claude/hooks/`, the helper scripts under `scripts/`, and the skill files themselves. Running it is how you bring a project from "no Z Skills" to "fully set up," and how you keep an already-set-up project current.

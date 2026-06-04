@@ -12,7 +12,7 @@
 #   - docs/README.md            → "Start here" (position 0, single entry)
 #   - docs/guides/*.md          → "Guides"
 #   - docs/skills/*.md          → "Skills" (user-facing skills)
-#   - docs/skills/<name>.md     → "Internal Skills" when the source skill
+#   - docs/skills/<name>.md     → "Internal" when the source skill
 #                                 skills/<name>/SKILL.md carries
 #                                 `user-invocable: false` in frontmatter.
 #                                 Classification is by reading frontmatter,
@@ -71,10 +71,19 @@ DOCS_DIR = os.path.join(REPO_ROOT, 'docs')
 # fixed-shape sections, except where the predicate explicitly defines a
 # nested path (e.g., archive canaries).
 SECTIONS = [
-    ('Start here',            None),  # special: single README entry
-    ('Guides',                'docs/guides'),
-    ('Skills',                'docs/skills'),
-    ('Internal Skills',       'docs/skills'),  # subset of docs/skills, split by frontmatter
+    ('Start here',                      None),  # special: single README entry
+    ('Guides',                         'docs/guides'),
+    ('Skills',                         'docs/skills'),  # the README section index only
+    # docs/skills user-facing skills, split into importance-ordered categories
+    # by SKILL_CATEGORY below (mirrors docs/skills/README.md "## Categories"
+    # and the viewer nav). Order here = nav order.
+    ('Execution',          'docs/skills'),
+    ('Planning & Design',  'docs/skills'),
+    ('Quality Assurance',  'docs/skills'),
+    ('Automation',         'docs/skills'),
+    ('Reporting',          'docs/skills'),
+    ('Utilities',          'docs/skills'),
+    ('Internal',           'docs/skills'),  # user-invocable:false, split by frontmatter
 ]
 
 # Curated per-section item order. Paths listed appear first (in this order);
@@ -86,10 +95,74 @@ SECTION_ORDER = {
         'docs/guides/installing-zskills.md',
         'docs/guides/workflows.md',
         'docs/guides/inspecting-and-monitoring.md',
+        'docs/guides/zskills-config.md',
         'docs/guides/switching-install-lanes.md',
         'docs/guides/tracking-overview.md',
     ],
+    # Skill categories — curated importance order within each (NOT alphabetical).
+    'Execution': [
+        'docs/skills/do.md',
+        'docs/skills/run-plan.md',
+        'docs/skills/investigate.md',
+    ],
+    'Planning & Design': [
+        'docs/skills/draft-plan.md',
+        'docs/skills/refine-plan.md',
+        'docs/skills/draft-tests.md',
+        'docs/skills/research-and-plan.md',
+        'docs/skills/plans.md',
+    ],
+    'Quality Assurance': [
+        'docs/skills/verify-changes.md',
+        'docs/skills/qe-audit.md',
+    ],
+    'Automation': [
+        'docs/skills/fix-issues.md',
+        'docs/skills/work-on-plans.md',
+        'docs/skills/zskills-dashboard.md',
+        'docs/skills/research-and-go.md',
+    ],
+    'Reporting': [
+        'docs/skills/session-report.md',
+        'docs/skills/briefing.md',
+        'docs/skills/fix-report.md',
+    ],
+    'Utilities': [
+        'docs/skills/commit.md',
+        'docs/skills/cleanup-merged.md',
+        'docs/skills/update-zskills.md',
+        'docs/skills/create-worktree.md',
+    ],
 }
+
+# Skill → category map. Distributes docs/skills/<name>.md (user-facing only;
+# README + user-invocable:false excluded) into the category sections above.
+# Mirrors docs/skills/README.md "## Categories". Every user-facing skill doc
+# MUST appear here, or it silently drops out of the nav.
+SKILL_CATEGORY = {
+    'docs/skills/do.md':                'Execution',
+    'docs/skills/run-plan.md':          'Execution',
+    'docs/skills/investigate.md':       'Execution',
+    'docs/skills/fix-issues.md':        'Automation',
+    'docs/skills/work-on-plans.md':     'Automation',
+    'docs/skills/zskills-dashboard.md': 'Automation',
+    'docs/skills/research-and-go.md':   'Automation',
+    'docs/skills/draft-plan.md':        'Planning & Design',
+    'docs/skills/refine-plan.md':       'Planning & Design',
+    'docs/skills/draft-tests.md':       'Planning & Design',
+    'docs/skills/research-and-plan.md': 'Planning & Design',
+    'docs/skills/plans.md':             'Planning & Design',
+    'docs/skills/verify-changes.md':    'Quality Assurance',
+    'docs/skills/qe-audit.md':          'Quality Assurance',
+    'docs/skills/session-report.md':    'Reporting',
+    'docs/skills/briefing.md':          'Reporting',
+    'docs/skills/fix-report.md':        'Reporting',
+    'docs/skills/commit.md':            'Utilities',
+    'docs/skills/cleanup-merged.md':    'Utilities',
+    'docs/skills/update-zskills.md':    'Utilities',
+    'docs/skills/create-worktree.md':   'Utilities',
+}
+CATEGORY_LABELS = set(SKILL_CATEGORY.values())
 
 # Display-name overrides for catalog items where the H1-derived name fights
 # the curated intent (e.g., a section's own README would show its section
@@ -185,14 +258,24 @@ def gather_section(label, rel_dir):
         ) else []
         return items
     paths = list_md_direct(rel_dir)
-    # docs/skills is split across two sections by frontmatter classification:
-    #   - "Skills"           → user-facing skills + the README section index
-    #   - "Internal Skills"  → docs whose source skill is user-invocable:false
+    # docs/skills is split across many sections:
+    #   - "Skills"             → ONLY the README section index
+    #   - <category>           → user-facing skills mapped by SKILL_CATEGORY
+    #   - "Internal"    → docs whose source skill is user-invocable:false
     if rel_dir == 'docs/skills':
-        if label == 'Internal Skills':
+        if label == 'Internal':
             paths = [p for p in paths if is_internal_skill(p)]
-        else:  # label == 'Skills'
-            paths = [p for p in paths if not is_internal_skill(p)]
+        elif label == 'Skills':
+            paths = [p for p in paths if os.path.basename(p) == 'README.md']
+        elif label in CATEGORY_LABELS:
+            paths = [
+                p for p in paths
+                if not is_internal_skill(p)
+                and os.path.basename(p) != 'README.md'
+                and SKILL_CATEGORY.get(p) == label
+            ]
+        else:
+            paths = []
     return [(derive_name(p), p) for p in paths]
 
 

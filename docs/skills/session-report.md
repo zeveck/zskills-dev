@@ -2,6 +2,17 @@
 
 > Audit what THIS session said it would do versus what is actually shipped. Verifies session-mentioned items against ground truth — git, PRs, plans, worktrees — not conversation memory. `handoff` turns it into a durable, forward-looking end-of-session hand-off.
 
+<details class="flow-cmd" open>
+<summary>How it runs — shipped vs. intended</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> gathers what this session said it would do</p></div>
+<div class="flow-step"><p>It checks that against ground truth — git, PRs, and plans</p></div>
+<div class="flow-step"><p>It reports shipped versus intended</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/session-report` answers one question: have we actually shipped everything **we talked about doing in this conversation**? It lists the concrete deliverables the session discussed, checks each one against the filesystem and git, and reports tersely what is done, what is not, and where reality diverges from what you remember.
@@ -40,7 +51,7 @@ When you are about to wrap up and clear the conversation, run the hand-off form 
 ## Companion skills
 
 - **`/briefing`** — the cross-session, multi-pipeline status companion. `/session-report` is scoped to the one conversation you are in; `/briefing` reports on the activity of long-running orchestration work across sessions. Reach for `/briefing` when you want the wider picture, `/session-report` when you want to close out the session in front of you.
-- **`/run-plan`** and **`/do`** — examples of the landing skills whose output `/session-report` verifies. When the session executed a plan or shipped an ad-hoc change, the report checks the resulting commits, PR state, and plan phase markers against ground truth rather than taking your word for it.
+- **`/run-plan`** and **`/do`** — examples of the landing skills whose output `/session-report` verifies. When the session executed a plan or shipped a change, the report checks the resulting commits, PR state, and plan phase markers against ground truth rather than taking your word for it.
 
 ## Arguments
 

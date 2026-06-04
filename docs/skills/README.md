@@ -1,101 +1,84 @@
 # Z Skills Reference
 
 Per-skill reference for the **21 user-facing Z Skills**, plus the **2 internal
-helpers** they dispatch (`/land-pr` and `/manual-testing` — not for direct use;
-in the docs viewer they appear under their own **Internal Skills** section).
-Looking for how to *combine* these skills into end-to-end workflows? See
+helpers** they dispatch (`/land-pr` and `/manual-testing` — not for direct use).
+Grouped and ordered the same as the docs-viewer nav sidebar. Looking for how to
+*combine* these skills into end-to-end workflows? See
 [Workflows](../guides/workflows.md).
 
-<details>
-<summary><strong>Quick reference table</strong> — alphabetical jump list (click to expand)</summary>
+The **Arguments** column is the real `argument-hint` from each skill's
+frontmatter (alternatives shown with `│`; `—` = no arguments).
 
-| Skill | Description |
-|-------|-------------|
-| [`/briefing`](briefing.md) | Generate a project briefing with status, commits, worktrees |
-| [`/cleanup-merged`](cleanup-merged.md) | Post-PR-merge local normalization |
-| [`/commit`](commit.md) | Safe commit workflow with optional push, land, or PR |
-| [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work |
-| [`/do`](do.md) | Lightweight task dispatcher for ad-hoc work |
-| [`/draft-plan`](draft-plan.md) | Draft plans through iterative adversarial review |
-| [`/draft-tests`](draft-tests.md) | Draft test specifications into existing plans |
-| [`/fix-issues`](fix-issues.md) | Orchestrate batch bug-fixing sprints |
-| [`/fix-report`](fix-report.md) | Review sprint results, land fixes, close issues |
-| [`/investigate`](investigate.md) | Deep debugging for complex bugs |
-| [`/plans`](plans.md) | Plan dashboard: view status, find next ready plan |
-| [`/qe-audit`](qe-audit.md) | Quality engineering audit for test coverage gaps |
-| [`/refine-plan`](refine-plan.md) | Refine in-progress plans against completed work |
-| [`/research-and-go`](research-and-go.md) | Full pipeline: decompose, plan, and execute autonomously |
-| [`/research-and-plan`](research-and-plan.md) | Decompose broad goals into executable sub-plans |
-| [`/run-plan`](run-plan.md) | Execute plan phases with verification and landing |
-| [`/session-report`](session-report.md) | Audit session intent vs. actual shipped state |
-| [`/update-zskills`](update-zskills.md) | Install or update Z Skills infrastructure |
-| [`/verify-changes`](verify-changes.md) | Verify recent changes: diffs, tests, manual checks |
-| [`/work-on-plans`](work-on-plans.md) | Batch-execute prioritized plan queue from dashboard |
-| [`/zskills-dashboard`](zskills-dashboard.md) | Local web dashboard for plans, issues, and tracking |
+## Execution
 
-#### Internal helpers
+Make one change, end to end.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/do`](do.md) | `<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--rounds N] │ stop │ next │ now` | The everyday workhorse for ad-hoc work |
+| [`/run-plan`](run-plan.md) | `<plan-file> [phase│finish│status] [auto] [pr│direct] [every SCHEDULE] [now] │ stop │ next` | Execute plan phases with verify + land |
+| [`/investigate`](investigate.md) | `<description or #issue>` | Deep root-cause debugging |
+
+## Planning & Design
+
+Create, refine, and decompose plans before execution.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/draft-plan`](draft-plan.md) | `[output FILE] [rounds N] [auto] [brainstorm│quiz] <description...>` | Adversarial plan drafting |
+| [`/refine-plan`](refine-plan.md) | `<plan-file> [rounds N] [auto] [guidance...]` | Refine in-progress plans against reality |
+| [`/draft-tests`](draft-tests.md) | `<plan-file> [rounds N] [auto] [guidance...]` | Draft test specs into a plan's phases |
+| [`/research-and-plan`](research-and-plan.md) | `[output FILE] <broad goal description>` | Decompose broad goals into sub-plans |
+| [`/plans`](plans.md) | `[rebuild │ next │ details]` | Plan dashboard / index |
+
+## Quality Assurance
+
+Test, audit, and verify changes.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/verify-changes`](verify-changes.md) | `[scope: worktree │ branch │ last [N]]` | Verify recent changes end to end |
+| [`/qe-audit`](qe-audit.md) | `[bash [area]] [every SCHEDULE] [now] │ stop │ next` | Quality audit for test-coverage gaps |
+
+## Automation
+
+Batch, queue, and scheduled drivers that run unattended.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/fix-issues`](fix-issues.md) | `N [focus│dashboard] [auto] [every SCHEDULE] [now] [pr│direct] │ sync │ plan │ stop │ next` | Batch bug-fixing sprints |
+| [`/work-on-plans`](work-on-plans.md) | `N│all [phase│finish] [every SCHEDULE] [now] [continue] │ stop │ next` | Batch-run the ready plan queue |
+| [`/zskills-dashboard`](zskills-dashboard.md) | `[start│stop│status│restart]` | Local web dashboard |
+| [`/research-and-go`](research-and-go.md) | `<broad goal description>` | Full autonomous decompose → plan → execute |
+
+## Reporting
+
+Generate reports and review project state.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/session-report`](session-report.md) | `[handoff]` | Audit session intent vs. shipped |
+| [`/briefing`](briefing.md) | `[report [period]] │ verify │ current │ worktrees │ [summary] │ stop │ next` | Project briefing: status, commits, worktrees |
+| [`/fix-report`](fix-report.md) | — | Review sprint results, land fixes, close issues |
+
+## Utilities
+
+Supporting tools — committing, cleanup, docs, and framework setup.
+
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/commit`](commit.md) | `[pr] [scope] [push│land] [auto]` | Safe commit with optional push / land / PR |
+| [`/cleanup-merged`](cleanup-merged.md) | `[apply] [local │ remote │ all] [<branch>...]` | Post-PR-merge local normalization |
+| [`/update-zskills`](update-zskills.md) | `[install] [cherry-pick│locked-main-pr│direct]` | Install / update zskills infrastructure |
+| [`/create-worktree`](create-worktree.md) | `<slug> [--prefix P] [--branch-name REF] [--from B] [--purpose TEXT] [--pipeline-id ID] …` | Create an isolated worktree (mostly dispatched internally) |
+
+## Internal helpers
 
 Dispatched by other skills — not designed for direct user invocation (both carry
 `user-invocable: false`). In the docs viewer they appear under their own
-**Internal Skills** section. Listed here for reference only.
+**Internal** nav section.
 
-| Skill | Description |
-|-------|-------------|
-| [`/land-pr`](land-pr.md) | PR landing helper (rebase, push, create-or-detect, monitor CI, optional auto-merge) |
-| [`/manual-testing`](manual-testing.md) | Browser-based manual testing recipes (uses the `playwright-cli` tool) |
-
-</details>
-
-## Categories
-
-### Execution & Orchestration
-
-Core skills for running plans and fixing issues at scale.
-
-- [/run-plan](run-plan.md) -- Execute plan phases with implementation, verification, and landing
-- [/fix-issues](fix-issues.md) -- Batch bug-fixing sprints with per-issue worktrees
-- [/work-on-plans](work-on-plans.md) -- Batch-execute the prioritized ready queue from the dashboard
-- [/do](do.md) -- Lightweight task dispatcher for ad-hoc work
-- [/research-and-go](research-and-go.md) -- Full autonomous pipeline: decompose, plan, execute
-
-### Planning & Design
-
-Skills for creating, refining, and decomposing plans before execution.
-
-- [/draft-plan](draft-plan.md) -- Draft plans through iterative adversarial review
-- [/draft-tests](draft-tests.md) -- Draft test specifications into existing plan phases
-- [/refine-plan](refine-plan.md) -- Refine in-progress plans against completed work
-- [/research-and-plan](research-and-plan.md) -- Decompose broad goals into executable sub-plans
-- [/plans](plans.md) -- Plan dashboard: view status, find the next ready plan
-
-### Verification & Quality
-
-Skills for testing, auditing, and verifying changes.
-
-- [/verify-changes](verify-changes.md) -- Full verification: diffs, test coverage, test runs, manual checks
-- [/qe-audit](qe-audit.md) -- Quality engineering audit for test coverage gaps and bugs
-- [/investigate](investigate.md) -- Deep root-cause debugging for complex bugs
-- [/manual-testing](manual-testing.md) -- Browser-based manual testing recipes (uses the `playwright-cli` tool) *(internal helper)*
-
-### Git & Landing
-
-Skills for committing, landing, and cleaning up branches.
-
-- [/commit](commit.md) -- Safe commit workflow with push, land, or PR modes
-- [/cleanup-merged](cleanup-merged.md) -- Post-PR-merge local normalization and branch cleanup
-- [/create-worktree](create-worktree.md) -- Create isolated git worktrees for agent work
-
-### Reporting & Status
-
-Skills for generating reports and reviewing project state.
-
-- [/briefing](briefing.md) -- Generate a project briefing with worktrees, commits, checkboxes
-- [/session-report](session-report.md) -- Audit what this session shipped vs. what was planned
-- [/fix-report](fix-report.md) -- Review sprint results, land fixes, close issues
-
-### Infrastructure & Configuration
-
-Skills for managing the Z Skills framework itself.
-
-- [/update-zskills](update-zskills.md) -- Install or update Z Skills infrastructure
-- [/zskills-dashboard](zskills-dashboard.md) -- Local web dashboard for plans, issues, and tracking
+| Skill | Arguments | What it does |
+|-------|-----------|--------------|
+| [`/land-pr`](land-pr.md) | `--branch <name> --title <t> --body-file <p> --result-file <p> [--auto] [--worktree-path <p>] …` | PR landing helper (rebase, push, create-or-detect, monitor CI, optional auto-merge) |
+| [`/manual-testing`](manual-testing.md) | — | Browser-based UI-verification recipes (uses the `playwright-cli` tool) |

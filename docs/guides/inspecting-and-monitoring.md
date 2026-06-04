@@ -290,7 +290,28 @@ the dashboard, or `cat` the files:
 
 ---
 
-## 7. Cheat sheet
+## 7. Session logs — an opt-in transcript trail
+
+zskills can write a per-session log — what the agent did, plus every permission
+request — to disk, turning "what happened across sessions" into something you can
+read after the fact. Two config keys control it (see
+[Configuring zskills](zskills-config.md)):
+
+- `logging.enabled` (default `true`) — the master switch for the session-logging
+  hooks.
+- `logging.dir` — where logs land. Left empty they go to a temp directory keyed
+  by project name, and the hook records that path in the **main checkout's**
+  `.zskills/session-log-dirs` (newest last — one registry shared by all the
+  repo's worktrees) so you can always find where it logged. Point it at a stable
+  **absolute** path to keep a durable trail you can `cat` later.
+
+Because it captures the permission requests too, this is a useful monitoring and
+audit record for unattended (`auto` / scheduled) runs — set `logging.dir`
+somewhere persistent before you walk away.
+
+---
+
+## 8. Cheat sheet
 
 ```bash
 # --- live: what's running now ---

@@ -3,6 +3,18 @@
 > Commit your current work safely, and optionally push it, open a pull
 > request, or land worktree commits onto main.
 
+<details class="flow-cmd" open>
+<summary>How it runs — safe, scoped commit</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> inventories all uncommitted changes</p></div>
+<div class="flow-step"><p>It scopes the commit and traces imports and dependencies</p></div>
+<div class="flow-step"><p>A <strong>reviewer subagent</strong> checks the staged change</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> commits, then optionally pushes or opens a PR</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/commit` is the user-facing way to turn the changes in your working tree
@@ -77,9 +89,8 @@ it that way:
   branch, create the pull request, monitor CI, and run the fix cycle on a
   failure. `/land-pr` is an internal helper you do not type directly; reach
   for it through `/commit pr`.
-- **`/do`** — the workhorse for one-commit changes. It carries a change
-  through triage, review, and landing in an isolated worktree, and calls
-  `/commit` to land the work.
+- **`/do`** — the everyday skill for one-commit changes. It carries a change
+  through triage, review, and landing, and calls `/commit` to land its work.
 - **`/run-plan`** and **`/fix-issues`** — larger orchestration skills that
   also land their work through `/commit` and `/land-pr`.
 - **`/cleanup-merged`** — run this *after* a PR you opened with `/commit pr`

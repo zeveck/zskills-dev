@@ -2,6 +2,31 @@
 
 > Execute a drafted plan, one phase at a time: read the plan, implement the next incomplete phase in an isolated worktree, verify it with a separate agent, update the plan's progress, and land the result. Can run every remaining phase autonomously. `status` shows progress; `stop`/`next` manage scheduling.
 
+<details class="flow-cmd" open>
+<summary>How one run works — a single phase</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> reads the plan and picks the next phase</p></div>
+<div class="flow-step"><p>An <strong>implementer subagent</strong> builds that phase in a worktree</p></div>
+<div class="flow-step"><p>A <strong>verifier subagent</strong> verifies the phase</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> opens and lands the PR, monitoring CI (up to 2 fix attempts)</p></div>
+</div>
+
+</details>
+
+<details class="flow-cmd" open>
+<summary>How <code>finish auto</code> works — all phases, one PR</summary>
+
+<div class="flow">
+<div class="flow-step"><p>An <strong>implementer subagent</strong> builds the next phase in a worktree</p></div>
+<div class="flow-step"><p>A <strong>verifier subagent</strong> verifies it, and the commit accumulates on the one branch</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> re-fires the next phase as a fresh turn, looping until the plan is done</p></div>
+<div class="flow-step"><p>After the last phase, the <strong>original agent</strong> opens one PR for the whole plan</p></div>
+<div class="flow-step optional"><p>With <strong>auto</strong> it requests merge; plain <strong>finish</strong> pauses between every phase and leaves the PR for you to merge</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/run-plan` takes a plan file — the kind `/draft-plan` produces — and works through it phase by phase. For each phase it reads the plan to find the next incomplete phase, dispatches the implementation in an isolated worktree, hands the result to a separate verification agent, updates the plan's progress tracking, writes a report, and lands the change to `main`.

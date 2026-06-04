@@ -283,7 +283,25 @@ function renderDoc(item, md) {
   // right edge (no mid-page scrollbar gutter).
   main.innerHTML = '<div class="zl-docs-content">' + rewritten + '</div>';
 
+  wireCollapsibles(item.path);
   main.scrollTop = 0;
+}
+
+// Persist <details> open/closed state per doc so collapsing a command's flow
+// (or any <details> on the page) survives a reload. Keyed by doc path + the
+// summary text, stored in localStorage; applied to every <details> rendered.
+function wireCollapsibles(path) {
+  main.querySelectorAll('details').forEach((d, idx) => {
+    const sum = d.querySelector('summary');
+    const label = sum ? sum.textContent.trim().slice(0, 80) : String(idx);
+    const key = 'zskills-docs-collapse:' + path + '#' + label;
+    const saved = localStorage.getItem(key);
+    if (saved === 'closed') d.removeAttribute('open');
+    else if (saved === 'open') d.setAttribute('open', '');
+    d.addEventListener('toggle', () => {
+      localStorage.setItem(key, d.open ? 'open' : 'closed');
+    });
+  });
 }
 
 // The renderer emits raw relative `<a href="X.md">` for internal doc links

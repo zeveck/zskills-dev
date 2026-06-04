@@ -9,6 +9,19 @@
 > other callers below). `/commit pr` figures out the title and body, then runs
 > `/land-pr` for you with the right setup.
 
+<details class="flow-cmd" open>
+<summary>How it runs — the PR-landing helper</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> rebases the branch onto main</p></div>
+<div class="flow-step"><p>It pushes the branch</p></div>
+<div class="flow-step"><p>It opens a new PR or detects an existing one</p></div>
+<div class="flow-step"><p>It monitors CI to completion — on failure an <strong>implementer subagent</strong> fixes and retries (up to 2 attempts)</p></div>
+<div class="flow-step optional"><p>With <strong>auto</strong> it requests merge — GitHub merges once required checks pass</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 When a skill has a feature branch that's ready to ship, it hands the branch to

@@ -2,6 +2,16 @@
 
 > Plan dashboard. View plan status, find the next ready plan. For batch execution, see `/work-on-plans`.
 
+<details class="flow-cmd" open>
+<summary>How it runs — read-only</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> scans the plans and parses each one's status</p></div>
+<div class="flow-step"><p>It shows every status and the next ready plan — read-only, nothing runs</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/plans` is a read-only dashboard over your plan files. Run it and it shows you,

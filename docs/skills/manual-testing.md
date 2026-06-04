@@ -6,6 +6,17 @@
 > dispatch it behind the scenes when they need to confirm a UI change works by
 > driving the real interface the way a person would.
 
+<details class="flow-cmd" open>
+<summary>How it runs — browser-driven UI checks</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> starts the dev server and bypasses auth</p></div>
+<div class="flow-step"><p>It drives the UI with real mouse and keyboard events</p></div>
+<div class="flow-step"><p>It documents workarounds where playwright-cli falls short</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/manual-testing` helps playwright-cli interact with a UI the way a user would —

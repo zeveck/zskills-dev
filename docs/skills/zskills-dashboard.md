@@ -2,6 +2,18 @@
 
 > Local web dashboard for plan, issue, and run status — plans, issues, worktrees, branches, tracking activity, and a drag-and-drop priority queue. `start` launches it, `stop` shuts it down, `status` reports whether it's running, `restart` picks up code changes.
 
+<details class="flow-cmd" open>
+<summary>How it runs — local web UI</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> starts the dashboard server, detached</p></div>
+<div class="flow-step"><p><strong>You</strong> view plans, issues, and worktrees in the browser</p></div>
+<div class="flow-step"><p><strong>You</strong> drag cards to prioritize across the Accepted and Ready columns</p></div>
+<div class="flow-step optional"><p><strong>You</strong> can hit the Run button to trigger a run</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/zskills-dashboard` runs a small web dashboard on your own machine that gives you one place to see what's in flight: your plan files, open issues, worktrees, branches, and the tracking activity of running pipelines. It serves a page you open in a browser at a `http://127.0.0.1:<port>/` URL the skill prints when it starts.
