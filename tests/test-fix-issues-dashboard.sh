@@ -55,18 +55,19 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 
 # --- Extract the Python intersection block from SKILL.md ----------------
 # The block opens with `DASHBOARD_PICKS=$(OPEN_NUMS_JOINED=...` and the
-# heredoc-style `python3 -c '` on the next continuation line, closing
-# with `' "$MONITOR_STATE")`. Per #403 the wrapper no longer threads N
-# (cap-to-N moved to the orchestrator's triage loop AFTER triage), so
+# heredoc-style `"$PYTHON" -c '` on the next continuation line (post-#1083
+# the interpreter is resolved via $PYTHON instead of a bare python3),
+# closing with `' "$MONITOR_STATE")`. Per #403 the wrapper no longer threads
+# N (cap-to-N moved to the orchestrator's triage loop AFTER triage), so
 # we anchor on the unique DASHBOARD_PICKS= prefix rather than the
-# old `N="$N" python3 -c ` shape — and there are now 3 `python3 -c`
+# old `N="$N" python3 -c ` shape — and there are now 3 `"$PYTHON" -c`
 # blocks in SKILL.md (ISSUE_META, OPEN_NUMS, dashboard picks), so the
 # DASHBOARD_PICKS anchor is required for uniqueness.
 
 PYSCRIPT="$TMP_ROOT/dashboard_picks.py"
 awk '
   /DASHBOARD_PICKS=\$\(OPEN_NUMS_JOINED=/{ saw=1; next }
-  saw && /python3 -c '\''/{ in_block=1; saw=0; next }
+  saw && /("\$PYTHON"|python3) -c '\''/{ in_block=1; saw=0; next }
   in_block && /^'\'' "\$MONITOR_STATE"\)$/ { in_block=0; exit }
   in_block { print }
 ' "$SKILL" > "$PYSCRIPT"

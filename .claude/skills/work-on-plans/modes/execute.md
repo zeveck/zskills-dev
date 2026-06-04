@@ -86,7 +86,15 @@ emits the appropriate line:
 ```bash
 # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
 # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-python3 - "$WORK_STATE" <<'PY'
+# $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+"$PYTHON" - "$WORK_STATE" <<'PY'
 import json, os, sys, datetime, re
 
 path = sys.argv[1]
@@ -366,7 +374,15 @@ BATCH_MODE="${MODE_OVERRIDE:-${DEFAULT_MODE:-finish}}"
 ```bash
 # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
 # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-python3 - "$WORK_STATE" "$SPRINT_ID" "$DISPATCH_COUNT" "$BATCH_MODE" <<'PY'
+# $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+"$PYTHON" - "$WORK_STATE" "$SPRINT_ID" "$DISPATCH_COUNT" "$BATCH_MODE" <<'PY'
 import json, os, sys, socket, tempfile, datetime
 path, sprint_id, total, batch_mode = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
@@ -555,7 +571,15 @@ For each ready entry in `plans.ready[0:N]`:
      ```bash
      prune_completed() {
        # Drop $SLUG from plans.ready iff its plan file is status:complete.
-       python3 - "$MONITOR_STATE" "$SLUG" "${SLUG_TO_FILE[$SLUG]:-}" <<'PY'
+       # $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+       if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+         export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+         . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+       else
+         . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+       fi
+       [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; return 1; }
+       "$PYTHON" - "$MONITOR_STATE" "$SLUG" "${SLUG_TO_FILE[$SLUG]:-}" <<'PY'
      import json, os, re, sys, tempfile
      path, slug, plan_file = sys.argv[1], sys.argv[2], sys.argv[3]
      # Only prune when the plan landed (frontmatter status: complete).
@@ -635,7 +659,15 @@ empty-after-failure):
    ```bash
    # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
    # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-   python3 - "$WORK_STATE" <<'PY'
+   # $PYTHON resolution still required (Windows MS-Store-stub guard, #1083).
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+   "$PYTHON" - "$WORK_STATE" <<'PY'
    import json, os, sys, tempfile
    path = sys.argv[1]
    tmp = tempfile.NamedTemporaryFile('w', delete=False,

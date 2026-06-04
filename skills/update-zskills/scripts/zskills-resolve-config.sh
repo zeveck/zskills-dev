@@ -73,6 +73,37 @@ if [ -z "${ZSKILLS_SKILLS_ROOT:-}" ]; then
   . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/zskills-paths.sh"
 fi
 
+# Working-Python-3 interpreter resolution.
+#
+# Every skill bash fence that sources this prelude gets $PYTHON exported here,
+# so fences can invoke `"$PYTHON" …` instead of a bare `python3` (which on
+# Windows resolves to the broken MS Store App-Execution-Alias stub — see #1075,
+# #1083). The probe RUNS each candidate (existence is not enough: the stub
+# exists on PATH but exits non-zero). Honors ZSKILLS_PYTHON; rejects python2.
+#
+# Canonical source of this probe is hooks/_lib/resolve-python.sh
+# (zskills_resolve_python). KEEP THE PROBE IN SYNC with that file — the
+# tests/test-python-resolver-drift.sh gate asserts the candidate-walk +
+# version-check stay identical across the two.
+#
+# Guarded as a cheap no-op when $PYTHON is already a working Python 3 (so the
+# 60×-per-run sourcing in /fix-issues etc. doesn't re-probe each time). When no
+# working interpreter is found, $PYTHON is set to "" — the prelude stays safe to
+# source (no exit/return nonzero); each fence guards its own use of $PYTHON.
+if [ -z "${PYTHON:-}" ] || ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+  PYTHON=""
+  for _ZSK_PYCAND in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_ZSK_PYCAND" ] || continue
+    command -v "$_ZSK_PYCAND" >/dev/null 2>&1 || continue
+    if "$_ZSK_PYCAND" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      PYTHON="$(command -v "$_ZSK_PYCAND")"
+      break
+    fi
+  done
+  unset _ZSK_PYCAND
+fi
+export PYTHON
+
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 
 # Initialize string vars to empty FIRST (empty-pattern-guard).

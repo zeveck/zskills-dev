@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.06.04+be2e36"
+  version: "2026.06.04+b67452"
 ---
 
 # /briefing — Project Status Briefing
@@ -64,7 +64,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" summary --since=<period>
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" summary --since=<period>
 ```
 
 Present the output **verbatim** — it is already formatted with three buckets:
@@ -85,7 +85,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" report --since=<period>
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" report --since=<period>
 ```
 
 The helper writes the file directly and prints its path. Report includes:
@@ -120,7 +120,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" verify
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" verify
 ```
 
 The script output includes both report sign-off data and worktree data.
@@ -204,7 +204,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" current
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" current
 ```
 
 Present the output **verbatim**. Sections:
@@ -227,7 +227,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" worktrees-status
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" worktrees-status
 ```
 
 Present the output **verbatim**. Sections:
@@ -253,7 +253,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" dogfooding --since=<period>
+"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" dogfooding --since=<period>
 # --no-gh   disable the gh merged-PR backfill (hermetic / offline runs)
 ```
 

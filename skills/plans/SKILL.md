@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.06.03+bd5667"
+  version: "2026.06.04+58727c"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -33,9 +33,16 @@ over its JSON output.
 Canonical invocation (used by every mode below):
 
 ```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 MAIN_ROOT=$(git rev-parse --show-toplevel)
 PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
-  python3 -m zskills_monitor.collect
+  "$PYTHON" -m zskills_monitor.collect
 ```
 
 The CLI emits a single JSON document on stdout matching the
@@ -148,8 +155,8 @@ NOT appear as separate top-level entries.
      REBUILT_AT=$(TZ="${TIMEZONE:-UTC}" date '+%Y-%m-%d %H:%M %Z')
      mkdir -p "$ZSKILLS_AUDIT_DIR"
      PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
-       python3 -m zskills_monitor.collect \
-       | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
+       "$PYTHON" -m zskills_monitor.collect \
+       | "$PYTHON" "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
            --rebuilt-at "$REBUILT_AT" \
        > "$INDEX"
    fi
@@ -203,9 +210,16 @@ when you have many plans and can't remember what each one is about.
    above):
 
    ```bash
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
    MAIN_ROOT=$(git rev-parse --show-toplevel)
    SNAPSHOT=$(PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
-     python3 -m zskills_monitor.collect) || {
+     "$PYTHON" -m zskills_monitor.collect) || {
        echo "ERROR: zskills_monitor.collect failed (rc=$?)" >&2
        exit 1
      }
@@ -283,11 +297,11 @@ mkdir -p "$ZSKILLS_AUDIT_DIR"
 
 set -o pipefail
 if ! PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
-       python3 -m zskills_monitor.collect \
-     | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
+       "$PYTHON" -m zskills_monitor.collect \
+     | "$PYTHON" "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
          --rebuilt-at "$REBUILT_AT" \
      > "$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"; then
-  echo "ERROR: python3 -m zskills_monitor.collect failed (or render-index.py rejected its output)" >&2
+  echo "ERROR: '$PYTHON' -m zskills_monitor.collect failed (or render-index.py rejected its output)" >&2
   echo "Cannot regenerate $ZSKILLS_AUDIT_DIR/PLAN_INDEX.md — bailing out." >&2
   exit 1
 fi

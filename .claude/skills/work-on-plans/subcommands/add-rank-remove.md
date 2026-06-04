@@ -42,17 +42,20 @@ Then load the JSON. If present but unparseable, halt with the same
 diagnostic as Step 1.
 
 ```bash
+# Resolve $PYTHON once (Windows MS-Store-stub guard, #1083); the config prelude
+# also exports the ZSKILLS_* path vars these embeds need.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 ensure_monitor_state() {
   if [ ! -f "$MONITOR_STATE" ]; then
     # Re-run the Step 1 bootstrap helper. Same shape, same path.
-    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
-      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
-    else
-      source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-    fi
     export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
-    python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
+    "$PYTHON" - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
 # plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.
 import json, os, sys, pathlib, re, tempfile
 out_path = sys.argv[1]
@@ -145,7 +148,7 @@ except Exception:
 PY
   fi
   # Halt if the file is now present but unparseable.
-  python3 -c '
+  "$PYTHON" -c '
 import json, sys
 try: json.load(open(sys.argv[1]))
 except Exception as e: print(f"unparseable: {e}", file=sys.stderr); sys.exit(1)
@@ -179,6 +182,14 @@ entry into `plans.ready`. Validation:
   not rewritten if already present.
 
 ```bash
+# Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 do_add() {
   local slug="$1" pos="${2:-}"
   # Reject digit-prefix BEFORE the general slug regex, because slot 1
@@ -195,7 +206,7 @@ do_add() {
     return 2
   fi
   ensure_monitor_state
-  python3 - "$MONITOR_STATE" "$slug" "${pos:-}" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$slug" "${pos:-}" <<'PY'
 import json, os, sys, tempfile, datetime
 path, slug, pos_s = sys.argv[1], sys.argv[2], sys.argv[3]
 doc = json.load(open(path))
@@ -235,6 +246,14 @@ is not present → exit 2 with a message. If `pos < 1` → 1; if `pos >
 len(ready)` → end.
 
 ```bash
+# Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 do_rank() {
   local slug="$1" pos_s="${2:-}"
   if [[ -z "$pos_s" || ! "$pos_s" =~ ^[0-9]+$ ]]; then
@@ -242,7 +261,7 @@ do_rank() {
     return 2
   fi
   ensure_monitor_state
-  python3 - "$MONITOR_STATE" "$slug" "$pos_s" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$slug" "$pos_s" <<'PY'
 import json, os, sys, tempfile, datetime
 path, slug, pos_s = sys.argv[1], sys.argv[2], sys.argv[3]
 pos = int(pos_s)
@@ -275,10 +294,18 @@ Drop the matching entry from `plans.ready`. Missing slug → idempotent
 (stderr note, exit 0).
 
 ```bash
+# Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 do_remove() {
   local slug="$1"
   ensure_monitor_state
-  python3 - "$MONITOR_STATE" "$slug" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$slug" <<'PY'
 import json, os, sys, tempfile, datetime
 path, slug = sys.argv[1], sys.argv[2]
 doc = json.load(open(path))
@@ -314,6 +341,14 @@ the inheritance default for newly added entries).
 > machinery is a candidate for removal in a follow-up.
 
 ```bash
+# Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
 do_default() {
   local mode="$1"
   if [[ "$mode" != "phase" && "$mode" != "finish" ]]; then
@@ -321,7 +356,7 @@ do_default() {
     return 2
   fi
   ensure_monitor_state
-  python3 - "$MONITOR_STATE" "$mode" <<'PY'
+  "$PYTHON" - "$MONITOR_STATE" "$mode" <<'PY'
 import json, os, sys, tempfile, datetime
 path, mode = sys.argv[1], sys.argv[2]
 doc = json.load(open(path))

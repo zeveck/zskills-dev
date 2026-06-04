@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.04+85d690"
+  version: "2026.06.04+d55ebd"
 ---
 
 # Update Z Skills Infrastructure
@@ -1301,8 +1301,11 @@ only removes zskills-rendered lines — never user content).
    - Git remote URL or directory name — fallback for project name
 
 2. **Render the template** via the canonical renderer (D24 — one
-   substitution map, three callers; no LLM-prose substitution). Run:
-   `python3 "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
+   substitution map, three callers; no LLM-prose substitution). First
+   resolve a working Python 3 (`. "$PORTABLE/scripts/zskills-resolve-config.sh"`
+   sets `$PYTHON`; on Windows a bare `python3` is the broken MS Store stub —
+   #1083), then run:
+   `"$PYTHON" "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
    The renderer imports `scripts/managed_rules_substitution.py` (the single
    source-of-truth `build_substitutions` + `apply` map), substitutes every
    `{{PLACEHOLDER}}` from current `.claude/zskills-config.json` values
@@ -2410,8 +2413,11 @@ no preset, no config backfill, no migration. Pure re-render.
    rerender`.
 2. Render the template against current config via the canonical
    renderer (the SAME `render-managed-rules.py` invocation as Step B
-   step 2 — D24, one substitution map, three callers): run
-   `python3 "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
+   step 2 — D24, one substitution map, three callers): resolve a working
+   Python 3 first (`. "$PORTABLE/scripts/zskills-resolve-config.sh"` sets
+   `$PYTHON`; bare `python3` is the broken MS Store stub on Windows, #1083),
+   then run
+   `"$PYTHON" "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
    The renderer creates `.claude/rules/zskills/` if absent and writes the
    rendered content to `.claude/rules/zskills/managed.md` atomically (full
    overwrite — the file is zskills-owned, no user content lives here).

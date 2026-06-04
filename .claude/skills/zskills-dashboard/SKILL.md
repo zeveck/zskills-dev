@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.03+4515e8"
+  version: "2026.06.04+771ba5"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -111,7 +111,8 @@ Whenever a PID is read from the PID file, verify TWO things before
 trusting it:
 
 1. **Command-name match.** `ps -p $PID -o command=` output must match
-   `python3.*zskills_monitor.server`.
+   `python[0-9.]*.*zskills_monitor.server` (python or python3 — the launch
+   uses `"$PYTHON"`, which may resolve to either, #1083).
 2. **Cwd match.** The process's cwd must equal `$MAIN_ROOT`. On Linux
    read `/proc/$PID/cwd`; on macOS or Linux without `/proc`, fall back
    to `lsof -p $PID -d cwd -Fn` and parse the `n<path>` line. If both
@@ -137,7 +138,9 @@ verify_monitor_identity() {
   fi
 
   cmd=$(ps -p "$pid" -o command= || echo "")
-  if [[ ! "$cmd" =~ python3.*zskills_monitor\.server ]]; then
+  # Match python OR python3 (the launch uses "$PYTHON", which may resolve to
+  # either an absolute /…/python or /…/python3 path — #1083).
+  if [[ ! "$cmd" =~ python[0-9.]*.*zskills_monitor\.server ]]; then
     printf 'identity-mismatch: command=%s\n' "$cmd" >&2
     return 1
   fi
@@ -239,7 +242,7 @@ esac
 3. **Pre-flight.** If something is already listening on the port,
    print the friendly busy diagnostic and exit 2.
 
-4. **Launch detached.** `nohup python3 -m zskills_monitor.server`
+4. **Launch detached.** `nohup "$PYTHON" -m zskills_monitor.server`
    under `cd "$MAIN_ROOT"` with `PYTHONPATH` pointing at
    `$MAIN_ROOT/skills/zskills-dashboard/scripts` so the package is on
    `sys.path` (per DA-5). Redirect stdout+stderr to
@@ -255,6 +258,14 @@ esac
 
 ```bash
 if [ "$SUB" = "start" ]; then
+  # Resolve $PYTHON (Windows MS-Store-stub guard, #1083) for the launch below.
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
   EXISTING_PID=""
   EXISTING_PORT=""
   if [ -f "$PID_FILE" ]; then
@@ -313,7 +324,7 @@ if [ "$SUB" = "start" ]; then
   ( cd "$MAIN_ROOT" && \
     PYTHONPATH="$PKG_PARENT:${PYTHONPATH:-}" \
     ZSKILLS_DASHBOARD_ROOT="${ZSKILLS_DASHBOARD_ROOT:-}" \
-    nohup python3 -m zskills_monitor.server $MAIN_ROOT_FLAG \
+    nohup "$PYTHON" -m zskills_monitor.server $MAIN_ROOT_FLAG \
       > "$LOG_FILE" 2>&1 < /dev/null & disown )
 
   # Health-check loop — up to ~10s for bind + first response. Python

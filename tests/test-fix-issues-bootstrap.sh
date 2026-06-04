@@ -127,11 +127,27 @@ cat > "$STUB_SCRIPTS/zskills-paths.sh" <<'STUB'
 :
 STUB
 cat > "$STUB_SCRIPTS/zskills-resolve-config.sh" <<'STUB'
-# Test stub — inert. Production resolves config vars here; the bootstrap
+# Test stub — mostly inert. Production resolves config vars here; the bootstrap
 # fence only consumes $TIMEZONE (for `date`), which we leave empty so the
 # fence's `${TIMEZONE:-UTC}` fallback applies. MUST NOT assign
 # $ZSKILLS_ISSUES_DIR (the test seeds it).
 TIMEZONE="${TIMEZONE:-}"
+# Production also exports $PYTHON (the #1083 Windows MS-Store-stub-safe
+# interpreter resolver). The ROW-WRITER fence references "$PYTHON" and guards
+# `[ -n "$PYTHON" ]` under `set -u`, so the stub MUST resolve it too. Mirror
+# the canonical probe-run resolution (hooks/_lib/resolve-python.sh).
+if [ -z "${PYTHON:-}" ] || ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+  PYTHON=""
+  for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_cand" ] || continue
+    command -v "$_cand" >/dev/null 2>&1 || continue
+    if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      PYTHON="$(command -v "$_cand")"; break
+    fi
+  done
+  unset _cand
+fi
+export PYTHON
 STUB
 
 # ---- Run the three real fences in order, in the caller's subshell ------
