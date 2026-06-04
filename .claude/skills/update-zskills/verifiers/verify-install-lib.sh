@@ -102,9 +102,14 @@ vi_detect_lane() {
     fi
   done
 
-  if [ -d "$proj/.claude/skills" ] \
-     && [ -n "$(ls -A "$proj/.claude/skills" 2>/dev/null)" ] \
-     && [ -f "$proj/.claude/settings.json" ]; then
+  # Legacy signal: ZSKILLS-OWNED evidence only (matches detect-install-state.sh,
+  # #1064/#1067). Either a zskills-named .claude/skills/<name>/SKILL.md mirror
+  # OR a settings.json registering a hook under .claude/hooks/ is sufficient.
+  # We key on zskills-OWNED content (not bare file existence) so a plugin
+  # consumer's OWN non-zskills skills/settings never false-classify the install
+  # as legacy/dual (the bug this fix closes).
+  if vi_has_zskills_mirror "$proj" \
+     || vi_settings_has_zskills_hook "$proj/.claude/settings.json"; then
     legacy_sig=1
   fi
 
@@ -220,6 +225,59 @@ vi_hook_has_version_stamp() {
   local f="$1"
   [ -f "$f" ] || return 1
   sed -n '2p' "$f" 2>/dev/null | grep -Eq '^#[[:space:]]*zskills-hook-version:[[:space:]]'
+}
+
+# vi_has_zskills_mirror <project_dir> → 0 if .claude/skills/<name>/SKILL.md
+# exists for at least one ZSKILLS-OWNED <name>. This scopes the "legacy mirror
+# present" signal to ZSKILLS' OWN skills, so a plugin consumer who ships their
+# OWN, non-zskills skills (e.g. playwright-cli, social-seo) is NOT misclassified
+# as carrying a legacy mirror (the #1064 bug class, fixed in
+# hooks/_lib/detect-install-state.sh by #1067 — that fix never reached this
+# self-contained lib).
+#
+# The anchor set below is kept BYTE-IDENTICAL to detect-install-state.sh's
+# `_dis_zskills_skills` list (#1067). It is staleness-tolerant: a real legacy
+# mirror ALWAYS carries `update-zskills` (the installer) plus the stable core,
+# so a future new skill not yet in this list never breaks lane detection — the
+# mirror still carries the anchors. Derived from the repo's `skills/` directory
+# names (excludes block-diagram add-ons). Kept INLINE: this lib must stay
+# standalone (it deliberately does NOT source detect-install-state.sh, which is
+# not mirrored to a legacy consumer).
+vi_has_zskills_mirror() {
+  local proj="$1"
+  local zskills_skills="briefing cleanup-merged commit create-worktree do draft-plan draft-tests fix-issues fix-report investigate land-pr manual-testing plans qe-audit refine-plan research-and-go research-and-plan run-plan session-report update-zskills verify-changes work-on-plans zskills-dashboard"
+  local name
+  for name in $zskills_skills; do
+    if [ -f "$proj/.claude/skills/$name/SKILL.md" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# vi_settings_has_zskills_hook <settings_json> → 0 if settings.json registers at
+# least one hook command whose resolved path-token lives UNDER .claude/hooks/.
+# This scopes the "legacy settings.json" signal to ZSKILLS-owned hook
+# registrations: a consumer's OWN, non-zskills hook (or an empty `{}`) does NOT
+# count, so a plugin consumer's own settings.json no longer false-classifies the
+# install as legacy/dual. Mere file existence must NOT count — only a registered
+# command resolving under .claude/hooks/. Mirrors the supplementary settings.json
+# cross-check in detect-install-state.sh (#1067).
+vi_settings_has_zskills_hook() {
+  local settings="$1"
+  [ -f "$settings" ] || return 1
+  local cmd token
+  while IFS= read -r cmd; do
+    [ -n "$cmd" ] || continue
+    # Last whitespace-separated token, stripped of surrounding quotes.
+    token="${cmd##* }"
+    token="${token%\"}"; token="${token#\"}"
+    token="${token%\'}"; token="${token#\'}"
+    case "$token" in
+      */.claude/hooks/*|.claude/hooks/*) return 0 ;;
+    esac
+  done < <(vi_settings_hook_commands "$settings")
+  return 1
 }
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -429,15 +487,19 @@ vi_check_plugin() {
     fi
   done
 
-  # (2) Mirror-less: .claude/skills/ must be ABSENT in a clean plugin consumer.
-  # NOTE: a populated .claude/skills/ alongside CLAUDE_PLUGIN_ROOT is detected
-  # as the `dual` lane upstream (vi_detect_lane), so this WARN is reached only
-  # when skills/ exists but is empty — a genuine residue worth surfacing, never
-  # a false positive on a clean mirror-less install.
-  if [ -d "$claude/skills" ] && [ -n "$(ls -A "$claude/skills" 2>/dev/null)" ]; then
-    vi_emit WARN "plugin.mirror-less" ".claude/skills/ present on the plugin lane (dual-install? run scripts/switch-install-path.sh)"
+  # (2) Mirror-less: NO ZSKILLS mirror under .claude/skills/ in a clean plugin
+  # consumer. We key on a ZSKILLS-OWNED mirror (vi_has_zskills_mirror), NOT on
+  # the bare presence of .claude/skills/: a plugin consumer who ships their OWN,
+  # non-zskills skills (playwright-cli, social-seo, …) is a perfectly healthy
+  # mirror-less install and must PASS, not WARN (the #1064 bug class). A genuine
+  # zskills mirror present alongside the plugin lane is the `dual` lane upstream
+  # (vi_detect_lane); this WARN is reached only when a zskills mirror exists but
+  # the plugin-sig also fired in a way that did not collapse to dual — a real
+  # residue worth surfacing.
+  if vi_has_zskills_mirror "$proj"; then
+    vi_emit WARN "plugin.mirror-less" "zskills mirror present under .claude/skills/ on the plugin lane (dual-install? run scripts/switch-install-path.sh)"
   else
-    vi_emit PASS "plugin.mirror-less" ".claude/skills/ absent (mirror-less plugin install)"
+    vi_emit PASS "plugin.mirror-less" "no zskills mirror under .claude/skills/ (mirror-less plugin install)"
   fi
 
   # (3) ${CLAUDE_PLUGIN_ROOT} reachability (#1008 medium gap). The materialised
@@ -506,7 +568,7 @@ vi_run_cheap() {
       vi_check_legacy "$proj"
       ;;
     none)
-      vi_emit FAIL "lane.none" "no zskills install detected (no \${CLAUDE_PLUGIN_ROOT}, no .claude/skills + settings.json)"
+      vi_emit FAIL "lane.none" "no zskills install detected (no materialised plugin artifacts, no zskills mirror + no zskills settings.json hooks)"
       ;;
   esac
 }

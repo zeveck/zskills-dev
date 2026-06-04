@@ -441,6 +441,110 @@ else
   fail "7. dual install" "expected FAIL on lane.dual-unsupported; records=$(grep '^FAIL' "$OUT")"
 fi
 
+# ── PLUGIN + consumer's OWN non-zskills skills → still plugin, mirror-less PASS
+# (#1071) A healthy mirror-less plugin consumer may ship their OWN, non-zskills
+# skills under .claude/skills/ (playwright-cli, social-seo, …). The lane-detect
+# legacy signal and the plugin.mirror-less check key on a ZSKILLS-OWNED mirror,
+# NOT on bare .claude/skills/ presence — so these MUST classify as `plugin`,
+# PASS plugin.mirror-less (not WARN), and produce 0 FAIL. CLAUDE_PLUGIN_ROOT is
+# still the good fake-plugin-root from case 4 (so plugin.root-reachable PASSes).
+POS="$(make_plugin_good 7)"
+mkdir -p "$POS/.claude/skills/playwright-cli" "$POS/.claude/skills/social-seo"
+printf '%s\n' '---' 'name: playwright-cli' '---' '# pw' > "$POS/.claude/skills/playwright-cli/SKILL.md"
+printf '%s\n' '---' 'name: social-seo' '---' '# seo' > "$POS/.claude/skills/social-seo/SKILL.md"
+OUT="$TMP/out-plugin-own-skills.txt"
+run_cheap_capture "$POS" "$OUT"
+if grep -q '^PASS	lane.detect	detected lane: plugin' "$OUT"; then
+  pass "7d. plugin + consumer's OWN non-zskills skills → lane detected as plugin (not dual/legacy)"
+else
+  fail "7d. plugin own-skills lane detect" "lane.detect not 'plugin': $(grep lane.detect "$OUT")"
+fi
+if has_warn_id "$OUT" "plugin.mirror-less"; then
+  fail "7e. plugin own-skills mirror-less" "plugin.mirror-less WARNed on a non-zskills mirror (should PASS): $(grep mirror-less "$OUT")"
+else
+  pass "7e. plugin + own non-zskills skills → plugin.mirror-less PASS (not WARN on consumer's own skills)"
+fi
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "7f. plugin + own non-zskills skills → 0 FAIL"
+else
+  fail "7f. plugin own-skills no-fail" "expected 0 FAIL, got $(grep '^FAIL' "$OUT")"
+fi
+
+# ── PLUGIN + consumer's OWN settings.json (non-zskills hook) → still plugin ───
+# (#1071, the exact dual FALSE-FAIL) The consumer's own settings.json registers
+# only a NON-zskills hook AND they ship their own skills. Before the fix this
+# false-classified as `dual` → lane.dual-unsupported FAIL. The legacy signal now
+# keys on a zskills-owned mirror OR a settings.json hook under .claude/hooks/,
+# so a foreign hook outside .claude/hooks/ (or an empty {}) does NOT count. MUST
+# classify as `plugin` (NOT dual), with 0 FAIL.
+PCS="$(make_plugin_good 8)"
+mkdir -p "$PCS/.claude/skills/playwright-cli"
+printf '%s\n' '---' 'name: playwright-cli' '---' '# pw' > "$PCS/.claude/skills/playwright-cli/SKILL.md"
+# A consumer's own settings.json registering only a NON-zskills hook whose path
+# does NOT resolve under .claude/hooks/ (lives in their own .config/ tree).
+cat > "$PCS/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.config/my-own-hook.sh\"", "timeout": 5 }
+      ] }
+    ]
+  }
+}
+JSON
+OUT="$TMP/out-plugin-own-settings.txt"
+run_cheap_capture "$PCS" "$OUT"
+if grep -q '^PASS	lane.detect	detected lane: plugin' "$OUT"; then
+  pass "7g. plugin + consumer's OWN settings.json (non-zskills hook) → lane plugin (not dual — the dual FALSE-FAIL)"
+else
+  fail "7g. plugin own-settings lane detect" "lane.detect not 'plugin': $(grep lane.detect "$OUT")"
+fi
+if has_fail_id "$OUT" "lane.dual-unsupported"; then
+  fail "7h. plugin own-settings dual-false-fail" "lane.dual-unsupported FAILed on a consumer's own settings.json: $(grep '^FAIL' "$OUT")"
+else
+  pass "7h. plugin + own settings.json → NO lane.dual-unsupported FAIL (dual FALSE-FAIL closed)"
+fi
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "7i. plugin + own settings.json (empty/non-zskills hook) → 0 FAIL"
+else
+  fail "7i. plugin own-settings no-fail" "expected 0 FAIL, got $(grep '^FAIL' "$OUT")"
+fi
+
+# ── GENUINE dual: zskills-named mirror + settings.json with a REAL zskills ────
+# .claude/hooks/ entry → must STILL be `dual` (proves the fix does not blind the
+# verifier to a real dual install). Both legacy signals fire: a zskills-owned
+# mirror (update-zskills) AND a settings.json hook resolving under .claude/hooks/.
+PGD="$(make_plugin_good 9)"
+mkdir -p "$PGD/.claude/skills/update-zskills" "$PGD/.claude/hooks"
+printf '%s\n' '---' 'name: update-zskills' '---' '# uz' > "$PGD/.claude/skills/update-zskills/SKILL.md"
+printf '%s\n' '#!/usr/bin/env bash' '# zskills-hook-version: 2026.06.0' 'exit 0' \
+  > "$PGD/.claude/hooks/block-unsafe-generic.sh"
+cat > "$PGD/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"", "timeout": 5 }
+      ] }
+    ]
+  }
+}
+JSON
+OUT="$TMP/out-genuine-dual.txt"
+run_cheap_capture "$PGD" "$OUT"
+if grep -q '^PASS	lane.detect	detected lane: dual' "$OUT" \
+   || grep -q '^FAIL	lane.detect	detected lane: dual' "$OUT"; then
+  pass "7j. genuine dual (zskills mirror + real .claude/hooks/ settings entry) → lane detected as dual"
+else
+  fail "7j. genuine dual lane detect" "lane.detect not 'dual': $(grep lane.detect "$OUT")"
+fi
+if has_fail_id "$OUT" "lane.dual-unsupported"; then
+  pass "7k. genuine dual → FAIL on lane.dual-unsupported (fix does not blind the verifier to a real dual install)"
+else
+  fail "7k. genuine dual unsupported" "expected FAIL on lane.dual-unsupported; records=$(grep '^FAIL' "$OUT")"
+fi
+
 # ── PLUGIN broken (D): CLAUDE_PLUGIN_ROOT pointing at an UNREACHABLE dir ──────
 # (#1008 medium gap) The 5 materialised artifacts are present in the consumer's
 # .claude/, but ${CLAUDE_PLUGIN_ROOT} points at a dir missing the plugin
