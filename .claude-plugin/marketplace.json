@@ -5,7 +5,6 @@
   "description": "Z Skills — agent-discipline skill framework",
   "version": "1",
   "plugins": [
-    { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills-dev", "ref": "main" } },
-    { "name": "zsbd", "source": "./block-diagram" }
+    { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills-dev", "ref": "main" } }
   ]
 }

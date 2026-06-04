@@ -90,7 +90,9 @@ From inside a Claude Code session in your project:
 /plugin install zs@zskills
 ```
 
-Add the block-diagram add-on with `/plugin install zsbd@zskills`. See
+The `zs` plugin bundles the block-diagram add-on skills, so a single install
+gives you everything. (The block-diagram add-on currently ships inside `zs`
+and will move to its own separately-installable plugin in a future repo.) See
 [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for what gets
 materialised, version pinning, and the bare-slash prose tradeoff.
 

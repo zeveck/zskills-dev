@@ -315,8 +315,7 @@ MARKERHOOK
 {
   "name": "zsrepoloadprobe",
   "version": "2026.05.0",
-  "description": "Synthetic repo-load hookfire probe plugin (test fixture).",
-  "hooks": "./hooks/hooks.json"
+  "description": "Synthetic repo-load hookfire probe plugin (test fixture)."
 }
 PLUGINJSON
   cat > "$synmarker/hooks/hooks.json" <<'PLUGINHOOKS'
@@ -372,6 +371,23 @@ PLUGINHOOKS
     sed 's/^/      /' "$out"
   else
     pass "  [attended] (A2)-runtime: live --plugin-dir load tolerated 2 missing suffixless D4 hooks (hook side-effect fired; no fatal missing-hook error)"
+  fi
+
+  # ── ITEM 3: /doctor duplicate-hooks regression guard ───────────────────────
+  # A real `claude plugin install` once reported "Duplicate hooks file
+  # detected: ./hooks/hooks.json" because the manifest referenced the standard
+  # hooks/hooks.json that Claude Code already auto-loads from the plugin root.
+  # The fix removed the manifest `hooks` field. Guard the regression: run
+  # /doctor under a real --plugin-dir load of the repo and FAIL if it reports a
+  # plugin hook load error. (Same attended gate as ITEMs 1-2 above; the session
+  # is already known authed here since we passed the /login check.)
+  local doctor_out="$TMP/attended-repoload-doctor.out"
+  run_isolated_claude -p '/doctor' --plugin-dir "$REPO_ROOT" --dangerously-skip-permissions > "$doctor_out" 2>&1 || true
+  if grep -qiE 'Duplicate hooks file detected|Hook load failed|resolves to already-loaded' "$doctor_out"; then
+    fail "  [attended] /doctor reports a plugin hook load error (duplicate-hooks regression)"
+    sed 's/^/      /' "$doctor_out"
+  else
+    pass "  [attended] /doctor shows no plugin hook load errors under real --plugin-dir load"
   fi
 }
 
@@ -442,8 +458,7 @@ PLUGINHOOK
 {
   "name": "zsdualprobe",
   "version": "2026.05.0",
-  "description": "Synthetic dual-install probe plugin (test fixture).",
-  "hooks": "./hooks/hooks.json"
+  "description": "Synthetic dual-install probe plugin (test fixture)."
 }
 PLUGINJSON
   cat > "$synplug/hooks/hooks.json" <<'PLUGINHOOKS'

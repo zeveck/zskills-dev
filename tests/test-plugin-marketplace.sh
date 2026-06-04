@@ -2,21 +2,29 @@
 # tests/test-plugin-marketplace.sh
 #
 # W1.5 (D8 / D1 / D2) — validates the marketplace manifest at
-# .claude-plugin/marketplace.json. Covers BOTH plugin entries (zs + zsbd).
+# .claude-plugin/marketplace.json.
+#
+# INTERIM: the marketplace lists EXACTLY ONE plugin (`zs`). The `zsbd` addon
+# has been delisted from the marketplace so consumers see one clean plugin;
+# the block-diagram skills already ride bundled inside `zs` (its `skills`
+# field is ["./skills/", "./block-diagram/"]), so delisting loses nothing for
+# end users. The zsbd PLUGIN manifest (block-diagram/.claude-plugin/plugin.json)
+# still ships on disk pending a future separate-repo split, so the on-disk
+# dual-manifest cross-checks below read that file DIRECTLY (not via a
+# marketplace entry).
 #
 # Uses Python json (no jq — per `## Python is required`). Asserts:
 #   - manifest parses + carries required top-level fields (name, owner,
 #     plugins, and — strict-mode requirement — a top-level `description`);
-#   - exactly two plugin entries named `zs` and `zsbd`;
+#   - exactly one plugin entry named `zs`;
 #   - the `zs` entry's source is the github object form the current
 #     validator accepts: { "source": "github", "repo": ..., "ref": ... }
 #     (the plan's nested-`github` example form is rejected by claude
 #     2.1.153 — see W1.5 implementer note);
-#   - the `zsbd` entry's source is the relative-path string "./block-diagram"
-#     (D1 / F-R2-1);
 #   - `dependencies` lives on the zsbd PLUGIN manifest (cross-checked here
-#     against block-diagram/.claude-plugin/plugin.json), present on zsbd and
-#     absent on zs.
+#     directly against block-diagram/.claude-plugin/plugin.json), present on
+#     zsbd and absent on zs;
+#   - D10 version lockstep across the two on-disk plugin.json files.
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -65,8 +73,8 @@ out(mp.get("name") == "zskills", "marketplace: name == 'zskills'", repr(mp.get("
 
 plugins = mp.get("plugins", [])
 by_name = {p.get("name"): p for p in plugins if isinstance(p, dict)}
-out(set(by_name) == {"zs", "zsbd"},
-    "marketplace: exactly two plugins (zs, zsbd)", repr(sorted(by_name)))
+out(set(by_name) == {"zs"},
+    "marketplace: exactly one plugin (zs)", repr(sorted(by_name)))
 
 # zs source — github object form accepted by the current validator:
 # { "source": "github", "repo": ..., "ref": ... }
@@ -83,13 +91,13 @@ ok_zs = (isinstance(zs_src, dict)
          and zs_src.get("ref") == "main")
 out(ok_zs, "marketplace: zs source is github {source,repo,ref}", repr(zs_src))
 
-# zsbd source — relative-path string (D1).
-zsbd = by_name.get("zsbd", {})
-out(zsbd.get("source") == "./block-diagram",
-    "marketplace: zsbd source is './block-diagram' relative path", repr(zsbd.get("source")))
+# zsbd is no longer a marketplace entry (delisted — see interim note above).
+out("zsbd" not in by_name,
+    "marketplace: zsbd NOT listed (delisted; bundled inside zs)", repr(sorted(by_name)))
 
-# dependencies live on the PLUGIN manifest (cross-check): present on zsbd,
-# absent on zs.
+# dependencies live on the PLUGIN manifest (cross-check, read directly off
+# disk since zsbd is no longer in the marketplace): present on zsbd, absent
+# on zs.
 zsbd_plugin, perr = load(ZSBD_PLUGIN)
 out(zsbd_plugin is not None, f"{ZSBD_PLUGIN} parses as JSON", perr or "")
 if zsbd_plugin is not None:
