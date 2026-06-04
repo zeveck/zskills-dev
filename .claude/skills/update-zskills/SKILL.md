@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.03+807992"
+  version: "2026.06.04+9bc9da"
 ---
 
 # Update Z Skills Infrastructure
@@ -1625,8 +1625,11 @@ matcher-less shape under `${CLAUDE_PLUGIN_ROOT}`. They drive the
 session-logging capability: `log-session-stop.sh` re-renders each
 transcript to per-session markdown (merging the permission sidecar by
 timestamp with a `[PERMISSION]` tag), and `log-permission-request.sh` is a
-passive, fail-open sidecar logger that NEVER blocks/approves/denies. Both
-no-op when `logging.enabled` is false.
+passive, fail-open sidecar logger that NEVER blocks/approves/denies.
+Session logging is OFF by default: both hooks no-op when `logging.enabled`
+is false OR absent — a fresh consumer (whose seeded config carries no
+`logging` block) gets logging off until they opt in with
+`logging.enabled: true`.
 
 **Session-init-only `settings.json` load (#460).** `.claude/settings.json`
 is loaded ONCE at session start. The in-memory hook table is fixed at

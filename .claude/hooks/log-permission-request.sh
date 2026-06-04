@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.3
 # log-permission-request.sh — PermissionRequest hook. Session-logging.
 #
 # Fires ONLY when a permission dialog would appear (Claude Code does NOT
@@ -75,8 +75,12 @@ PERMISSION_SUMMARY_MAX = 200
 
 
 def read_config(project_dir):
+    # Defaults: enabled=False — session logging is OFF by default. A missing
+    # / unparseable config, or an absent logging.enabled field, leaves
+    # logging off. The consumer opts in with logging.enabled:true. KEEP
+    # IDENTICAL to log-session-stop.sh read_config.
     cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
-    enabled = True
+    enabled = False
     log_dir_cfg = ""
     try:
         with open(cfg_path) as f:

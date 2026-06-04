@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.3
 # log-session-stop.sh — Stop / SubagentStop hook. Session-logging.
 #
 # Re-renders the session transcript JSONL (the `transcript_path` field of
@@ -24,9 +24,10 @@
 # hook): ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache default
 # (${XDG_CACHE_HOME:-~/.cache}/zskills-session-logs/<project> on Linux,
 # ~/Library/Caches/... on macOS, %LOCALAPPDATA%\... on Windows). The
-# `logging` config object also carries `enabled` (default true) — when
-# false this hook no-ops immediately. Resolution + the master-toggle read
-# happen INSIDE the embedded Python (cross-platform, no jq).
+# `logging` config object also carries `enabled` (default FALSE — session
+# logging is OFF unless the consumer opts in with logging.enabled:true) —
+# when false (or absent) this hook no-ops immediately. Resolution + the
+# master-toggle read happen INSIDE the embedded Python (cross-platform, no jq).
 #
 # PUBLISH-WHERE-IT-WROTE REGISTRY (issue #1059). The drift bug: the reader
 # (session-logs.sh) used to re-resolve the path independently via
@@ -104,10 +105,11 @@ PERMISSION_SUMMARY_MAX = 200
 def read_config(project_dir):
     """Return (enabled, dir) from .claude/zskills-config.json logging.*.
 
-    Defaults: enabled=True, dir="". A missing / unparseable config means
-    defaults (logging on)."""
+    Defaults: enabled=False, dir="". Session logging is OFF by default — a
+    missing / unparseable config, or an absent logging.enabled field, means
+    logging stays off. The consumer opts in with logging.enabled:true."""
     cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
-    enabled = True
+    enabled = False
     log_dir_cfg = ""
     try:
         with open(cfg_path) as f:
