@@ -17,6 +17,12 @@
 #   3.  Idempotency — re-running with no changes prints no "Updated" lines.
 #   4.  Update path — modifying consumer's verifier.md and re-running
 #       prints "Updated agent: verifier.md".
+#   5.  Verbatim-owned hook refresh (#1060) — a changed verbatim-owned hook
+#       (e.g. log-session-stop.sh) is refreshed from source AND backed up
+#       to <hook>.bak; the "Refreshed hook:" line is emitted.
+#   6.  Consumer-customizable hook NOT refreshed (#1060) — a changed
+#       .template-derived hook (block-unsafe-project.sh) is left untouched
+#       (no overwrite, no .bak); Key Rule 2 still governs it.
 #
 # Per CLAUDE.md test-output idiom, this script writes scratch fixtures
 # to /tmp/zskills-tests/$(basename "$REPO_ROOT")/agent-install-* so they
@@ -64,6 +70,45 @@ run_step_c_install() {
       cp -a "$src" "$dst" && echo "Installed hook: $hook"
     elif ! cmp -s "$src" "$dst"; then
       cp -a "$src" "$dst" && echo "Updated hook: $hook"
+    fi
+  done
+
+  # --- Refresh changed verbatim-owned hooks (#1060) ---
+  # Encodes the SKILL.md Step C "Refresh changed verbatim-owned hooks"
+  # bash block verbatim. The .template-derived hooks
+  # (block-unsafe-project.sh, block-agents.sh) are DELIBERATELY absent from
+  # this CLOSED list — they stay skip-if-exists per Key Rule 2.
+  local VERBATIM_OWNED_HOOKS=(
+    block-unsafe-generic.sh
+    block-stale-skill-version.sh
+    block-bypassed-land-pr.sh
+    block-fix-issue-unclaimed.sh
+    block-run-plan-unclaimed.sh
+    block-bad-cron.sh
+    block-main-edits.sh
+    warn-config-drift.sh
+    inject-bash-timeout.sh
+    verify-response-validate.sh
+    log-session-stop.sh
+    log-permission-request.sh
+  )
+  local hook
+  for hook in "${VERBATIM_OWNED_HOOKS[@]}"; do
+    local vsrc="$PORTABLE/hooks/$hook"
+    local vdst="$PROJECT_DIR/.claude/hooks/$hook"
+    [ -e "$vsrc" ] || continue
+    [ -f "$vdst" ] || continue
+    if ! cmp -s "$vsrc" "$vdst"; then
+      cp -a "$vdst" "$vdst.bak"
+      local oldv newv
+      oldv=$(sed -n 's/^# zskills-hook-version:[[:space:]]*//p' "$vdst" | head -1)
+      newv=$(sed -n 's/^# zskills-hook-version:[[:space:]]*//p' "$vsrc" | head -1)
+      cp -a "$vsrc" "$vdst"
+      if [ -n "$oldv" ] || [ -n "$newv" ]; then
+        echo "Refreshed hook: $hook (${oldv:-?} -> ${newv:-?}; backup: $vdst.bak)"
+      else
+        echo "Refreshed hook: $hook (backup: $vdst.bak)"
+      fi
     fi
   done
 
@@ -116,9 +161,19 @@ make_portable() {
   cp -a "$REPO_ROOT/hooks/inject-bash-timeout.sh" "$portable/hooks/"
   cp -a "$REPO_ROOT/hooks/verify-response-validate.sh" "$portable/hooks/"
 
+  # Copy a verbatim-owned hook (log-session-stop.sh — carries a
+  # zskills-hook-version stamp) for the #1060 refresh cases, and the
+  # .template-derived block-unsafe-project.sh (renamed; ships verbatim from
+  # the .template but is consumer-customizable, so it MUST NOT be refreshed).
+  cp -a "$REPO_ROOT/hooks/log-session-stop.sh" "$portable/hooks/"
+  cp -a "$REPO_ROOT/hooks/block-unsafe-project.sh.template" \
+        "$portable/hooks/block-unsafe-project.sh"
+
   # Ensure executable bits set (cp -a preserves; belt-and-suspenders).
   chmod +x "$portable/hooks/inject-bash-timeout.sh"
   chmod +x "$portable/hooks/verify-response-validate.sh"
+  chmod +x "$portable/hooks/log-session-stop.sh"
+  chmod +x "$portable/hooks/block-unsafe-project.sh"
 
   echo "$portable"
 }
@@ -227,6 +282,79 @@ test_case_4_update_on_change() {
   rm -rf -- "$portable" "$consumer"
 }
 
+# Case 5: Verbatim-owned hook refresh (#1060) — a stale verbatim-owned hook
+# is refreshed from source AND backed up to <hook>.bak.
+test_case_5_verbatim_hook_refresh() {
+  local label="case5"
+  local portable; portable=$(make_portable "$label")
+  local consumer; consumer=$(make_consumer "$label")
+
+  # Pre-install: place an OLD (stale) verbatim-owned hook in the consumer.
+  mkdir -p "$consumer/.claude/hooks"
+  cp -a "$portable/hooks/log-session-stop.sh" "$consumer/.claude/hooks/log-session-stop.sh"
+  # Make the consumer copy differ from source (simulate pre-fix version).
+  printf '#!/usr/bin/env bash\n# zskills-hook-version: 2026.06.0\n# STALE pre-fix copy (world-readable)\n' \
+    > "$consumer/.claude/hooks/log-session-stop.sh"
+
+  local out
+  out=$(run_step_c_install "$portable" "$consumer" 2>&1)
+
+  local ok=1
+  echo "$out" | grep -qF 'Refreshed hook: log-session-stop.sh' \
+    || { ok=0; fail "case 5: Refreshed hook line emitted" "out=$out"; }
+  [ -f "$consumer/.claude/hooks/log-session-stop.sh.bak" ] \
+    || { ok=0; fail "case 5: .bak backup created" "missing log-session-stop.sh.bak"; }
+  # The refreshed copy must now byte-match source.
+  cmp -s "$portable/hooks/log-session-stop.sh" "$consumer/.claude/hooks/log-session-stop.sh" \
+    || { ok=0; fail "case 5: refreshed hook byte-matches source" "still differs"; }
+  # The backup must preserve the OLD stale content (NOT the new source).
+  if cmp -s "$portable/hooks/log-session-stop.sh" "$consumer/.claude/hooks/log-session-stop.sh.bak"; then
+    ok=0; fail "case 5: .bak preserves OLD content" ".bak matches source — stale copy not preserved"
+  fi
+  # Old→new version stamp should appear in the report.
+  echo "$out" | grep -qF '2026.06.0 ->' \
+    || { ok=0; fail "case 5: old->new version stamp reported" "out=$out"; }
+
+  if [ "$ok" -eq 1 ]; then
+    pass "case 5: stale verbatim-owned hook refreshed + backed up + version reported"
+  fi
+  rm -rf -- "$portable" "$consumer"
+}
+
+# Case 6: Consumer-customizable .template-derived hook NOT refreshed (#1060)
+# — block-unsafe-project.sh stays untouched even when it differs from source.
+test_case_6_template_hook_not_refreshed() {
+  local label="case6"
+  local portable; portable=$(make_portable "$label")
+  local consumer; consumer=$(make_consumer "$label")
+
+  # Pre-install: a consumer-CUSTOMIZED block-unsafe-project.sh that differs
+  # from the shipped source.
+  mkdir -p "$consumer/.claude/hooks"
+  local custom='#!/usr/bin/env bash
+# CONSUMER-CUSTOMIZED block-unsafe-project.sh — must NOT be overwritten
+echo custom'
+  printf '%s\n' "$custom" > "$consumer/.claude/hooks/block-unsafe-project.sh"
+
+  local out
+  out=$(run_step_c_install "$portable" "$consumer" 2>&1)
+
+  local ok=1
+  echo "$out" | grep -qF 'Refreshed hook: block-unsafe-project.sh' \
+    && { ok=0; fail "case 6: block-unsafe-project.sh NOT refreshed" "it was refreshed (should be skip-if-exists)"; }
+  [ -f "$consumer/.claude/hooks/block-unsafe-project.sh.bak" ] \
+    && { ok=0; fail "case 6: no .bak created for template hook" ".bak exists"; }
+  # The consumer's customized content must be intact.
+  if ! grep -qF 'CONSUMER-CUSTOMIZED' "$consumer/.claude/hooks/block-unsafe-project.sh"; then
+    ok=0; fail "case 6: consumer customization preserved" "file was overwritten"
+  fi
+
+  if [ "$ok" -eq 1 ]; then
+    pass "case 6: customized .template-derived hook left untouched (Key Rule 2)"
+  fi
+  rm -rf -- "$portable" "$consumer"
+}
+
 # --- Run ------------------------------------------------------------------
 
 echo "Running tests/test-update-zskills-agent-install.sh"
@@ -234,6 +362,8 @@ test_case_1_fresh_install
 test_case_2_byte_equivalence
 test_case_3_idempotent_rerun
 test_case_4_update_on_change
+test_case_5_verbatim_hook_refresh
+test_case_6_template_hook_not_refreshed
 
 echo
 TOTAL=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))

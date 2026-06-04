@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.03+1bc8ab"
+  version: "2026.06.03+16b79a"
 ---
 
 # Update Z Skills Infrastructure
@@ -1448,6 +1448,68 @@ have NO entries in the canonical zskills-owned triples table below
 via direct skill invocation in dispatcher SKILL.md files. Copy them to
 `.claude/hooks/` only — do not register them.
 
+**Refresh changed verbatim-owned hooks (#1060).** The copy steps above
+only fill *missing* hooks. To propagate a hook fix shipped after a
+consumer's initial install (e.g. the session-log `0o600` security fix in
+`5148324`), follow the missing-hook copy with a REFRESH pass over the
+**verbatim-owned hook set** — the zskills-owned hooks that ship
+byte-for-byte (no per-consumer fill). For each such hook, if the installed
+copy differs from the source, BACK IT UP first (so a consumer who *did*
+edit a verbatim hook can recover), then overwrite from source. This
+mirrors the agent `cmp -s` cmp-and-overwrite loop below, plus a backup
+step — hooks are higher-stakes than agents (which do not back up).
+
+The verbatim-owned hook set is an EXPLICIT, CLOSED list — these are the
+zskills-owned hooks that Step C copies as-is (the registered
+`settings.json` triples that ship verbatim, plus the two frontmatter /
+direct-invocation hooks, plus the two session-logging hooks). It MUST NOT
+include the consumer-customizable `.template`-derived hooks
+(`block-unsafe-project.sh`, `block-agents.sh`) or any Tier-2 stub under
+`scripts/` — those stay governed by Key Rule 2 (never overwritten):
+
+```bash
+# Verbatim-owned, zskills-shipped hooks — refreshed when stale. This is a
+# CLOSED list; do NOT replace it with a glob/heuristic (a future
+# consumer-owned hook must never be caught). EXCLUDES the .template hooks
+# (block-unsafe-project.sh, block-agents.sh) and all Tier-2 scripts/ stubs.
+VERBATIM_OWNED_HOOKS=(
+  block-unsafe-generic.sh
+  block-stale-skill-version.sh
+  block-bypassed-land-pr.sh
+  block-fix-issue-unclaimed.sh
+  block-run-plan-unclaimed.sh
+  block-bad-cron.sh
+  block-main-edits.sh
+  warn-config-drift.sh
+  inject-bash-timeout.sh
+  verify-response-validate.sh
+  log-session-stop.sh
+  log-permission-request.sh
+)
+for hook in "${VERBATIM_OWNED_HOOKS[@]}"; do
+  src="$PORTABLE/hooks/$hook"
+  dst=".claude/hooks/$hook"
+  [ -e "$src" ] || continue
+  [ -f "$dst" ] || continue   # missing hooks are handled by the copy steps above
+  if ! cmp -s "$src" "$dst"; then
+    cp -a "$dst" "$dst.bak"   # back up before overwrite (recoverability)
+    # Report old→new zskills-hook-version stamp where the hook carries one.
+    oldv=$(sed -n 's/^# zskills-hook-version:[[:space:]]*//p' "$dst" | head -1)
+    newv=$(sed -n 's/^# zskills-hook-version:[[:space:]]*//p' "$src" | head -1)
+    cp -a "$src" "$dst"
+    if [ -n "$oldv" ] || [ -n "$newv" ]; then
+      echo "Refreshed hook: $hook (${oldv:-?} -> ${newv:-?}; backup: $dst.bak)"
+    else
+      echo "Refreshed hook: $hook (backup: $dst.bak)"
+    fi
+  fi
+done
+```
+
+Report each refreshed hook in the update summary (the `Refreshed hook:`
+lines above), noting the old→new `# zskills-hook-version:` stamp where the
+hook carries one.
+
 **Custom subagent definitions.** After hook copy, copy missing or
 changed agent definitions from `$PORTABLE/.claude/agents/*.md` to
 `$PROJECT_DIR/.claude/agents/`. `cp -a` preserves mode bits + mtime.
@@ -2344,11 +2406,22 @@ These rules are inviolable. They apply to all modes:
    Step B, which removes only lines matching both a rendered value
    AND the template's ±2-line context around that value. No other
    cross-writes.
-2. **NEVER overwrite existing hooks or scripts** — if a file already
+2. **NEVER overwrite existing consumer-customizable hooks or scripts** —
+   if a `.template`-derived hook (`block-unsafe-project.sh`,
+   `block-agents.sh`) or a Tier-2 `scripts/` stub
+   (`scripts/test-all.sh`, `scripts/start-dev.sh`, `scripts/stop-dev.sh`,
+   `scripts/dev-port.sh`, …; see `references/script-ownership.md`) already
    exists, skip it. The user may have customized it. (Presets do not edit
    any hook: `apply-preset.sh` is config-only, and
    `block-unsafe-generic.sh` derives its main-push gate from
-   `execution.main_protected` at runtime.)
+   `execution.main_protected` at runtime.) **Exception — verbatim-owned
+   zskills hooks ARE refreshed on update (#1060):** the closed
+   `VERBATIM_OWNED_HOOKS` set in Step C ships byte-for-byte with no
+   per-consumer fill, so a stale installed copy is overwritten from source
+   (after a `.bak` backup) to propagate hook fixes — including security
+   fixes — exactly as changed agents already are. This narrowing applies
+   ONLY to that closed set; every other existing hook/script stays
+   skip-if-exists.
 3. **Explain what hooks do when installing them** — don't just list
    filenames. The user needs to understand what each hook does.
 4. **Show the user what will be installed BEFORE doing it** — no silent
