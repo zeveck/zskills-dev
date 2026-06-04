@@ -78,11 +78,28 @@ detect_install_state() {
   # Lock file content is `update-zskills`.
   [ "$lock_val" = update-zskills ] && uz_hit=1
 
-  # Any `.claude/skills/*/SKILL.md` exists (wildcard — F-DA3-1 closure).
+  # A `.claude/skills/<name>/SKILL.md` exists for a ZSKILLS-OWNED <name>.
+  #
+  # This was a bare `.claude/skills/*/SKILL.md` wildcard (F-DA3-1 closure),
+  # but that mis-classified a PLUGIN consumer who ships their OWN, non-zskills
+  # skills (e.g. playwright-cli, social-seo) as the /update-zskills lane —
+  # which made the SessionStart materialiser's D27 probe refuse to write the
+  # 5 plugin artifacts, breaking the install (#1064).
+  #
+  # The fix scopes the loop to the zskills-owned anchor set below. It is
+  # staleness-tolerant: a legacy mirror ALWAYS includes `update-zskills` (the
+  # installer) plus the stable core skills, so a future new skill not yet in
+  # this list never breaks lane detection — the mirror still carries the
+  # anchors. A consumer's own non-zskills skill no longer counts as evidence.
+  # (Derived from the repo's `skills/` directory names.)
   if [ "$uz_hit" -eq 0 ]; then
-    local sk
-    for sk in "$claude"/skills/*/SKILL.md; do
-      [ -f "$sk" ] && { uz_hit=1; break; }
+    local _dis_zskills_skills="briefing cleanup-merged commit create-worktree do draft-plan draft-tests fix-issues fix-report investigate land-pr manual-testing plans qe-audit quickfix refine-plan research-and-go research-and-plan run-plan session-report update-zskills verify-changes work-on-plans zskills-dashboard"
+    local _sk_name
+    for _sk_name in $_dis_zskills_skills; do
+      if [ -f "$claude/skills/$_sk_name/SKILL.md" ]; then
+        uz_hit=1
+        break
+      fi
     done
   fi
 

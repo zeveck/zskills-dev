@@ -93,6 +93,34 @@ else
   fail "2b. plugin: materialiser did not run"
 fi
 
+# ── 2'. plugin + consumer's OWN non-zskills skill (#1064) ─────────────────
+#    A plugin-materialised install (sentinelled artifacts) PLUS a consumer's
+#    own non-zskills `.claude/skills/social-seo/SKILL.md` (un-sentinelled).
+#    The consumer skill must NOT count as /update-zskills evidence, so the
+#    install must classify `plugin` AND the materialiser must write all 5
+#    artifacts. (Before the #1064 fix the bare-wildcard SKILL.md loop matched
+#    social-seo → classified update-zskills → materialiser refused.)
+P2b="$TMP/plugin-consumer-skill"
+base_fixture "$P2b"
+write_sentinelled_hook "$P2b/.claude/hooks/inject-bash-timeout.sh"
+write_sentinelled_managed "$P2b/.claude/rules/zskills/managed.md"
+write_unsentinelled_skill "$P2b/.claude/skills/social-seo/SKILL.md"   # consumer's OWN skill
+got="$(detect_install_state "$P2b")"
+[ "$got" = plugin ] && pass "2'a. plugin + consumer's own skill → still detected plugin (#1064)" \
+  || fail "2'a. expected plugin, got $got (consumer skill mis-counted as legacy evidence)"
+err2b="$TMP/err2b"; run_mat "$P2b" "$err2b"
+# Plugin lane → materialiser must write all 5 artifacts.
+if [ -f "$P2b/.claude/agents/verifier.md" ] \
+   && [ -f "$P2b/.claude/agents/implementer.md" ] \
+   && [ -f "$P2b/.claude/hooks/inject-bash-timeout.sh" ] \
+   && [ -f "$P2b/.claude/hooks/verify-response-validate.sh" ] \
+   && [ -f "$P2b/.claude/rules/zskills/managed.md" ]; then
+  pass "2'b. plugin + consumer skill: materialiser writes all 5 artifacts (#1064)"
+else
+  fail "2'b. plugin + consumer skill: materialiser did NOT write all 5 artifacts"
+  sed 's/^/      /' "$err2b"
+fi
+
 # ── 3. update-zskills (un-sentinelled SKILL.md mirror) ────────────────────
 P3="$TMP/uz"
 base_fixture "$P3"
