@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.06.04+b67452"
+  version: "2026.06.04+76f6e8"
 ---
 
 # /briefing — Project Status Briefing
@@ -14,9 +14,11 @@ Gather project state and present a structured briefing.
 
 ## Runtime
 
-The briefing helper is `python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py"`.
-Python 3 is required (per CLAUDE.md "Python is required"). If `python3`
-is not on PATH, output a clear error and stop:
+The briefing helper is `"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py"`
+(resolve `$PYTHON` by sourcing the config prelude first, as every fenced
+block below does — a bare `python3` is the broken MS Store stub on Windows,
+#1083). Python 3 is required (per CLAUDE.md "Python is required"). If no
+working Python 3 is found (`$PYTHON` empty), output a clear error and stop:
 
 > /briefing requires Python 3. Install it and ensure it's on PATH.
 > Python: https://python.org/
@@ -276,7 +278,7 @@ flag `0 in <window>` per skill as advisory text for a human to read.
 
 ## Data Gathering
 
-The agent runs `python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" <subcommand>` and captures stdout.
+The agent runs `"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" <subcommand>` and captures stdout (resolve `$PYTHON` via the config prelude first — `worktrees`/`checkboxes`/`commits` have no dedicated fenced block, so build the invocation from `"$PYTHON"`, never a bare `python3`, which is the broken MS Store stub on Windows, #1083).
 
 | Subcommand   | Output   | Description                              |
 |-------------|----------|------------------------------------------|
