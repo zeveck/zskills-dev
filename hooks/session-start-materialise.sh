@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -270,7 +270,7 @@ cfg = {
         "branch_prefix": "feat/",
     },
     "commit": {
-        "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+        "co_author": "",
     },
     "testing": {
         "unit_cmd": "",
@@ -298,6 +298,17 @@ PY
   if [ -s "$config_tmp" ]; then
     mv "$config_tmp" "$CONFIG"
     CONFIG_SEEDED=1
+    # Copy the schema alongside the seeded config so the seeded
+    # `"$schema": "./zskills-config.schema.json"` ref resolves (the legacy
+    # lane does the same — see skills/update-zskills/SKILL.md). Absent-only,
+    # matching the seed's own no-clobber semantics: a consumer who edited
+    # their schema (or already has one) is never overwritten.
+    SCHEMA_SRC="$PLUGIN/config/zskills-config.schema.json"
+    SCHEMA_DEST="$PROJ/.claude/zskills-config.schema.json"
+    if [ -f "$SCHEMA_SRC" ] && [ ! -f "$SCHEMA_DEST" ]; then
+      cp "$SCHEMA_SRC" "$SCHEMA_DEST" \
+        || echo "zskills: failed to copy zskills-config.schema.json — the seeded config's \$schema ref will dangle" >&2
+    fi
   else
     rm -f "$config_tmp"
     echo "zskills: failed to seed default zskills-config.json — managed.md will NOT be rendered" >&2

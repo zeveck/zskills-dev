@@ -254,6 +254,35 @@ else
 fi
 
 echo ""
+echo "=== Config seeding: schema copied + co_author empty (#1069) ==="
+
+# A fresh seed must (a) copy zskills-config.schema.json alongside the seeded
+# config so the seeded "$schema": "./zskills-config.schema.json" ref resolves
+# rather than dangling, and (b) leave commit.co_author empty (the resolver
+# fills it) rather than a hardcoded stale model literal.
+SEED_SCHEMA="$SEED/.claude/zskills-config.schema.json"
+REPO_SCHEMA="$REPO_ROOT/config/zskills-config.schema.json"
+
+# 19. Schema file copied AND byte-equal to the repo source.
+if [ -f "$SEED_SCHEMA" ] && cmp -s "$SEED_SCHEMA" "$REPO_SCHEMA"; then
+  pass "19. seeded project: zskills-config.schema.json copied (byte-equal to repo source)"
+else
+  fail "19. seeded schema missing or differs from repo source ($SEED_SCHEMA)"
+fi
+
+# 20. Seeded commit.co_author is empty (no hardcoded model literal).
+if [ -f "$SEED_CFG" ]; then
+  seed_coauthor=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["commit"]["co_author"])' "$SEED_CFG" 2>/dev/null)
+  if [ -z "$seed_coauthor" ]; then
+    pass "20. seeded commit.co_author is empty"
+  else
+    fail "20. seeded commit.co_author is not empty: '$seed_coauthor'"
+  fi
+else
+  fail "20. seeded commit.co_author check skipped: no config file"
+fi
+
+echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"
 exit "$FAIL_COUNT"
