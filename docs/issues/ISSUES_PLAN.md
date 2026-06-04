@@ -1509,3 +1509,23 @@ Author's open question on concurrent-sprint shape (multi-sprint list vs single-b
 **Fix outline.** In `skills/zskills-dashboard/scripts/zskills_monitor/collect.py` `_read_state_file`, after the `issues_out` for-loop, add a symmetric block preserving `issues_raw["skipped"]` as a dict (mirror the `plans_skipped` pattern). Mirror the edit into `.claude/skills/zskills-dashboard/scripts/zskills_monitor/collect.py`. Add a round-trip test (in `tests/test_zskills_monitor_collect.sh` or `tests/test-fix-issues-claim-collector.py`) that writes a state JSON with `issues.skipped` dict, runs it THROUGH `_read_state_file` (not synthetic state), and asserts the resolved chip reads it as a live override — the existing test at test-fix-issues-claim-collector.py:324-339 bypasses `_read_state_file`, which is why this shipped. Bump `metadata.version` on the source skill.
 
 **Complexity:** S. **Action now:** /do pr — add the symmetric issues.skipped dict-preserve block in collect.py, mirror it, add a round-trip-through-_read_state_file test, version-bump + mirror.
+
+### #1088 — restart-nudge (#1082) isn't reliably user-visible: emits model-facing stdout, not a verified user channel; test asserts emission not visibility
+
+**Labels:** (none) | **Verdict:** NOT YET FIXED
+
+**Problem.** The restart nudge is printed via a heredoc to stdout near the end of `hooks/nudge-restart-to-materialise.sh` (the `cat <<'NUDGE' ... NUDGE` block immediately above the final `exit 0`). For a UserPromptSubmit hook, bare stdout lands as model-facing `additionalContext`, not a user-visible message. `tests/test-nudge-restart-to-materialise.sh` case (a2) asserts only that the marker appears in stdout (emission), not user-visibility — the test-honesty gap the issue calls out. The missing `.claude/hooks/` mirror is intentional (`tests/test-hooks-mirror-parity.sh` lists this hook as plugin-lane-only, exempt). Hook unchanged since #1082 (`75909ed`).
+
+**Fix outline.** Replace the heredoc with a JSON emission carrying a top-level `systemMessage` (user-visible — the owner's live spike in the issue comments confirmed it renders as a non-blocking "UserPromptSubmit says: ..." notice while the prompt still reaches the model) plus `hookSpecificOutput.additionalContext` (agent-aware). Bump the line-2 `# zskills-hook-version:` stamp (currently 2026.06.0). Update test case (a2) to parse JSON and assert `systemMessage` contains the marker rather than a bare-stdout substring. Preserve all existing gating (fresh-lane, both env vars, once-per-session marker, fail-open `exit 0`); word the message to read well after the CLI "UserPromptSubmit says:" prefix.
+
+**Complexity:** S. **Action now:** /do pr — swap the stdout heredoc for systemMessage JSON in nudge-restart-to-materialise.sh, retarget test case (a2) to user-visibility, bump hook-version stamp.
+
+### #1085 — Test suite is ~18min single-threaded on a 32-core box — measure + speed up (parallelize-with-isolation, or fix the slow tail)
+
+**Labels:** (none) | **Verdict:** NOT YET FIXED
+
+**Problem.** `tests/run-all.sh` (lines 13-51 define `run_suite`, lines 53-318 call it ~207x in strict sequence) runs everything single-threaded; `OVERALL_EXIT`/`TOTAL_PASS`/`TOTAL_FAIL` are shared mutable globals updated in-process, so naive backgrounding would corrupt the tally. Measured distribution is a sharp fat-tail: `tests/test-hooks.sh` = 446s of 1162s total (38%); top 6 suites = 65%, top 15 = 81% (timing run at `/tmp/zskills-suite-timing.txt`). Isolation is the real blocker — ~52 suites use fixed `/tmp/zskills-*` literals (collide under concurrency) while ~91 already use `mktemp -d`. No parallelism exists today (no `&`/`xargs -P`/`wait` in run-all.sh).
+
+**Fix outline.** Two viable approaches: (1) parallelize-with-isolation — give each suite a unique tmpdir, audit the ~52 fixed-path suites + shared-git-state mutators, refactor `run_suite` to collect per-suite results from subshells, cap degree (`xargs -P 8`); or (2) slow-tail fix — split/parallelize INSIDE `test-hooks.sh` (the 446s dominant lever) and trim the next 5, lower isolation risk, ~halves wall-clock. Staged: measure -> tail-fix -> isolation audit -> parallelize-with-degree-cap. Must preserve the CI-gate invariant (never soften) + per-phase verification.
+
+**Complexity:** L. **Action now:** /draft-plan — staged phases + harness result-aggregation refactor + isolation audit make this a genuine design surface, not a one-pass change.
