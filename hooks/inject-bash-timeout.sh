@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.2
 # inject-bash-timeout.sh — PreToolUse hook for Bash (verifier subagent).
 #
 # Layer 0 of the VERIFIER_AGENT_FIX D'' architecture. Ensures `timeout` is at
@@ -18,8 +18,9 @@
 # bash regex. We use Python for the JSON parse + reserialize to keep the
 # escaping correct. Per zskills convention: no jq; python is acceptable
 # in hook scripts when bash JSON construction would be brittle. The
-# interpreter is resolved via $ZSKILLS_PYTHON (env override, for
-# Windows / non-standard distros) → `python3` → `python`.
+# interpreter is resolved via zskills_resolve_python: $ZSKILLS_PYTHON (env
+# override, for Windows / non-standard distros) → `python3` → `python`, each
+# candidate probe-RUN so a non-executable MS Store stub is skipped.
 #
 # Stdin shape: PreToolUse harness envelopes vary. Two supported shapes —
 #   1. The full envelope `{"tool_name":"Bash","tool_input":{...},...}`
@@ -30,11 +31,33 @@
 
 set -u
 
-# Resolve Python interpreter once. Override via ZSKILLS_PYTHON for
-# Windows / non-standard distros where only `python` exists. Default
-# precedence: python3 (POSIX-standard zskills target), then python.
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
-[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+
+# Resolve a WORKING Python 3 interpreter once. A failed probe yields empty
+# (NOT the MS Store stub path), so the [ -n "$PYTHON" ] guard below is honest.
+PYTHON="$(zskills_resolve_python || true)"
+# Layer 0 MUST fail-OPEN: a PreToolUse hook that `exit 1`s can block the Bash
+# call it was meant to assist. With no working Python we cannot inject the
+# timeout, so emit a bare allow and let the call proceed unmodified.
+if [ -z "$PYTHON" ]; then
+  echo "inject-bash-timeout.sh: WARN no working Python 3 found; timeout not injected — set ZSKILLS_PYTHON" >&2
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'
+  exit 0
+fi
 
 INPUT=$(cat)
 MIN_TIMEOUT=600000
@@ -79,9 +102,10 @@ sys.stdout.write(json.dumps(out))
 ' 2>/dev/null)
 
 if [ -z "$PY_OUT" ]; then
-  # python failed (parse error / unexpected; missing interpreter exits earlier). Permissive
-  # fallback: allow as-is. Layer 3 (verify-response-validate.sh) catches
-  # any downstream verifier failure regardless.
+  # python failed (parse error / unexpected; a missing interpreter already
+  # fail-opened above). Permissive fallback: allow as-is. Layer 3
+  # (verify-response-validate.sh) catches any downstream verifier failure
+  # regardless.
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'
   exit 0
 fi

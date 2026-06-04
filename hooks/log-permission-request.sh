@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.3
+# zskills-hook-version: 2026.06.4
 # log-permission-request.sh — PermissionRequest hook. Session-logging.
 #
 # Fires ONLY when a permission dialog would appear (Claude Code does NOT
@@ -43,8 +43,23 @@ set -u
 # Read stdin once. Never fail the hook on a read error.
 INPUT=$(cat 2>/dev/null) || { exit 0; }
 
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
 # Resolve Python. If absent, we simply cannot log — fail open silently.
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+PYTHON="$(zskills_resolve_python || true)"
 [ -n "$PYTHON" ] || exit 0
 
 # Empty / whitespace-only stdin: nothing to log, but STILL exit 0 with no

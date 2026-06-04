@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # block-bad-cron.sh — PreToolUse hook for the CronCreate tool.
 #
 # Closes a class of "the cron never fired" bugs caused by structurally-wrong
@@ -73,9 +73,28 @@ if [[ "$INPUT" != *'"tool_name":"CronCreate"'* ]] && [[ "$INPUT" != *'"tool_name
 fi
 
 # ── Resolve Python interpreter ─────────────────────────────────────
-# Same precedence as hooks/inject-bash-timeout.sh.
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
-[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+PYTHON="$(zskills_resolve_python || true)"
+# Fail-OPEN: never block a user's CronCreate just because no working Python 3
+# is available. Allow the cron through (the scheduler still validates it).
+if [ -z "$PYTHON" ]; then
+  echo "block-bad-cron.sh: WARN no working Python 3 found; cron-validation skipped — set ZSKILLS_PYTHON" >&2
+  exit 0
+fi
 
 # ── Extract tool_input fields via bash regex ───────────────────────
 # tool_input.cron — 5-field cron expression

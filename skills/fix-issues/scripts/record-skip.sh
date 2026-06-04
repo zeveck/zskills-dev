@@ -60,6 +60,27 @@
 
 set -u
 
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+_RS_PYTHON="$(zskills_resolve_python || true)"
+if [ -z "$_RS_PYTHON" ]; then
+  echo "record-skip.sh: install Python 3 (or set ZSKILLS_PYTHON)" >&2
+  exit 2
+fi
+
 if [ "$#" -lt 2 ]; then
   echo "usage: record-skip.sh <issue-num> <skip-code> [<reason>]" >&2
   exit 1
@@ -103,7 +124,7 @@ if [ ! -f "$STATE_FILE" ]; then
   printf '{}\n' > "$STATE_FILE"
 fi
 
-python3 - "$STATE_FILE" "$ISSUE_NUM" "$SKIP_CODE" "$REASON" <<'PY' || exit 2
+"$_RS_PYTHON" - "$STATE_FILE" "$ISSUE_NUM" "$SKIP_CODE" "$REASON" <<'PY' || exit 2
 import json, os, sys, tempfile
 
 path, num_s, code = sys.argv[1], sys.argv[2], sys.argv[3]

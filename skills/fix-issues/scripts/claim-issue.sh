@@ -58,7 +58,22 @@ set -u
 # Python interpreter resolution. Honours the project's documented
 # ZSKILLS_PYTHON override (see CLAUDE.md "Python is required" section).
 # ---------------------------------------------------------------------------
-_CLAIM_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+_CLAIM_PYTHON="$(zskills_resolve_python || true)"
 if [ -z "$_CLAIM_PYTHON" ]; then
   echo "fix-issues claim-issue.sh: install Python 3 (or set ZSKILLS_PYTHON)" >&2
   exit 127

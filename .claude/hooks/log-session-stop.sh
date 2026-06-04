@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.3
+# zskills-hook-version: 2026.06.4
 # log-session-stop.sh — Stop / SubagentStop hook. Session-logging.
 #
 # Re-renders the session transcript JSONL (the `transcript_path` field of
@@ -56,9 +56,25 @@
 
 set -u
 
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
 # Resolve Python. Override via ZSKILLS_PYTHON for Windows / non-standard
-# distros where only `python` exists. Default: python3, then python.
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+# distros where only `python` exists; each candidate is probe-RUN so a
+# non-executable MS Store stub is skipped. Fail-open if none works.
+PYTHON="$(zskills_resolve_python || true)"
 [ -n "$PYTHON" ] || exit 0
 
 INPUT=$(cat 2>/dev/null) || exit 0

@@ -36,9 +36,23 @@ VI_PASS=${VI_PASS:-0}
 VI_WARN=${VI_WARN:-0}
 VI_FAIL=${VI_FAIL:-0}
 
-# Resolve the Python interpreter once (project convention: python3, fall back
-# to python; ZSKILLS_PYTHON overrides). Used for JSON round-tripping.
-VI_PY="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python || true)}"
+# Resolve the Python interpreter once. Used for JSON round-tripping.
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+VI_PY="$(zskills_resolve_python || true)"
 
 # vi_reset — zero the counters. Call at the start of a verification run.
 vi_reset() {

@@ -32,6 +32,8 @@ fn_source() {
       echo "hooks/_lib/git-tokenwalk.sh" ;;
     extract_cd_target|resolve_effective_worktree_root)
       echo "hooks/_lib/resolve-effective-worktree-root.sh" ;;
+    zskills_resolve_python)
+      echo "hooks/_lib/resolve-python.sh" ;;
     *)
       echo "" ;;
   esac
@@ -104,6 +106,65 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     fi
   done
 done
+
+# ── zskills_resolve_python drift (issue #1075) ──────────────────────────────
+# Source-of-truth body lives in hooks/_lib/resolve-python.sh. Unlike the
+# git-tokenwalk family (inlined into a handful of block-* hooks), this resolver
+# is inlined into EVERY hook/helper that needs a working Python 3 interpreter —
+# the materialised inject-bash-timeout.sh and the legacy-mirror hooks cannot
+# reach _lib at runtime, so the body must be pasted in. Each inlining consumer
+# is listed here; the body (extracted between `^zskills_resolve_python()` and
+# the first `^}$`) must be byte-identical to the source-of-truth. The two prose
+# fences (skills/do/SKILL.md, skills/draft-plan/references/brainstorm.md) embed
+# the SAME function inside a bash block; the sed extraction is fence-agnostic
+# (it anchors on the function definition at column 0) so they are gated too.
+RESOLVE_PYTHON_CONSUMERS=(
+  hooks/inject-bash-timeout.sh
+  hooks/session-start-materialise.sh
+  hooks/block-bad-cron.sh
+  hooks/block-fix-issue-unclaimed.sh
+  hooks/block-run-plan-unclaimed.sh
+  hooks/log-permission-request.sh
+  hooks/log-session-stop.sh
+  hooks/_lib/detect-install-state.sh
+  hooks/_lib/plugin-hook-skip-if-mirrored.sh
+  scripts/build-catalog.sh
+  scripts/build-plugin-release.sh
+  scripts/switch-install-path.sh
+  scripts/_lib/finalize-prod-tree.sh
+  skills/update-zskills/verifiers/verify-install-lib.sh
+  skills/update-zskills/scripts/migrate-paths.sh
+  skills/update-zskills/scripts/session-logs.sh
+  skills/create-worktree/scripts/check-inflight-batch.sh
+  skills/create-worktree/scripts/claim-self-reentry.sh
+  skills/fix-issues/scripts/claim-issue.sh
+  skills/fix-issues/scripts/filter-in-flight-issue-claims.sh
+  skills/fix-issues/scripts/filter-unresearched-candidates.sh
+  skills/fix-issues/scripts/record-skip.sh
+  skills/run-plan/scripts/claim-plan.sh
+  skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh
+  skills/work-on-plans/scripts/filter-mode-mismatch-plans.sh
+  skills/do/SKILL.md
+  skills/draft-plan/references/brainstorm.md
+)
+RP_SRC="$(fn_source zskills_resolve_python)"
+if [ -z "$RP_SRC" ] || [ ! -f "$RP_SRC" ]; then
+  fail "drift: zskills_resolve_python source-of-truth file not found ($RP_SRC)"
+else
+  for CONSUMER in "${RESOLVE_PYTHON_CONSUMERS[@]}"; do
+    if [ ! -f "$CONSUMER" ]; then
+      fail "drift: $CONSUMER zskills_resolve_python consumer file not found"
+      continue
+    fi
+    if diff <(sed -n "/^zskills_resolve_python()/,/^}$/p" "$CONSUMER") \
+            <(sed -n "/^zskills_resolve_python()/,/^}$/p" "$RP_SRC") \
+            > /dev/null; then
+      pass "drift: $CONSUMER zskills_resolve_python matches source-of-truth"
+    else
+      fail "drift: $CONSUMER zskills_resolve_python drifted from $RP_SRC"
+    fi
+  done
+fi
 
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed (of $((PASS_COUNT + FAIL_COUNT)))"

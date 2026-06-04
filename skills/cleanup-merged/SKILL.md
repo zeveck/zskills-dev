@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `--force`) — they are always skipped.
 metadata:
-  version: "2026.06.03+400f9a"
+  version: "2026.06.04+4fda47"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -206,7 +206,21 @@ Default empty array.
 CONFIG_FILE=".claude/zskills-config.json"
 PROTECTED_BRANCHES=()
 if [ -f "$CONFIG_FILE" ]; then
-  PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+  # Resolve a WORKING Python 3 (probe-RUN each candidate: on Windows
+  # `command -v python3` finds a non-executable MS Store stub). Honors
+  # ZSKILLS_PYTHON; empty if none works.
+  zskills_resolve_python() {
+    local cand
+    for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+      [ -n "$cand" ] || continue
+      command -v "$cand" >/dev/null 2>&1 || continue
+      if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+        command -v "$cand"; return 0
+      fi
+    done
+    return 1
+  }
+  PYTHON="$(zskills_resolve_python || true)"
   if [ -n "$PYTHON" ]; then
     while IFS= read -r p; do
       [ -n "$p" ] && PROTECTED_BRANCHES+=("$p")

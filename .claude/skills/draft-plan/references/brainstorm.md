@@ -129,7 +129,21 @@ pidfile is mandatory so a later call can find and stop the server. Spec the idio
 literally:
 
 ```bash
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+# Resolve a WORKING Python 3 (probe-RUN each candidate: on Windows
+# `command -v python3` finds a non-executable MS Store stub). Honors
+# ZSKILLS_PYTHON; empty if none works.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+PYTHON="$(zskills_resolve_python || true)"
 DEMO_DIR="/tmp/draft-plan-demo-$TRACKING_ID"; mkdir -p "$DEMO_DIR"
 # Serve on an OS-assigned free port; the python prints its URL to .serve.url.
 "$PYTHON" - "$DEMO_DIR" > "$DEMO_DIR/.serve.url" 2>&1 <<'PY' &
