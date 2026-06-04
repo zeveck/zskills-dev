@@ -36,7 +36,6 @@ import argparse
 import contextlib
 import copy
 import errno
-import fcntl
 import json
 import os
 import pathlib
@@ -48,6 +47,13 @@ import sys
 import threading
 import time
 import urllib.parse
+
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl
+    fcntl = None
+if sys.platform == "win32":
+    import msvcrt
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -285,10 +291,27 @@ def _state_lock(main_root: pathlib.Path):
         str(lock_path), os.O_RDWR | os.O_CREAT, 0o644
     )
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        with _STATE_THREAD_LOCK:
-            yield
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        if sys.platform == "win32":
+            # msvcrt.locking locks `nbytes` from the CURRENT file position;
+            # ensure the lock file has >=1 byte to lock, then lock from offset 0.
+            os.lseek(fd, 0, os.SEEK_SET)
+            try:
+                os.write(fd, b"\0")
+            except OSError:
+                pass
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            try:
+                with _STATE_THREAD_LOCK:
+                    yield
+            finally:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            with _STATE_THREAD_LOCK:
+                yield
+            fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
 

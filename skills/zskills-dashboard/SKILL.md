@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.04+771ba5"
+  version: "2026.06.04+1b3132"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -79,12 +79,18 @@ The PID file, log file, and tracking markers all live under
 ```bash
 if [ -n "${ZSKILLS_DASHBOARD_ROOT:-}" ] && [ -d "$ZSKILLS_DASHBOARD_ROOT" ]; then
   MAIN_ROOT=$(cd "$ZSKILLS_DASHBOARD_ROOT" && pwd)
+elif [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -d "$CLAUDE_PROJECT_DIR" ]; then
+  MAIN_ROOT=$(cd "$CLAUDE_PROJECT_DIR" && pwd)
 else
   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 fi
 PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
 LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
-PKG_PARENT="$MAIN_ROOT/skills/zskills-dashboard/scripts"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts" ]; then
+  PKG_PARENT="${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts"
+else
+  PKG_PARENT="$MAIN_ROOT/skills/zskills-dashboard/scripts"
+fi
 # Dual-lane resolution: plugin install (${CLAUDE_PLUGIN_ROOT}) first, then
 # .claude/skills/... mirror (legacy /update-zskills install lane), then
 # source-tree fallback (zskills repo + tests).
@@ -313,8 +319,10 @@ if [ "$SUB" = "start" ]; then
   # Launch detached. cd into MAIN_ROOT so the server's resolve_main_root
   # cwd-walk lands here. PYTHONPATH prepend keeps the package importable
   # without an install. nohup + disown survives parent-shell exit.
-  # Note: PYTHONPATH="$PKG_PARENT:..." resolves at runtime to
-  # PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts:... (per DA-5).
+  # Note: PYTHONPATH="$PKG_PARENT:..." resolves at runtime to either
+  # PYTHONPATH=${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts:... (plugin lane)
+  # or PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts:... (source/legacy) —
+  # see PKG_PARENT dual-lane resolution above (per DA-5).
   # When ZSKILLS_DASHBOARD_ROOT is set, pass --main-root so the server's
   # collector reads state from the override path (worktree verification).
   MAIN_ROOT_FLAG=""
@@ -633,8 +641,10 @@ The dashboard reads `.claude/zskills-config.json` for one field:
 - **MAIN_ROOT-anchored paths.** Every read/write goes through
   `$MAIN_ROOT/.zskills/...`, never cwd-relative — invoking the skill
   from a worktree must still see the main repo's PID file.
-- **PYTHONPATH discipline.** `start` prepends
-  `$MAIN_ROOT/skills/zskills-dashboard/scripts` to `PYTHONPATH` so
+- **PYTHONPATH discipline.** `start` prepends `$PKG_PARENT` to
+  `PYTHONPATH` — resolved dual-lane to
+  `${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts` (plugin lane)
+  or `$MAIN_ROOT/skills/zskills-dashboard/scripts` (source/legacy) — so
   `python3 -m zskills_monitor.server` resolves the package without an
   install step (per DA-5).
 - **Verify after every state change.** `start` curls
