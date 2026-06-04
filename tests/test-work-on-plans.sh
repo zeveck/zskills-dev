@@ -97,6 +97,17 @@ extract_or_die "schedule_under_1h" \
   '^### `every SCHEDULE' '^### `stop`'
 
 # Source the extracted production functions.
+#
+# The extracted heredocs now carry the canonical config-resolution source
+# block, whose first line is `[ -f "${CLAUDE_PLUGIN_ROOT}/…" ]`. In
+# production both CLAUDE_PLUGIN_ROOT (plugin lane) or CLAUDE_PROJECT_DIR
+# (update-zskills lane) are always set; under this suite's `set -u` an unset
+# CLAUDE_PLUGIN_ROOT would abort with "unbound variable". Provide the env the
+# production fences legitimately require — point both at $REPO_ROOT, which
+# carries the dogfooding mirror AND the source tree, so the block is both
+# set-u-safe and functional (it sources a REAL prelude and resolves $PYTHON).
+export CLAUDE_PLUGIN_ROOT="$REPO_ROOT"
+export CLAUDE_PROJECT_DIR="$REPO_ROOT"
 # shellcheck source=/dev/null
 . "$EXTRACT_SH"
 

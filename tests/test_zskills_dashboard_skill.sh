@@ -276,7 +276,7 @@ sanity_fences() {
   printf '%s' "$VERIFY_FENCE" | grep -qF 'local pid="$1"'                                       || { echo "FATAL: verify fence not 1-arg (production signature)" >&2; ok=0; }
   printf '%s' "$VERIFY_FENCE" | grep -qF 'main_root="$2"'                                       && { echo "FATAL: verify fence has a 2-arg signature (transcription artifact)" >&2; ok=0; }
   printf '%s' "$MARKER_FENCE" | grep -qF 'write_tracking_marker() {'                            || { echo "FATAL: marker fence missing function def" >&2; ok=0; }
-  printf '%s' "$START_FENCE"  | grep -qF 'nohup python3 -m zskills_monitor.server'              || { echo "FATAL: start fence missing launch" >&2; ok=0; }
+  printf '%s' "$START_FENCE"  | grep -qF 'nohup "$PYTHON" -m zskills_monitor.server'             || { echo "FATAL: start fence missing launch" >&2; ok=0; }
   printf '%s' "$STOP_FENCE"   | grep -qF 'kill -TERM "$STOP_PID"'                               || { echo "FATAL: stop fence missing SIGTERM" >&2; ok=0; }
   printf '%s' "$STATUS_FENCE" | grep -qF 'Dashboard running at http://127.0.0.1:$ST_PORT/'      || { echo "FATAL: status fence missing report" >&2; ok=0; }
   [ "$ok" -eq 1 ] || exit 2
