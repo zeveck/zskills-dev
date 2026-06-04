@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # nudge-restart-to-materialise.sh — UserPromptSubmit restart nudge (#1080).
 #
 # THE GAP: after `/plugin install zs@zskills` -> `/reload-plugins`, the
@@ -84,11 +84,43 @@ MARKER="$MARKER_DIR/restart-nudge-shown-$SESSION_ID"
 mkdir -p "$MARKER_DIR" 2>/dev/null || true
 : > "$MARKER" 2>/dev/null || true
 
-# Print the nudge to stdout (advisory; UserPromptSubmit stdout is surfaced to
-# the user as additional context).
-cat <<'NUDGE'
-zskills: the plugin is loaded but setup isn't finished. /reload-plugins does not run the one-time materialisation step, so the verifier/implementer agents, two hooks, the rendered rules file, and your .claude/zskills-config.json have NOT been written yet. Run /clear (or exit and restart Claude Code) to fire the SessionStart hook and finish setup. This only needs to happen once.
-NUDGE
+# Emit the nudge as UserPromptSubmit JSON on stdout. We use TWO channels:
+#
+#   * top-level `systemMessage` — the USER-VISIBLE channel. A live Claude Code
+#     spike (#1088) confirmed a UserPromptSubmit hook returning `systemMessage`
+#     renders to the user as a NON-BLOCKING notice (CLI-prefixed with
+#     "UserPromptSubmit says:") while the prompt STILL reaches the model. Bare
+#     stdout (the prior implementation) only reached the model — the bug #1088
+#     fixes. NOTE: the "UserPromptSubmit says:" prefix is CLI-applied and not
+#     controllable here, so the message is worded to read well after it (it does
+#     NOT begin with "UserPromptSubmit").
+#   * hookSpecificOutput.additionalContext (UserPromptSubmit) — the MODEL-FACING
+#     channel, so the agent is also aware and can reinforce the nudge.
+#
+# The text is essentially static. Build the JSON with Python (json.dumps -> safe
+# escaping) via the shared resolver sourced from detect-install-state.sh; if no
+# Python is reachable, fall back to a carefully hand-escaped printf with the same
+# fixed strings (the message has no shell/JSON metacharacters, so this is safe).
+SYSMSG="zskills: the plugin is loaded but setup isn't finished. /reload-plugins does not run the one-time materialisation step, so the verifier/implementer agents, two hooks, the rendered rules file, and your .claude/zskills-config.json have NOT been written yet. Run /clear (or exit and restart Claude Code) to fire the SessionStart hook and finish setup. This only needs to happen once."
+CTXMSG="zskills setup is incomplete: the plugin is loaded but the SessionStart materialiser has not run (/reload-plugins does not fire it), so the 5 consumer-side artifacts and .claude/zskills-config.json are not written yet. Tell the user to run /clear (or restart Claude Code) to finish setup — this only needs to happen once."
+
+PY="$(zskills_resolve_python 2>/dev/null || true)"
+if [ -n "$PY" ]; then
+  ZS_SYSMSG="$SYSMSG" ZS_CTXMSG="$CTXMSG" "$PY" - <<'PYJSON' 2>/dev/null || printf '%s\n' "{\"systemMessage\":\"$SYSMSG\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"$CTXMSG\"}}"
+import json, os
+print(json.dumps({
+    "systemMessage": os.environ["ZS_SYSMSG"],
+    "hookSpecificOutput": {
+        "hookEventName": "UserPromptSubmit",
+        "additionalContext": os.environ["ZS_CTXMSG"],
+    },
+}))
+PYJSON
+else
+  # No Python. The two messages contain no JSON metacharacters (no quotes,
+  # backslashes, or control chars), so direct interpolation is safe.
+  printf '%s\n' "{\"systemMessage\":\"$SYSMSG\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"$CTXMSG\"}}"
+fi
 
 # Advisory hook — always succeed, never block.
 exit 0

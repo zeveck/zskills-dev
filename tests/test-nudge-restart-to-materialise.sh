@@ -7,12 +7,22 @@
 # consumer is stuck half-installed (lane==fresh) with nothing telling them to
 # restart. This hook fires on the next prompt and prints a one-time nudge.
 #
+# #1088 — the nudge MUST reach the USER, not just the model. The hook now
+# emits UserPromptSubmit JSON with a top-level `systemMessage` field (the
+# user-visible, non-blocking channel — confirmed by a live Claude Code spike)
+# plus hookSpecificOutput.additionalContext (model-facing). The prior
+# implementation emitted bare stdout, which only reached the model. This test
+# asserts the user-visible `systemMessage` field is emitted and that the output
+# is valid JSON with a non-empty `systemMessage` — NOT merely "something on
+# stdout".
+#
 # Hermetic: a tmpdir fixture $PROJ (consumer) + a fixture $PLUGIN carrying
 # detect-install-state.sh. We feed a UserPromptSubmit JSON on stdin and drive
 # the hook directly.
 #
 # Cases:
-#   (a) fresh + plugin-root set + no marker  -> nudge emitted + marker created.
+#   (a) fresh + plugin-root set + no marker  -> systemMessage JSON emitted +
+#                                               valid JSON + marker created.
 #   (b) marker already present               -> silent (no nudge).
 #   (c) lane == plugin (sentinelled artifact)-> silent.
 #   (d) lane == update-zskills (legacy)      -> silent.
@@ -24,8 +34,21 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 HOOK="$REPO_ROOT/hooks/nudge-restart-to-materialise.sh"
-# A stable substring of the nudge message (load-bearing assertion target).
+# A stable substring of the nudge message (load-bearing assertion target). The
+# hook now delivers this via the user-visible top-level `systemMessage` JSON
+# field (#1088), not bare stdout.
 NUDGE_MARK="the plugin is loaded but setup isn't finished"
+
+# Resolve a working Python 3 for the JSON-shape assertions (#1088). The repo
+# requires Python 3 (no jq); the suite runs in a Python-3 environment.
+PY=""
+for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+  [ -n "$cand" ] || continue
+  command -v "$cand" >/dev/null 2>&1 || continue
+  if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+    PY="$(command -v "$cand")"; break
+  fi
+done
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -65,11 +88,51 @@ else
   fail "a1. hook exited non-zero ($RC_A)"
 fi
 
-if printf '%s' "$OUT_A" | grep -qF "$NUDGE_MARK"; then
-  pass "a2. fresh+plugin-root+no-marker: nudge emitted to stdout"
+# #1088 — the nudge MUST be delivered via the user-visible top-level
+# `systemMessage` JSON field, NOT bare stdout. Assert: (1) the output is valid
+# JSON, (2) it has a non-empty top-level `systemMessage`, and (3) that
+# systemMessage carries the nudge text. This tightens the contract from
+# "something on stdout" to "the user-visible field is populated".
+if [ -z "$PY" ]; then
+  fail "a2. no Python 3 available to validate systemMessage JSON (#1088)"
 else
-  fail "a2. fresh+plugin-root+no-marker: nudge NOT emitted"
-  printf '      stdout: %s\n' "$OUT_A"
+  A2_RESULT="$(ZS_OUT="$OUT_A" NUDGE_MARK="$NUDGE_MARK" "$PY" - <<'PYCHK'
+import os, json
+raw = os.environ.get("ZS_OUT", "")
+try:
+    d = json.loads(raw)
+except Exception as e:
+    print("NOTJSON:%s" % e); raise SystemExit(0)
+sm = d.get("systemMessage")
+if not isinstance(sm, str) or not sm.strip():
+    print("NOSYSMSG"); raise SystemExit(0)
+if os.environ["NUDGE_MARK"] not in sm:
+    print("MARKMISSING"); raise SystemExit(0)
+hso = d.get("hookSpecificOutput", {})
+if hso.get("hookEventName") != "UserPromptSubmit" or not (hso.get("additionalContext") or "").strip():
+    print("BADCTX"); raise SystemExit(0)
+print("OK")
+PYCHK
+)"
+  case "$A2_RESULT" in
+    OK)
+      pass "a2. fresh+plugin-root+no-marker: valid JSON with non-empty user-visible systemMessage carrying the nudge + UserPromptSubmit additionalContext (#1088)" ;;
+    NOTJSON:*)
+      fail "a2. emitted output is not valid JSON ($A2_RESULT)"
+      printf '      stdout: %s\n' "$OUT_A" ;;
+    NOSYSMSG)
+      fail "a2. emitted JSON has no non-empty top-level systemMessage (#1088: nudge must reach the user, not bare stdout)"
+      printf '      stdout: %s\n' "$OUT_A" ;;
+    MARKMISSING)
+      fail "a2. systemMessage present but missing the nudge text (\"$NUDGE_MARK\")"
+      printf '      stdout: %s\n' "$OUT_A" ;;
+    BADCTX)
+      fail "a2. hookSpecificOutput.additionalContext (UserPromptSubmit) missing/empty"
+      printf '      stdout: %s\n' "$OUT_A" ;;
+    *)
+      fail "a2. unexpected JSON-check result: $A2_RESULT"
+      printf '      stdout: %s\n' "$OUT_A" ;;
+  esac
 fi
 
 MARKER_A="$PROJ_A/.zskills/restart-nudge-shown-$SID"
