@@ -77,11 +77,9 @@ it that way:
   branch, create the pull request, monitor CI, and run the fix cycle on a
   failure. `/land-pr` is an internal helper you do not type directly; reach
   for it through `/commit pr`.
-- **`/do`** and **`/quickfix`** — peer skills for one-commit changes. They
-  carry a change through triage, review, and landing, and call `/commit` to
-  land their work. Pick between them by project policy: when the project
-  protects its main branch, use `/do` (which works in an isolated
-  worktree); otherwise either works.
+- **`/do`** — the workhorse for one-commit changes. It carries a change
+  through triage, review, and landing in an isolated worktree, and calls
+  `/commit` to land the work.
 - **`/run-plan`** and **`/fix-issues`** — larger orchestration skills that
   also land their work through `/commit` and `/land-pr`.
 - **`/cleanup-merged`** — run this *after* a PR you opened with `/commit pr`

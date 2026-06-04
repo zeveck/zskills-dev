@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.06.03+a3e088"
+  version: "2026.06.04+d110af"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [<guidance>] — Adversarial Test-Spec Drafter
@@ -145,7 +145,7 @@ fi
   in Phase 6 succeeds, dispatch `/land-pr` to push the branch, open a
   PR, monitor CI, and auto-merge. Without `auto`, the spec-augmented
   plan is committed in the worktree but no PR is opened. Mirrors `auto`
-  in `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, `/draft-plan`,
+  in `/run-plan`, `/do`, `/fix-issues`, `/draft-plan`,
   `/refine-plan`.
 - **guidance...** (optional) — any tokens not matched as plan file,
   `rounds N`, or `auto` are joined with spaces into **guidance text** —

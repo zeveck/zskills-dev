@@ -8,7 +8,7 @@
 #   - plan-scale      (Action now: /draft-plan or /run-plan)
 #   - bug-unclear-cause (Action now: /investigate OR Verdict: UNCLEAR)
 #   - unresearched    (Verdict: NOT YET RESEARCHED OR missing blurb)
-#   - null            (everything else — /do pr, /quickfix, etc.)
+#   - null            (everything else — /do pr, /do, etc.)
 #
 # Also asserts:
 #   - mid-line ** ** mentions of /draft-plan in qualified-actionable
@@ -96,9 +96,9 @@ SYNTHETIC = """
 
 ---
 
-### #107 — actionable: /quickfix
+### #107 — actionable: /do
 
-**Action now:** /quickfix prose-only.
+**Action now:** /do prose-only.
 
 ---
 
@@ -110,7 +110,7 @@ SYNTHETIC = """
 
 ### #109 — qualified-actionable mentions /draft-plan mid-text (must NOT match plan-scale)
 
-**Action now:** Fix #1 prose roll-in (combined /quickfix S). Fix #2 deferred to /draft-plan when prioritized.
+**Action now:** Fix #1 prose roll-in (combined /do S). Fix #2 deferred to /draft-plan when prioritized.
 
 ---
 
@@ -244,7 +244,7 @@ for line in data['failures']:
       "synthetic #103 bug-unclear-cause (/investigate prefix)" \
       "synthetic #104 bug-unclear-cause (Verdict UNCLEAR fallback)" \
       "synthetic #105 unresearched (NOT YET RESEARCHED)" \
-      "synthetic #106-108 actionable null (/do pr, /quickfix, sprint)" \
+      "synthetic #106-108 actionable null (/do pr, /do, sprint)" \
       "synthetic #109 mid-text /draft-plan in qualified action -> null" \
       "synthetic #110 long-label truncates to <=60 chars" \
       "synthetic #111 deferred (none + leave open)" \

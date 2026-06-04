@@ -594,33 +594,14 @@ check fix-issues        "next-section staleness step (#729/#735)"  'Peek at the 
 check zskills-dashboard "ZSKILLS_DASHBOARD_ROOT contract (#704/#735)" 'ZSKILLS_DASHBOARD_ROOT'
 
 echo ""
-echo "=== auto grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
-# AC2.2 — AUTO_FLAG initializer present in all 4 PR-landing callers.
-check_fixed quickfix    "AUTO_FLAG init"        'AUTO_FLAG=0'
+echo "=== auto grammar ==="
 
-# QUICKFIX_GRAMMAR_REDESIGN Phase 4 (AC4.12, AC4.13) — positional
-# from-here/skip-tests replace --`-prefixed flags; --yes was
-# removed entirely; WI 1.10 `read -r` block was deleted.
-# Issue #810: `--force` (dashed) replaces the bare positional `force` form
-# for cross-skill consistency (also pinned on /do, /work-on-plans,
-# /cleanup-merged in the "--force form normalization" block below).
-check_fixed quickfix    "positional from-here arm"   '[fF][rR][oO][mM]-[hH][eE][rR][eE]) FROM_HERE=1'
-check_fixed quickfix    "positional skip-tests arm"  '[sS][kK][iI][pP]-[tT][eE][sS][tT][sS]) SKIP_TESTS=1'
-check_fixed quickfix    "--force arm (issue #810)"   '--force) FORCE=1'
-check_not   quickfix    "no bare 'force)' arm (#810)" '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1'
-check_not   quickfix    "no YES_FLAG variable (AC4.13)"          'YES_FLAG'
-check_not   quickfix    "no `read -r answer` block (AC4.13)"     'read -r answer'
-check       quickfix    "argument-hint [from-here]"  'argument-hint:.*\[from-here\]'
-check_not   quickfix    "argument-hint NO [--yes]"   'argument-hint:.*\[--yes\]'
-check_not   quickfix    "argument-hint NO [--force] (#961 reverses #810)" 'argument-hint:.*--force'
-check_not   quickfix    "argument-hint NO bare [force] (issue #810)" 'argument-hint:.*\[force\]'
-
-# Issue #810 — --force form normalization across all four skills.
-# Bare positional `force` was the form on /quickfix and /cleanup-merged;
-# /do and /work-on-plans were already on the dashed form. Now all four
+# Issue #810 — --force form normalization across the force-accepting skills.
+# Bare positional `force` was the form on /cleanup-merged;
+# /do and /work-on-plans were already on the dashed form. Now all
 # accept `--force`. This block pins the dashed parser arm on every
 # skill that accepts a force override, and pins the absence of any
-# bare-`force)` case branch on the two that previously had one.
+# bare-`force)` case branch on the one that previously had one.
 #
 # /do — pre-flight bash-regex parser detects --force out of $ARGUMENTS.
 check_fixed do            "--force pre-flight parser (issue #810)" '(^|[[:space:]])--force($|[[:space:]])'
@@ -640,48 +621,11 @@ check_fixed fix-issues  "AUTO_FLAG init"        'AUTO_FLAG=0'
 
 check_fixed do          "AUTO_FLAG init"        'AUTO_FLAG=0'
 
-# Negative: no --yes arm anywhere in /quickfix beyond the migration-redirect
-# error message itself (that single mention is acceptable as a hard-error
-# legacy redirect; absence of YES_FLAG variable already covered above by
-# `no YES_FLAG variable (AC4.13)`).
-check_not   quickfix    "no --yes accept arm (Phase 4)" '--yes\)[[:space:]]*YES_FLAG'
-
 echo ""
 echo "=== /fix-issues — structural landmarks ==="
 check fix-issues "Phase 3"           '^## Phase 3'
 check fix-issues "Phase 6 Land"      '^## Phase 6'
 check fix-issues "Failure Protocol"  '^## Failure Protocol'
-
-echo ""
-echo "=== /quickfix — behavior contracts (PR_LANDING_UNIFICATION Phase 5) ==="
-# WI 5.6 — verify Phase 7 migration is mechanical:
-#   1. /quickfix dispatches /land-pr via the Skill tool (CI poll +
-#      fix-cycle now present as additive coverage on top of the post-#151
-#      triage + plan-review gates).
-#   2. No inline `gh pr create` — owned by /land-pr's pr-push-and-create.sh.
-#   3. No "Fire-and-forget" prose — replaced by the new full-lifecycle
-#      description (`triage → review → commit → push → PR → CI poll →
-#      fix cycle`). Note: any `--force` or `--fill` references elsewhere
-#      in the skill are unaffected; only the literal "Fire-and-forget"
-#      prose is removed.
-check_fixed quickfix "Phase 7 dispatches /land-pr" 'land-pr'
-check_not   quickfix "no inline gh pr create"      'gh pr create'
-check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
-
-echo ""
-echo "=== /quickfix — issue-claim wiring (claim-work-item Phase 2 / W2.4) ==="
-# /quickfix parses the issue number (proceeds only under `force` since
-# triage REDIRECTs issue refs to /fix-issues), acquires at WI 1.8 around
-# the Tracking-setup block, releases in the Phase 7 finalize + abandon
-# sites. Reuses the existing PIPELINE_ID="quickfix.$SLUG".
-check_fixed quickfix "parses ISSUE_NUMS array"   'ISSUE_NUMS+=("${BASH_REMATCH[4]}")'
-check_fixed quickfix "back-compat ISSUE_NUM"     'ISSUE_NUM="${ISSUE_NUMS[0]:-}"'
-check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"'
-check_fixed quickfix "fan-out acquire"           'for ISSUE_NUM in "${ISSUE_NUMS[@]}"'
-check_fixed quickfix "acquires issue claim"      'bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
-check_fixed quickfix "partial-acquire rollback"  'for _RB in "${_ACQUIRED[@]}"'
-check_fixed quickfix "release fan-out"           'for _ISSUE_N in "${ISSUE_NUMS[@]}"'
-check_fixed quickfix "releases issue claim"      'claim-issue.sh" release "$_ISSUE_N" --require-pipeline'
 
 echo ""
 echo "=== /investigate — issue-claim wiring (claim-work-item Phase 2 / W2.1) ==="
@@ -768,11 +712,6 @@ check_in_file_near fix-issues  "modes/sprint.md"             "fix-agent pins imp
 check_in_file_near fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near do          "modes/pr.md"                "impl+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
-# Issue #836: /quickfix's agent-dispatched (WI 1.11) and fix-cycle (Phase
-# 7) impl-dispatch pins moved into modes/execute.md and modes/land.md
-# respectively when the lifecycle was split out of SKILL.md.
-check_in_file_near quickfix    "modes/execute.md"           "agent-dispatched pins implementer" 'subagent_type: "implementer"' 'Agent' 0
-check_in_file_near quickfix    "modes/land.md"              "fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 
 # /draft-plan — quiz-mode conditional-load wiring (DRAFT_PLAN_QUIZ_MODE Phase
 # 3, R9; #944 collapsed the two booleans into STEERING_MODE). The interactive
@@ -951,22 +890,19 @@ cross_check_no_invocation "no inline gh pr merge (.claude/skills/)" \
   '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr merge\b' \
   "$REPO_ROOT/.claude/skills"
 
-# --- WI 6.1 (d) — All 8 callers dispatch /land-pr (5 impl + 3 drafting per #581) ---
+# --- WI 6.1 (d) — All 7 callers dispatch /land-pr (4 impl + 3 drafting per #581) ---
 # Substring match suffices because `land-pr` only appears in dispatch
 # contexts inside the caller files (verified during Phase 2-5 migrations
 # and #581's drafting-skill adoption).
 # These checks duplicate the per-skill assertions above (run-plan,
-# commit, do, fix-issues, quickfix, draft-plan, refine-plan, draft-tests
+# commit, do, fix-issues, draft-plan, refine-plan, draft-tests
 # already each have their own `dispatches /land-pr` check) but consolidate
 # them as a single cross-skill drift-prevention claim.
-# Issue #836: /quickfix dispatches /land-pr from its Phase 7 caller loop,
-# which moved to modes/land.md when the lifecycle was split out of SKILL.md.
 LAND_PR_CALLERS=(
   "skills/run-plan/modes/pr.md"
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/modes/land.md"
   "skills/draft-plan/SKILL.md"
   "skills/refine-plan/SKILL.md"
   "skills/draft-tests/modes/land.md"
@@ -982,7 +918,7 @@ for caller in "${LAND_PR_CALLERS[@]}"; do
   fi
 done
 if [ "$ALL_CALLERS_OK" -eq 1 ]; then
-  pass "[cross-skill] all 8 callers reference /land-pr (dispatch present)"
+  pass "[cross-skill] all 7 callers reference /land-pr (dispatch present)"
 fi
 
 # --- WI 6.1 (e) — Orchestrator-level dispatch verification ---
@@ -1020,7 +956,7 @@ for caller in "${LAND_PR_CALLERS[@]}"; do
   fi
 done
 if [ "$ORCH_DISPATCH_FAIL" -eq 0 ]; then
-  pass "[cross-skill] /land-pr dispatched at orchestrator level in all 8 callers (no nested-Agent markers within ±15 lines)"
+  pass "[cross-skill] /land-pr dispatched at orchestrator level in all 7 callers (no nested-Agent markers within ±15 lines)"
 fi
 
 echo ""
@@ -1038,36 +974,29 @@ echo "=== LAND_PR_BYPASS_HARDENING — Phase 4 conformance tripwires ==="
 # substring match (grep -nF) so indentation doesn't trip the locator.
 
 # Mapping: caller-file → fulfilled-marker-basename (used for textual checks).
-# Issue #836: /quickfix's caller loop + explicit-finalize moved to
-# modes/land.md; its fulfilled.quickfix start-marker is still written in
-# SKILL.md (WI 1.8). The map below keys the in-fence/finalize checks on the
-# land.md file (where the loop + finalize live).
 declare -A LANDPR_MARKER_BASENAME=(
   ["skills/commit/modes/pr.md"]="fulfilled.commit."
   ["skills/do/modes/pr.md"]="fulfilled.do."
   ["skills/fix-issues/modes/pr.md"]="fulfilled.fix-issues."
-  ["skills/quickfix/modes/land.md"]="fulfilled.quickfix."
 )
 
 # Callers that get the new fulfilled.<skill>.<id> start-marker AND
-# explicit-finalize block (commit/do/fix-issues). quickfix already had
-# its fulfilled.quickfix start-marker pre-plan (SKILL.md:637); after
-# issue #241 it ALSO has an in-fence explicit-finalize block — the
-# trap-on-EXIT pattern was unreliable (fired on skill entry, not flow
-# end). The in-fence check below now treats all 4 callers uniformly.
+# explicit-finalize block (commit/do/fix-issues). After issue #241 each
+# ALSO has an in-fence explicit-finalize block — the trap-on-EXIT pattern
+# was unreliable (fired on skill entry, not flow end). The in-fence check
+# below treats all 3 callers uniformly.
 NEW_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
 )
 
-# All 4 caller files (positive --tracking-id= + requires.land-pr precedence
-# asserts apply to all four).
+# All 3 caller files (positive --tracking-id= + requires.land-pr precedence
+# asserts apply to all three).
 ALL_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/modes/land.md"
 )
 
 # Helper: get line number of "BEGIN CANONICAL ... " (substring match).
@@ -1108,29 +1037,9 @@ done
 # --- Positive: each caller has a requires.land-pr.* write BEFORE LAND_ARGS= ---
 # R-1-3 textual-precedence assert. fix-issues writes the marker inside its
 # per-issue loop, BEFORE LAND_ARGS=.
-#
-# Issue #836: /quickfix split its caller loop (LAND_ARGS=) into
-# modes/land.md while the requires.land-pr.$SLUG write stays in SKILL.md
-# (WI 1.8). The runtime ordering still holds — the router reads SKILL.md
-# (which writes the marker) BEFORE it reads modes/land.md (which composes
-# LAND_ARGS=) — but the precedence is now CROSS-FILE by load order, so the
-# single-file line-number compare doesn't apply. For quickfix we assert
-# the marker write is in SKILL.md AND LAND_ARGS= is in modes/land.md (the
-# load order SKILL.md → land.md provides the precedence guarantee).
 for caller in "${ALL_CALLERS[@]}"; do
   caller_path="$REPO_ROOT/$caller"
   [ ! -f "$caller_path" ] && continue
-  if [ "$caller" = "skills/quickfix/modes/land.md" ]; then
-    qf_skill="$REPO_ROOT/skills/quickfix/SKILL.md"
-    req_in_skill=$(grep -cE 'requires\.land-pr\.' "$qf_skill")
-    args_in_land=$(grep -cE '^[[:space:]]*LAND_ARGS=' "$caller_path")
-    if [ "$req_in_skill" -ge 1 ] && [ "$args_in_land" -ge 1 ]; then
-      pass "[bypass-hardening] $caller requires.land-pr.* write in SKILL.md precedes LAND_ARGS= in land.md (cross-file load order; issue #836)"
-    else
-      fail "[bypass-hardening] $caller requires.land-pr.* precedes LAND_ARGS=" "req-in-SKILL.md=$req_in_skill args-in-land.md=$args_in_land"
-    fi
-    continue
-  fi
   req_line=$(grep -nE 'requires\.land-pr\.' "$caller_path" | head -1 | cut -d: -f1)
   args_line=$(grep -nE '^[[:space:]]*LAND_ARGS=' "$caller_path" | head -1 | cut -d: -f1)
   if [ -z "$req_line" ] || [ -z "$args_line" ]; then
@@ -1160,7 +1069,7 @@ for caller in "${NEW_CALLERS[@]}"; do
 done
 
 # --- Fence-survival assert (R-4-7 / DA-4-4 + R-5-11 + DA-5-4) ---
-# For each new caller AND quickfix: locate END anchor, locate next closing
+# For each new caller: locate END anchor, locate next closing
 # fence, assert that the relevant sed/rm finalize lines fall BETWEEN them.
 # Then counter-assert that no out-of-fence duplicate exists below the
 # closing fence (matched on the same marker basename).
@@ -1168,7 +1077,6 @@ FENCE_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/modes/land.md"
 )
 for caller in "${FENCE_CALLERS[@]}"; do
   caller_path="$REPO_ROOT/$caller"
@@ -1191,11 +1099,10 @@ for caller in "${FENCE_CALLERS[@]}"; do
   # Region IN-FENCE between END anchor and closing ```.
   region=$(sed -n "${end_line},${close_fence}p" "$caller_path")
 
-  # For all 4 callers (issue #241 unification): both `sed -i "s/^status:
+  # For all callers (issue #241 unification): both `sed -i "s/^status:
   # started$/status:` and `rm -f .*requires.land-pr.` MUST appear in the
-  # in-fence region. Pre-#241 /quickfix used a `trap … EXIT` registered in
-  # WI 1.8's fence which mis-fired on skill entry; after #241 it has the
-  # same in-fence explicit-finalize as commit/do/fix-issues.
+  # in-fence region. After #241 each has the same in-fence
+  # explicit-finalize block.
   has_sed_in=$(echo "$region" | grep -cE 'sed -i "s/\^status: started\$/status:' || true)
   has_rm_in=$(echo "$region"  | grep -cE 'rm -f .*requires\.land-pr\.' || true)
 
@@ -1219,15 +1126,6 @@ for caller in "${FENCE_CALLERS[@]}"; do
     fail "[bypass-hardening] $caller no duplicate finalize after close-fence" "dup_sed=$dup_sed dup_rm=$dup_rm below L$close_fence (status-rewrite in a stray fence would have unset \$LAND_OUTCOME)"
   fi
 done
-
-# --- /quickfix pre-existing fulfilled.quickfix.$SLUG byte anchor ---
-# SKILL.md:637 (per spec). Anchor on the surrounding lines as a byte-anchor
-# regression smoke. Use grep -nF and assert literal substring.
-if grep -nF 'MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG"' "$REPO_ROOT/skills/quickfix/SKILL.md" > /dev/null; then
-  pass "[bypass-hardening] quickfix preserves fulfilled.quickfix.\$SLUG byte anchor (SKILL.md:637)"
-else
-  fail "[bypass-hardening] quickfix preserves fulfilled.quickfix.\$SLUG byte anchor" 'MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG" not found'
-fi
 
 # --- /run-plan modes/pr.md: requires.land-pr cleanup AFTER END anchor ---
 # DA-3-4 fix per spec.
@@ -1537,7 +1435,7 @@ check_not_in_file land-pr scripts/pr-merge.sh           "no 2>/dev/null on falli
 # Issue #576: per-key assertion over the FULL canonical key set against
 # the canonical reference itself. If anyone edits caller-loop-pattern.md
 # and drops a sidecar key from the case-arm, the reference would drift
-# from the 6 caller copies — this fails-closed at the source-of-truth.
+# from the 5 caller copies — this fails-closed at the source-of-truth.
 for _LP_KEY in STATUS PR_URL PR_NUMBER PR_EXISTING CI_STATUS CI_LOG_FILE \
                MERGE_REQUESTED MERGE_REASON PR_STATE REASON \
                CONFLICT_FILES_LIST CALL_ERROR_FILE REBASE_STDERR_FILE; do
@@ -1556,7 +1454,7 @@ check_not land-pr "no source-based result parsing in caller pattern" \
 
 # --- Caller STATUS case-arm coverage (Issue #624) ---
 # /land-pr documents 12 STATUS values in its return envelope
-# (skills/land-pr/SKILL.md:158). The 5 caller skills + the canonical
+# (skills/land-pr/SKILL.md:158). The 4 caller skills + the canonical
 # reference pattern must enumerate every documented value as an explicit
 # case-arm — silent fall-through (e.g. `auto-rebase-blocked` reaching the
 # CI-status check below and being coerced to `pr-ready`) is a real-life
@@ -1569,13 +1467,10 @@ _LP_STATUS_VALUES="created monitored merged push-failed rebase-conflict create-f
 # whitespace) OR after `|` followed by `)` or `|`. This anchors on the
 # case-arm syntax so a mere mention in a comment does NOT satisfy.
 # Each entry is "skill_name relpath".
-# Issue #836: /quickfix's STATUS case-arms live in its Phase 7 caller loop,
-# now in modes/land.md.
 for _LP_PAIR in \
     "commit modes/pr.md" \
     "do modes/pr.md" \
     "fix-issues modes/pr.md" \
-    "quickfix modes/land.md" \
     "run-plan modes/pr.md" \
     "land-pr references/caller-loop-pattern.md"; do
   _LP_SKILL="${_LP_PAIR%% *}"
@@ -1794,14 +1689,14 @@ check_fixed research-and-go   "preflight: Agent-tool-required heading (issue #14
 echo ""
 echo "=== /draft-tests — structural existence pins (issue #861) ==="
 # PR #855 split /draft-tests's SKILL.md into 5 files (3 modes + 2 references).
-# This block mirrors the post-#849 /quickfix pin pattern: assert every split
-# file exists on BOTH the source tree (skills/draft-tests/) AND the install
-# mirror (.claude/skills/draft-tests/), failing closed if any vanishes. The
-# /draft-tests row in docs/issues/ISSUES_PLAN.md noted that prior coverage
+# This block asserts every split file exists on BOTH the source tree
+# (skills/draft-tests/) AND the install mirror (.claude/skills/draft-tests/),
+# failing closed if any vanishes. The /draft-tests row in
+# docs/issues/ISSUES_PLAN.md noted that prior coverage
 # (test-skill-conformance.sh:936 /land-pr caller array + variable-family
 # allowlist in test-skill-invariants.sh) is sideways — it gates downstream
 # behavior but never asserts the files themselves. This block closes that
-# gap symmetrically with /quickfix.
+# gap.
 DT_REQ_FILES=(
   "skills/draft-tests/modes/draft.md"
   "skills/draft-tests/modes/backfill.md"
@@ -3002,28 +2897,6 @@ for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/.claude/rules/zski
     pass "[propagation-prose] $rel contains 'no-CronDelete-on-confusion' rule literal"
   else
     fail "[propagation-prose] $rel" "missing literal: 'Never \`CronDelete\` on the strength of a confused fire'"
-  fi
-  # Issue #682 — /quickfix vs /do decision-table reframe: peers-not-tiers.
-  # The decision table previously framed /quickfix as the lighter / smaller
-  # task option ("FLOOR of with-review", "larger than /quickfix"), training
-  # agents to pattern-match on size. The real distinction is worktree-vs-
-  # main, gated by main_protected. Pin the new peer wording on both prose
-  # surfaces and negative-pin the old size-hierarchy phrases so they cannot
-  # silently regress.
-  if grep -qF 'They are PEERS, not TIERS' "$prose_file"; then
-    pass "[propagation-prose] $rel contains 'PEERS, not TIERS' decision-table reframe (#682)"
-  else
-    fail "[propagation-prose] $rel" "missing literal: 'They are PEERS, not TIERS' (#682)"
-  fi
-  if grep -qF 'Pick by **project policy, not task size**' "$prose_file"; then
-    pass "[propagation-prose] $rel contains 'pick by project policy, not task size' literal (#682)"
-  else
-    fail "[propagation-prose] $rel" "missing literal: 'Pick by **project policy, not task size**' (#682)"
-  fi
-  if grep -qF 'larger than `/quickfix`' "$prose_file"; then
-    fail "[propagation-prose] $rel" "obsolete size-hierarchy phrase 'larger than \`/quickfix\`' must be removed (#682)"
-  else
-    pass "[propagation-prose] $rel does not contain obsolete 'larger than /quickfix' phrase (#682)"
   fi
 done
 

@@ -45,7 +45,6 @@ export const DOCS_CATALOG = [
       { name: "/investigate", path: "docs/skills/investigate.md" },
       { name: "/plans", path: "docs/skills/plans.md" },
       { name: "/qe-audit", path: "docs/skills/qe-audit.md" },
-      { name: "/quickfix", path: "docs/skills/quickfix.md" },
       { name: "/refine-plan", path: "docs/skills/refine-plan.md" },
       { name: "/research-and-go", path: "docs/skills/research-and-go.md" },
       { name: "/research-and-plan", path: "docs/skills/research-and-plan.md" },

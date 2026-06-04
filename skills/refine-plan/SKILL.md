@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.06.03+be05a3"
+  version: "2026.06.04+d5e26a"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [<guidance>] — Adversarial Plan Refiner
@@ -137,7 +137,7 @@ fi
   in Phase 5 succeeds, dispatch `/land-pr` to push the branch, open a
   PR, monitor CI, and auto-merge. Without `auto`, the refined plan is
   committed in the worktree but no PR is opened. Mirrors `auto` in
-  `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, `/draft-plan`.
+  `/run-plan`, `/do`, `/fix-issues`, `/draft-plan`.
 
 **Detection:** scan `$ARGUMENTS` from the start:
 - The **first token** ending in `.md` is the plan file. If the token contains `/`, use as-is; otherwise resolve via `$ZSKILLS_PLANS_DIR/<token>` (sourcing `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the orchestrator's bash fence; falls back to `plans/` when config silent).

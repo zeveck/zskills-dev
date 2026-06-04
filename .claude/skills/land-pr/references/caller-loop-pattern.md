@@ -1,7 +1,7 @@
 # Canonical `/land-pr` caller loop pattern
 
 This is the production-ready bash that callers (Phases 2–5: `/run-plan`,
-`/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) copy verbatim and
+`/commit pr`, `/do pr`, `/fix-issues pr`) copy verbatim and
 customize only:
 
 1. The pre-invoke body-prep block (`<CALLER_PRE_INVOKE_BODY_PREP>`).

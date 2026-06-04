@@ -46,7 +46,7 @@ c_requires=0; c_step=0; c_verify=0; c_draft=0; c_refine=0; c_vpa=0; c_other=0
 while IFS= read -r f; do
   base=$(basename "$f")
   case "$base" in
-    fulfilled.run-plan.*|fulfilled.land-pr.*|fulfilled.commit.*|fulfilled.do.*|fulfilled.fix-issues.*|fulfilled.quickfix.*)
+    fulfilled.run-plan.*|fulfilled.land-pr.*|fulfilled.commit.*|fulfilled.do.*|fulfilled.fix-issues.*)
                                 preserve_count=$((preserve_count+1)) ;;
     fulfilled.verify-changes.*) c_verify=$((c_verify+1)) ;;
     fulfilled.draft-plan.*)     c_draft=$((c_draft+1)) ;;
@@ -102,7 +102,7 @@ done < <(find "$TRACKING_DIR" -type f -name 'requires.*')
 echo "Tracking dir: $TRACKING_DIR"
 echo ""
 echo "Preserving: $preserve_count"
-printf "  fulfilled.{run-plan,land-pr,commit,do,fix-issues,quickfix}.*  %d\n" "$preserve_count"
+printf "  fulfilled.{run-plan,land-pr,commit,do,fix-issues}.*  %d\n" "$preserve_count"
 echo ""
 echo "Clearing: $clear_count"
 printf "  requires.*                       %d\n" "$c_requires"
@@ -136,7 +136,7 @@ cleared=0
 while IFS= read -r f; do
   base=$(basename "$f")
   case "$base" in
-    fulfilled.run-plan.*|fulfilled.land-pr.*|fulfilled.commit.*|fulfilled.do.*|fulfilled.fix-issues.*|fulfilled.quickfix.*) ;;
+    fulfilled.run-plan.*|fulfilled.land-pr.*|fulfilled.commit.*|fulfilled.do.*|fulfilled.fix-issues.*) ;;
     *) rm -f "$f"; cleared=$((cleared+1)) ;;
   esac
 done < <(find "$TRACKING_DIR" -type f)

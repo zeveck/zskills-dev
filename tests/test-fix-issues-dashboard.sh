@@ -272,7 +272,7 @@ test_no_cap_drops_closed_only() {
 
 test_triage_cap_prose_present() {
   # #403: the "Cap to N happens AFTER triage" block must call out that
-  # in-batch + /quickfix tier routings count toward N, while unclear /
+  # in-batch + /do tier routings count toward N, while unclear /
   # plan-scale / vague routings are skipped without consuming a slot.
   if grep -qF 'Cap to N happens AFTER triage' "$SKILL" \
      && grep -qF 'do NOT count toward N' "$SKILL"; then

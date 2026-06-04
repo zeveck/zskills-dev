@@ -13,8 +13,8 @@
 <!-- prod-strip:end -->
 # Z Skills
 
-**24 core skills that plan, build, test, fix, and ship** — so one
-developer can run a full engineering team. (22 user-facing slash
+**23 core skills that plan, build, test, fix, and ship** — so one
+developer can run a full engineering team. (21 user-facing slash
 commands, 2 internal helpers, three block-diagram add-ons, and a
 battery of safety hooks.)
 
@@ -36,7 +36,7 @@ direct — your choice).
 - [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
 - [`docs/guides/workflows.md`](docs/guides/workflows.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
 - [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) — install via the plugin marketplace or the `/update-zskills` script.
-- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 22 user-facing skills + 2 helpers.
+- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 21 user-facing skills + 2 helpers.
 - [`docs/guides/inspecting-and-monitoring.md`](docs/guides/inspecting-and-monitoring.md) — observe a running zskills project.
 
 **[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
@@ -64,7 +64,7 @@ version-pinning idiom, and per-lane `.gitignore` guidance live in
 | | Plugin lane | `/update-zskills` lane |
 |---|---|---|
 | Install | `/plugin marketplace add zeveck/zskills`<br>`/plugin install zs@zskills` | clone + copy skills, then `/update-zskills install` |
-| Slash prefix | `/zs:run-plan`, `/zs:quickfix` | bare `/run-plan`, `/quickfix` |
+| Slash prefix | `/zs:run-plan`, `/zs:do` | bare `/run-plan`, `/do` |
 | Update | `/plugin marketplace update` | `/update-zskills install` |
 | `claude` CLI required on host | yes | no |
 
@@ -434,7 +434,7 @@ RUN_E2E=1 bash tests/run-all.sh          # + e2e-parallel-pipelines
 
 ## Skill catalog
 
-### 23 User-Facing Skills (`skills/`)
+### 21 User-Facing Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline. All are slash-invocable by the user. Two additional
@@ -460,7 +460,6 @@ by other skills — see Helpers below.
 |-------|---------|
 | `/run-plan` | Phase-by-phase plan execution with worktree isolation, verification gates, and auto-landing |
 | `/do` | Everyday workhorse for ad-hoc work (docs, fixes, refactors, content); optional worktree/push/scheduling |
-| `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
 
 #### Quality
 
@@ -493,13 +492,13 @@ by other skills — see Helpers below.
 
 | Skill | Purpose |
 |-------|---------|
-| `/land-pr` | PR landing helper — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by `/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, and `/quickfix`. `user-invocable: false` hides it from the `/` menu. |
+| `/land-pr` | PR landing helper — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by `/run-plan`, `/commit pr`, `/do pr`, and `/fix-issues`. `user-invocable: false` hides it from the `/` menu. |
 | `/manual-testing` | Playwright-cli UI-verification recipes (real mouse/keyboard events). `user-invocable: false`; dispatched by `/verify-changes`. |
 
 ### Block Diagram Add-on (`block-diagram/`)
 
 3 additional skills for block-diagram editors (`/add-block`, `/add-example`,
-`/model-design`). Not part of the core 25 — install if
+`/model-design`). Not part of the core 23 — install if
 your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 

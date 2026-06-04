@@ -22,8 +22,8 @@ Step 5.5 below) that reads `_ZSKILLS_TEST_RUNPLAN_*` env vars **only**
 when `_ZSKILLS_TEST_HARNESS=1`. Keep this guard FIRST so any code path
 that later reads `_ZSKILLS_TEST_*` env vars sees production-cleared
 values when the harness flag is absent. Symmetric to
-`/do`'s WI 2a.3 entry-point guard (`skills/do/SKILL.md`) and
-`/quickfix`'s WI 1a.3a guard — production behavior is byte-for-byte
+`/do`'s WI 2a.3 entry-point guard (`skills/do/SKILL.md`) — production
+behavior is byte-for-byte
 unchanged when `_ZSKILLS_TEST_HARNESS` is unset because the dispatch
 seam's only injected inputs are cleared here before they can be read.
 

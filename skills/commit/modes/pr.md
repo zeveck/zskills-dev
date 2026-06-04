@@ -58,7 +58,7 @@ sent at orchestrator level.
 - `$LANDED_SOURCE = "commit"`
 - No `--worktree-path` (no worktree — `/commit pr` runs in the main repo)
 - **`--auto` is gated on the positional `auto` token** (issue #236 —
-  matches /run-plan, /fix-issues, /do, /quickfix). Without `auto`,
+  matches /run-plan, /fix-issues, /do). Without `auto`,
   auto-merge stays OFF and the PR settles at `pr-ready` after CI passes;
   with `auto`, `LAND_ARGS` includes `--auto` and `/land-pr`'s existing
   auto-merge path takes over (same CI gate, same behavior as the other
@@ -92,9 +92,9 @@ fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="commit.$BRANCH_SLUG"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-# Echo (do not env-export) the pipeline id — matches /quickfix's tier-2
-# transcript-propagation idiom (`skills/quickfix/SKILL.md:672`) and
-# satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
+# Echo (do not env-export) the pipeline id — the tier-2
+# transcript-propagation idiom (the `echo "ZSKILLS_PIPELINE_ID=..."` line
+# below) satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
 # which forbids the env-export side-channel form. The Claude Code harness
 # propagates the variable into /land-pr's bash fences via the transcript,
 # where /land-pr Step 8b consumes it
@@ -131,8 +131,8 @@ LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --resul
 
 # Auto-merge gate (issue #236) — append `--auto` when the caller passed
 # the positional `auto` token (parsed in skills/commit/SKILL.md and
-# propagated as $AUTO_FLAG=1). Mirrors /run-plan, /fix-issues, /do,
-# /quickfix. Without the token, `/land-pr` runs through PR creation +
+# propagated as $AUTO_FLAG=1). Mirrors /run-plan, /fix-issues, /do.
+# Without the token, `/land-pr` runs through PR creation +
 # CI poll + fix-cycle but does NOT call `gh pr merge --auto --squash`;
 # the PR settles at `pr-ready` for human review.
 [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"

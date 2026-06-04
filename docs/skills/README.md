@@ -1,6 +1,6 @@
 # Z Skills Reference
 
-Per-skill reference for the **22 user-facing Z Skills**, plus the **2 internal
+Per-skill reference for the **21 user-facing Z Skills**, plus the **2 internal
 helpers** they dispatch (`/land-pr` and `/manual-testing` — not for direct use;
 in the docs viewer they appear under their own **Internal Skills** section).
 Looking for how to *combine* these skills into end-to-end workflows? See
@@ -23,7 +23,6 @@ Looking for how to *combine* these skills into end-to-end workflows? See
 | [`/investigate`](investigate.md) | Deep debugging for complex bugs |
 | [`/plans`](plans.md) | Plan dashboard: view status, find next ready plan |
 | [`/qe-audit`](qe-audit.md) | Quality engineering audit for test coverage gaps |
-| [`/quickfix`](quickfix.md) | Ship an in-flight edit as a one-commit PR |
 | [`/refine-plan`](refine-plan.md) | Refine in-progress plans against completed work |
 | [`/research-and-go`](research-and-go.md) | Full pipeline: decompose, plan, and execute autonomously |
 | [`/research-and-plan`](research-and-plan.md) | Decompose broad goals into executable sub-plans |
@@ -57,7 +56,6 @@ Core skills for running plans and fixing issues at scale.
 - [/fix-issues](fix-issues.md) -- Batch bug-fixing sprints with per-issue worktrees
 - [/work-on-plans](work-on-plans.md) -- Batch-execute the prioritized ready queue from the dashboard
 - [/do](do.md) -- Lightweight task dispatcher for ad-hoc work
-- [/quickfix](quickfix.md) -- Ship an in-flight edit as a one-commit PR from main
 - [/research-and-go](research-and-go.md) -- Full autonomous pipeline: decompose, plan, execute
 
 ### Planning & Design

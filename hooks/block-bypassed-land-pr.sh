@@ -374,7 +374,7 @@ SCRIPT="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}/scripts/land-pr-bypas
 # message-enrichment script is missing/broken (see sentinel check
 # below). The hook STILL DENIES — only the wording falls back.
 STATIC_FALLBACK='STOP: direct gh pr (create|merge --auto) from agent Bash bypasses /land-pr.
-Use /commit pr / /quickfix / /do pr / /fix-issues pr, or dispatch Skill { skill: "land-pr" }.
+Use /commit pr / /do pr / /fix-issues pr, or dispatch Skill { skill: "land-pr" }.
 Open a SEPARATE terminal for legitimate one-off manual operations.'
 
 USE_STATIC_FALLBACK=0

@@ -93,7 +93,7 @@ detect_install_state() {
   # anchors. A consumer's own non-zskills skill no longer counts as evidence.
   # (Derived from the repo's `skills/` directory names.)
   if [ "$uz_hit" -eq 0 ]; then
-    local _dis_zskills_skills="briefing cleanup-merged commit create-worktree do draft-plan draft-tests fix-issues fix-report investigate land-pr manual-testing plans qe-audit quickfix refine-plan research-and-go research-and-plan run-plan session-report update-zskills verify-changes work-on-plans zskills-dashboard"
+    local _dis_zskills_skills="briefing cleanup-merged commit create-worktree do draft-plan draft-tests fix-issues fix-report investigate land-pr manual-testing plans qe-audit refine-plan research-and-go research-and-plan run-plan session-report update-zskills verify-changes work-on-plans zskills-dashboard"
     local _sk_name
     for _sk_name in $_dis_zskills_skills; do
       if [ -f "$claude/skills/$_sk_name/SKILL.md" ]; then

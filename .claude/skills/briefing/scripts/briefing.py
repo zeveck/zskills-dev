@@ -1933,7 +1933,6 @@ _DOGFOOD_SOURCE_CANON = {
     'run-plan': 'run-plan',
     'draft-plan': 'draft-plan',
     'do': 'do',
-    'quickfix': 'quickfix',
     'commit': 'commit',
     'land-pr': 'land-pr',
     'fix-report': 'fix-report',
@@ -1953,7 +1952,6 @@ _DOGFOOD_SOURCE_PREFIXES = [
     ('fix-report', 'fix-report'),
     ('add-block', 'add-block'),
     ('add-example', 'add-example'),
-    ('quickfix', 'quickfix'),
     ('land-pr', 'land-pr'),
     ('commit', 'commit'),
     ('do', 'do'),
@@ -2050,7 +2048,6 @@ _DOGFOOD_SCOPE_HINTS = {
     'briefing': 'briefing',
     'commit': 'commit',
     'land-pr': 'land-pr',
-    'quickfix': 'quickfix',
     'do': 'do',
 }
 

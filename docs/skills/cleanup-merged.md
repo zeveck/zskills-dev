@@ -65,7 +65,7 @@ stale branches piling up.
 landing skill has merged a PR. Its companions are the PR-landing skills
 themselves:
 
-- **`/commit`, `/do`, `/quickfix`, `/fix-issues`, `/work-on-plans`** — the
+- **`/commit`, `/do`, `/fix-issues`, `/work-on-plans`** — the
   skills that produce and land PRs. Once their PR merges on GitHub, run
   `/cleanup-merged` to bring your clone up to date.
 - **`/land-pr`** — the shared helper those skills dispatch to actually open

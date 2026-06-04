@@ -137,7 +137,7 @@ are plain files you can read to confirm any claim a skill makes.
 
 Cleanup is built around exactly this split: it **keeps** the `fulfilled.*`
 completion records for the skills that land work (`/run-plan`, `/land-pr`,
-`/commit`, `/do`, `/fix-issues`, `/quickfix`) and clears everything else (the
+`/commit`, `/do`, `/fix-issues`) and clears everything else (the
 in-flight scaffolding). So after cleanup, the tracking directory *is* your
 completion history.
 

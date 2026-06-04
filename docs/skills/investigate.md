@@ -41,7 +41,7 @@ When the input is an issue number, `/investigate` also claims that issue first, 
 ## Companion skills
 
 - **`/fix-issues`** — the batch counterpart. `/investigate` is for one bug at a time; for working through several issues, use `/fix-issues`, which will redirect you here when a single bug needs deeper digging. When `/fix-issues` can't diagnose a bug within its normal flow (two failed attempts), it skips that issue with a note that it needs deeper investigation, and you then run `/investigate` on it. There is no automatic escalation — the hand-off is your decision.
-- **`/quickfix`** and **`/do`** — where the fix goes once the root cause is known. `/quickfix` assumes the fix is already understood; `/investigate` is what you run first when it isn't. Once `/investigate` has proven the cause, the fix itself can be carried by `/quickfix` (edit in place on `main`, valid only when `main` is unprotected) or `/do` (isolated in a worktree). Choose between those two by project policy.
+- **`/do`** — where the fix goes once the root cause is known. `/do` assumes the fix is already understood; `/investigate` is what you run first when it isn't. Once `/investigate` has proven the cause, the fix itself can be carried by `/do`, which isolates the work in a worktree and lands a one-commit PR.
 
 ## Arguments
 

@@ -40,7 +40,7 @@ When you are about to wrap up and clear the conversation, run the hand-off form 
 ## Companion skills
 
 - **`/briefing`** — the cross-session, multi-pipeline status companion. `/session-report` is scoped to the one conversation you are in; `/briefing` reports on the activity of long-running orchestration work across sessions. Reach for `/briefing` when you want the wider picture, `/session-report` when you want to close out the session in front of you.
-- **`/run-plan`** and **`/quickfix`** — examples of the landing skills whose output `/session-report` verifies. When the session executed a plan or shipped a quick fix, the report checks the resulting commits, PR state, and plan phase markers against ground truth rather than taking your word for it.
+- **`/run-plan`** and **`/do`** — examples of the landing skills whose output `/session-report` verifies. When the session executed a plan or shipped an ad-hoc change, the report checks the resulting commits, PR state, and plan phase markers against ground truth rather than taking your word for it.
 
 ## Arguments
 

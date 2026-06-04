@@ -1,11 +1,11 @@
 # Z Skills documentation
 
-Z Skills turns Claude Code into a disciplined engineering team — 22 user-facing slash commands that plan, build, test, fix, and ship with verification at every step.
+Z Skills turns Claude Code into a disciplined engineering team — 21 user-facing slash commands that plan, build, test, fix, and ship with verification at every step.
 
 These docs are organised in two halves:
 
 - **[Guides](guides/README.md)** — install instructions, end-to-end workflows, and operational concepts. **Start here if you're new to zskills.**
-- **[Skills reference](skills/README.md)** — per-skill detail pages for the 22 user-facing slash commands plus 2 internal helpers. Reach for this when you need to know exactly what a single skill does, its arguments, and its modes.
+- **[Skills reference](skills/README.md)** — per-skill detail pages for the 21 user-facing slash commands plus 2 internal helpers. Reach for this when you need to know exactly what a single skill does, its arguments, and its modes.
 
 ## New here? Read in this order
 

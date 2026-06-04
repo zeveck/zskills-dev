@@ -15,7 +15,7 @@ When using the Agent tool:
 - Treat any subagent type as Haiku-by-default until you have read its agent definition and confirmed otherwise. When in doubt, pass `model: "opus"` explicitly, or use `general-purpose`.
 - **Sonnet** is acceptable only for rare simple+mechanical work (bulk renames, find-replace, format conversion). Never for analysis, review, verification, or judgment.
 
-**Impl-agent dispatch.** When dispatching a sub-agent to write code, run tests, or commit changes (this includes any agent dispatch inside `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, `/run-plan`'s phase implementer, and `/quickfix`'s agent-dispatched mode), use `subagent_type: "implementer"`. The implementer agent (`.claude/agents/implementer.md`) clones the verifier's frontmatter `inject-bash-timeout.sh` hook so the agent's Bash calls auto-extend to a 600s timeout. Without this pin the impl agent runs as default `general-purpose`, hits the Bash tool's 120s default on long test runs, and reflexively reaches for `run_in_background: true` + `Monitor` — the exact stall pattern the verifier-cannot-run rule already guards against on the verifier side.
+**Impl-agent dispatch.** When dispatching a sub-agent to write code, run tests, or commit changes (this includes any agent dispatch inside `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, `/run-plan`'s phase implementer), use `subagent_type: "implementer"`. The implementer agent (`.claude/agents/implementer.md`) clones the verifier's frontmatter `inject-bash-timeout.sh` hook so the agent's Bash calls auto-extend to a 600s timeout. Without this pin the impl agent runs as default `general-purpose`, hits the Bash tool's 120s default on long test runs, and reflexively reaches for `run_in_background: true` + `Monitor` — the exact stall pattern the verifier-cannot-run rule already guards against on the verifier side.
 
 ## Cron-fired prompts
 
@@ -230,7 +230,7 @@ Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and revi
 
 **`--ours` and `--theirs` are inverted during rebase vs merge.** In a merge, `--ours` = the current branch; `--theirs` = the branch being merged in. In a **rebase**, the perspective flips because the rebase starts by checking out the upstream and replaying your commits on top: `--ours` = the branch being rebased ONTO (typically `main`); `--theirs` = the commits being replayed (your work). To preserve **your** changes in a rebase conflict, use `--theirs` (or `-X theirs` as a strategy option for the whole rebase). Past failure: PR #310 chunked-finish-auto landing rebase used `git checkout --ours` thinking "ours = our work," silently took main's version of `/fix-issues` and `/update-zskills` conflicts, dropping a full phase of work; caught only by post-rebase `grep AUTO_FLAG` showing 0 hits. Recovery via `git reset --keep <pre-rebase-SHA>` + `git rebase -X theirs origin/main` was clean (no remote was pushed yet).
 
-**Never call `gh pr create` or `gh pr merge --auto` directly when landing a PR.** When you have a feature branch ready to ship, dispatch `/land-pr` via the Skill tool (with `--body-file` and `--result-file`), or use one of its 5 callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, `/quickfix`) which dispatch `/land-pr` for you with proper rebase, PR creation, CI monitoring (`pr-monitor.sh`), fix-cycle on failure, and auto-merge handling. Direct `gh pr merge --auto` followed by an immediate `gh pr view --json mergeStateStatus` query reports a snapshot state (typically `BLOCKED`) that doesn't reflect resting state — agents who walk away after that snapshot rely on luck. The 5 caller skills are conformance-locked (PR #166 tripwires); follow the same discipline for one-off orchestrator-direct PR landings by dispatching `/land-pr` yourself. (`/land-pr` SKILL.md says "not designed for direct user invocation" — that's about interactive human slash-command typing, not orchestrator agents using the Skill tool. Don't conflate.)
+**Never call `gh pr create` or `gh pr merge --auto` directly when landing a PR.** When you have a feature branch ready to ship, dispatch `/land-pr` via the Skill tool (with `--body-file` and `--result-file`), or use one of its 4 callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`) which dispatch `/land-pr` for you with proper rebase, PR creation, CI monitoring (`pr-monitor.sh`), fix-cycle on failure, and auto-merge handling. Direct `gh pr merge --auto` followed by an immediate `gh pr view --json mergeStateStatus` query reports a snapshot state (typically `BLOCKED`) that doesn't reflect resting state — agents who walk away after that snapshot rely on luck. The 4 caller skills are conformance-locked (PR #166 tripwires); follow the same discipline for one-off orchestrator-direct PR landings by dispatching `/land-pr` yourself. (`/land-pr` SKILL.md says "not designed for direct user invocation" — that's about interactive human slash-command typing, not orchestrator agents using the Skill tool. Don't conflate.)
 
 **Skill loops with per-iteration `requires.X.<id>` write + `rm` cleanup are serial-by-design — don't parallelize.** Parallel dispatch leaves N sibling markers co-present in the pipeline subdir, and the hook blocks any subsequent push or commit that runs into them. Before parallelizing N downstream dispatches, grep the calling skill's body for `requires\.\S+\.\$` and `rm.*requires` — if both exist, respect the serial loop. Past failure: parallel-dispatched 5 `/land-pr`s from one `/fix-issues` sprint left 2 PRs stuck mid-flight needing manual recovery.
 
@@ -285,7 +285,7 @@ The only research you can skip is what you just verified in this turn.
 
 ### User-facing reports
 
-**Never recommend `/land-pr` (or any other `user-invocable: false` skill) to users in final reports, summaries, or "next step" suggestions.** `/land-pr` is an orchestrator-dispatch-only helper (8 caller skills dispatch it via the Skill tool). The slash runtime will not dispatch a `user-invocable: false` skill typed by a human, so telling the user to "run /land-pr ..." sends them down a dead end. When suggesting how to land a branch, recommend `/commit pr` (or one of the other 7 callers — `/run-plan`, `/do pr`, `/fix-issues pr`, `/quickfix`, `/draft-plan`, `/refine-plan`, `/draft-tests`) or plain `git push && gh pr create`. The current full list of `user-invocable: false` skills is just `/land-pr` today; the rule generalizes if more are added later.
+**Never recommend `/land-pr` (or any other `user-invocable: false` skill) to users in final reports, summaries, or "next step" suggestions.** `/land-pr` is an orchestrator-dispatch-only helper (7 caller skills dispatch it via the Skill tool). The slash runtime will not dispatch a `user-invocable: false` skill typed by a human, so telling the user to "run /land-pr ..." sends them down a dead end. When suggesting how to land a branch, recommend `/commit pr` (or one of the other 6 callers — `/run-plan`, `/do pr`, `/fix-issues pr`, `/draft-plan`, `/refine-plan`, `/draft-tests`) or plain `git push && gh pr create`. The current full list of `user-invocable: false` skills is just `/land-pr` today; the rule generalizes if more are added later.
 
 ## Migration scripts
 
@@ -304,7 +304,6 @@ Decision table for picking a skill when a user describes a generic action. Match
 
 | You have | Run |
 |---|---|
-| One-commit PR — edit in-place on main, no worktree (only valid when `main_protected: false`) | `/quickfix` |
 | Several small bugs / issues in a backlog | `/fix-issues N` |
 | Bug, but root cause is unclear | `/investigate` |
 | One-commit PR — needs worktree isolation (required when `main_protected: true`) | `/do` |
@@ -320,11 +319,10 @@ Decision table for picking a skill when a user describes a generic action. Match
 
 **Common confusions:**
 
-- `/quickfix` vs `/do`: **They are PEERS, not TIERS.** Same lifecycle (triage → review → commit → PR → land); same `/land-pr` dispatch; same one-commit-PR shape. The structural difference is where the work tree lives — `/quickfix` does `git checkout -b` on main; `/do` uses a worktree. Pick by **project policy, not task size**: in `main_protected: true` projects, use `/do` (always); in non-main-protected projects, either works (pick by preference). Per-task size is NOT a useful axis between them.
 - `/draft-plan` vs `/run-plan`: `/draft-plan` produces a plan file; `/run-plan` executes one. They are sequential, not alternatives. If the user has a plan file path, `/run-plan`. If they have a goal but no plan, `/draft-plan` first.
 - `/research-and-plan` vs `/research-and-go`: same drafting machinery; `-and-plan` stops after the meta-plan is ready for review, `-and-go` continues into execution. Use `-and-plan` when the user wants a checkpoint before commit-volume work begins; `-and-go` when they've said "walk away."
-- **`/draft-plan` vs `/do`/`/quickfix` — reach for `/draft-plan` freely, but pass one "are you sure?" first.** `/draft-plan` is the heavier tool, and it earns that when the work genuinely needs **staged phases** or has **open design to work out** (what its brainstorm/quiz + adversarial rounds are *for*). Heavy usually does mean `/draft-plan` — but heavy is staging or design depth, *not* breadth: thirty files touched mechanically is wide, not heavy. So before reaching, ask what a skeptical user would: *does this truly need phases or have unresolved design, or am I inflating one coherent, already-settled change?* If that push-back holds, go `/draft-plan`; if it's really one pass with the approach known, it's a `/do` or `/quickfix` (co-equal peers — choose by project policy, not size). On a genuine toss-up, lean `/draft-plan`.
-- `/investigate` vs `/quickfix`: `/quickfix` assumes the fix is known. `/investigate` is for bugs where the root cause must be proven before a fix is written. Once `/investigate` lands on a root cause, the fix itself may dispatch `/quickfix` or `/do`.
+- **`/draft-plan` vs `/do` — reach for `/draft-plan` freely, but pass one "are you sure?" first.** `/draft-plan` is the heavier tool, and it earns that when the work genuinely needs **staged phases** or has **open design to work out** (what its brainstorm/quiz + adversarial rounds are *for*). Heavy usually does mean `/draft-plan` — but heavy is staging or design depth, *not* breadth: thirty files touched mechanically is wide, not heavy. So before reaching, ask what a skeptical user would: *does this truly need phases or have unresolved design, or am I inflating one coherent, already-settled change?* If that push-back holds, go `/draft-plan`; if it's really one pass with the approach known, it's a `/do`. On a genuine toss-up, lean `/draft-plan`.
+- `/investigate` vs `/do`: `/do` assumes the fix is known. `/investigate` is for bugs where the root cause must be proven before a fix is written. Once `/investigate` lands on a root cause, the fix itself may dispatch `/do`.
 - `/verify-changes` vs `/qe-audit`: `/verify-changes` checks YOUR recent changes are sound. `/qe-audit` proactively looks for coverage gaps or bugs in the repo at large and files issues. The former gates a commit; the latter generates work.
 
 ## Execution Modes
@@ -341,12 +339,11 @@ Three landing modes control how agent work reaches main:
 - `/run-plan plans/X.md finish auto pr`
 - `/fix-issues 10 pr`
 - `/research-and-go Build an RPG. pr`
-- `/quickfix Fix README typo --force` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main; `--force` skips triage + review)
 - `/do Add dark mode. --rounds 2 --force. pr`
 
-Both skills now triage tasks and run a fresh-agent plan review before execution. Use `--force` to bypass.
+`/do` triages tasks and runs a fresh-agent plan review before execution. Use `--force` to bypass.
 
-**Flag convention.** Positional tokens (`apply`, `pr`, `auto`, `local`, `remote`, `all`, `from-here`, `skip-tests`, etc.) name *modes / verbs*; dashed `--force` is reserved for *safety-gate overrides*. Skills accepting `--force`: `/do`, `/work-on-plans`, `/quickfix`, `/cleanup-merged`. Bare positional `force` is NOT accepted on any of them (issue #810).
+**Flag convention.** Positional tokens (`apply`, `pr`, `auto`, `local`, `remote`, `all`, `from-here`, `skip-tests`, etc.) name *modes / verbs*; dashed `--force` is reserved for *safety-gate overrides*. Skills accepting `--force`: `/do`, `/work-on-plans`, `/cleanup-merged`. Bare positional `force` is NOT accepted on any of them (issue #810).
 
 After a PR merges on GitHub, run `/cleanup-merged` to catch your local clone up (checkout main, pull, delete merged feature branches). Safe to run anytime; bails on a dirty tree.
 

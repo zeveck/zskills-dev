@@ -98,7 +98,6 @@ run_suite "test-block-stale-skill-version-sandbox.sh" "tests/test-block-stale-sk
 run_suite "test-block-bypassed-land-pr.sh" "tests/test-block-bypassed-land-pr.sh"
 run_suite "test-block-main-edits.sh" "tests/test-block-main-edits.sh"
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
-run_suite "test-quickfix.sh" "tests/test-quickfix.sh"
 run_suite "test-fix-issues.sh" "tests/test-fix-issues.sh"
 run_suite "test-fix-issues-dashboard.sh" "tests/test-fix-issues-dashboard.sh"
 run_suite "test-fix-issues-bare-invocation.sh" "tests/test-fix-issues-bare-invocation.sh"

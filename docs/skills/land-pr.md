@@ -28,7 +28,6 @@ land the branch through this same helper:
 - [`/commit pr`](commit.md) — the most direct way to ship a branch you've
   already prepared
 - [`/do pr`](do.md) — a single change, done in an isolated worktree
-- [`/quickfix`](quickfix.md) — a minimal-ceremony one-commit PR
 - [`/fix-issues pr`](fix-issues.md) — work through a backlog of issues
 - [`/run-plan`](run-plan.md) — execute a multi-phase plan
 - [`/draft-plan`](draft-plan.md) — land a newly drafted plan

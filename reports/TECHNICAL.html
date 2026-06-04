@@ -170,9 +170,9 @@
 
   <h4>Codebase</h4>
   <div class="stat-grid">
-    <div class="stat"><div class="val">15 + 10</div><div class="label">Skills</div><div class="sub">15 user-facing (model-invokable) + 10 internal helpers (slash-invoke-only via <code>disable-model-invocation</code> or <code>user-invocable: false</code>); 25 source skills + 3 block-diagram add-ons = <strong>28 total</strong></div></div>
+    <div class="stat"><div class="val">14 + 9</div><div class="label">Skills</div><div class="sub">14 user-facing (model-invokable) + 9 internal helpers (slash-invoke-only via <code>disable-model-invocation</code> or <code>user-invocable: false</code>); 23 source skills + 3 block-diagram add-ons = <strong>26 total</strong></div></div>
     <div class="stat green"><div class="val">52,351</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
-    <div class="stat"><div class="val">18,040</div><div class="label">Lines of SKILL.md prose</div><div class="sub">28 SKILL.md bodies (25 source + 3 add-ons). Down from 23,239 in the 2026-05-21 snapshot &mdash; <code>/fix-issues</code>, <code>/run-plan</code>, <code>/quickfix</code>, <code>/draft-tests</code>, and <code>/work-on-plans</code> all decomposed top-level prose into <code>modes/</code>, <code>references/</code>, and <code>subcommands/</code> subfiles.</div></div>
+    <div class="stat"><div class="val">18,040</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 SKILL.md bodies (23 source + 3 add-ons). Down from 23,239 in the 2026-05-21 snapshot &mdash; <code>/fix-issues</code>, <code>/run-plan</code>, <code>/draft-tests</code>, and <code>/work-on-plans</code> all decomposed top-level prose into <code>modes/</code>, <code>references/</code>, and <code>subcommands/</code> subfiles.</div></div>
   </div>
 
   <h4>Tests &amp; Hooks</h4>
@@ -197,7 +197,7 @@
   <table>
     <tr><th>Surface</th><th>LOC</th><th>Files</th><th>What it is</th></tr>
     <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>52,351</td><td>129</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>18,040</td><td>28</td><td>Top-level skill bodies (25 source + 3 add-on)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>18,040</td><td>26</td><td>Top-level skill bodies (23 source + 3 add-on)</td></tr>
     <tr><td><code>tests/</code></td><td>73,335</td><td>193</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
     <tr><td><code>hooks/</code></td><td>5,552</td><td>12 + 4 lib</td><td>PreToolUse blockers, Bash timeout extension, response validation</td></tr>
     <tr><td><code>scripts/</code></td><td>2,536</td><td>17</td><td>Release tooling, frontmatter mutators, version stage-checks</td></tr>
@@ -215,7 +215,6 @@
     <tr><td><code>/draft-plan</code></td><td>1,054</td><td><span class="bar" style="width: 47%;"></span></td></tr>
     <tr><td><code>/add-block</code> (block-diagram)</td><td>945</td><td><span class="bar" style="width: 42%;"></span></td></tr>
     <tr><td><code>/refine-plan</code></td><td>886</td><td><span class="bar" style="width: 39%;"></span></td></tr>
-    <tr><td><code>/quickfix</code></td><td>869</td><td><span class="bar" style="width: 38%;"></span></td></tr>
     <tr><td><code>/cleanup-merged</code></td><td>792</td><td><span class="bar" style="width: 35%;"></span></td></tr>
     <tr><td><code>/verify-changes</code></td><td>783</td><td><span class="bar" style="width: 35%;"></span></td></tr>
   </table>
@@ -235,7 +234,7 @@ gh issue list --state all --limit 2000 --json number | python3 -c 'import json,s
   <p style="color: var(--text-dim); font-size: 0.92em;">Independent re-counts of each figure (via different command paths &mdash; <code>wc -l $(find ...)</code> vs <code>find ... -exec cat | wc</code>, <code>git rev-list</code> vs <code>git log | wc</code>, <code>gh pr list --state merged</code> vs the regex on log) match the figures above. The merged-PR count via <code>gh pr list --state merged</code> returns 638 (vs the 639 regex count) &mdash; a 1-PR delta most likely from a closed-cherry-picked PR; the regex-on-log count is what's reported here, consistent with the 2026-05-21 snapshot's methodology.</p>
 
   <h3>Commits vs. PRs</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">944 total commits on main, of which 639 are PR squash-merges and 305 are direct. The 305 direct-commit count is unchanged since the 2026-05-21 snapshot &mdash; all 235 new commits in the 2026-05-22 &rarr; 2026-06-01 window went through PRs (<code>main_protected: true</code>). The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The 188 break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or non-PR <code>/quickfix</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">944 total commits on main, of which 639 are PR squash-merges and 305 are direct. The 305 direct-commit count is unchanged since the 2026-05-21 snapshot &mdash; all 235 new commits in the 2026-05-22 &rarr; 2026-06-01 window went through PRs (<code>main_protected: true</code>). The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The 188 break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</p>
 
   <h3>What this <em>doesn't</em> measure</h3>
   <p style="color: var(--text-dim);">Wall-clock time, human review effort, the Claude.ai chat sessions used for architecture discussions outside Claude Code, the pre-2026-03-26 prototyping that fed into the initial commit, or cost &mdash; see the <a href="COSTS.html">Cost Estimate</a>.</p>
@@ -243,7 +242,7 @@ gh issue list --state all --limit 2000 --json number | python3 -c 'import json,s
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>28 skills (15 user-facing + 10 helpers + 3 add-ons), 944 commits / 639 merged PRs, 193 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (14 user-facing + 9 helpers + 3 add-ons), 944 commits / 639 merged PRs, 193 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
   <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-06-01. Built with Claude Code (Claude Opus 4.6 / 4.7 / 4.8).</p>
 </section>

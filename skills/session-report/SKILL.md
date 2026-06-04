@@ -7,7 +7,7 @@ description: >-
   worktrees), not conversation memory — items may have been completed in
   another session.
 metadata:
-  version: "2026.05.31+108f2d"
+  version: "2026.06.03+7c2826"
 ---
 
 # /session-report — Session Intent vs. Actual State
@@ -44,7 +44,7 @@ assistant said would happen:
 - A PR opened, fixed, merged, or referenced for landing
 - A skill, script, or hook to write or modify
 - A bug to investigate or close
-- A queued action ("we'll run /quickfix later")
+- A queued action ("we'll run /do later")
 
 Do NOT include:
 - Items only mentioned in passing as background or context

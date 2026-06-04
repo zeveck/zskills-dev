@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.03+9d8a99"
+  version: "2026.06.03+a45ec3"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -125,7 +125,7 @@ fi
   succeeds in Phase 6, dispatch `/land-pr` to push the branch, open a PR,
   monitor CI, and auto-merge. Without `auto`, the plan is committed in the
   worktree but no PR is opened — caller must land manually. Mirrors the
-  `auto` token in `/run-plan`, `/do`, `/fix-issues`, `/quickfix`.
+  `auto` token in `/run-plan`, `/do`, `/fix-issues`.
 - **description** (required) — everything after the recognized keywords.
   Can be brief ("add dark mode") or detailed ("implement thermal domain
   with conduction, convection, radiation, and multi-domain coupling to

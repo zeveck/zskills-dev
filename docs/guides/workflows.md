@@ -7,7 +7,7 @@ argument list, see the [per-skill reference](../skills/README.md).
 ## Philosophy
 
 Z Skills matches the skill to the work — not the other way around. The
-everyday workhorse is `/do` (with its co-equal peer `/quickfix`): when you
+everyday workhorse is `/do`: when you
 can describe the change and its approach is clear, `/do` it — whatever the
 size, from a typo to a wide refactor to plumbing a new UI element. A backlog
 of bugs to clear runs through `/fix-issues`. Reach for `/draft-plan` **freely**
@@ -34,7 +34,7 @@ when needed; otherwise the configured default applies.
 > mode/verb words like `auto`, `pr`, `direct`, `finish` with no dashes.
 > (For example: `/run-plan docs/plans/X.md finish auto pr`.) A few skills
 > also take dashed flags, which are reserved for overriding a safety gate:
-> `--force` (on `/do`, `/quickfix`, `/work-on-plans`, `/cleanup-merged`)
+> `--force` (on `/do`, `/work-on-plans`, `/cleanup-merged`)
 > skips the triage and review step, and `--rounds N` (on `/do`) sets how
 > many review-and-refine cycles run. The one dashed flag you do **not**
 > type is `--auto`: that form belongs to the internal `/land-pr` helper
@@ -50,17 +50,11 @@ bug fix, a refactor, a new UI element, a content update. This is the workhorse
 you reach for most; most "just ask Claude" work runs through it.
 
 ```text
-/do "<task>" pr          # worktree-isolated; required when main is protected
-# or, only when main is NOT protected:
-/quickfix "<task>"       # in-place on main, no worktree
+/do "<task>" pr          # worktree-isolated; runs triage → review → commit → PR → land
 ```
 
-- `/do` and `/quickfix` are **peers, not tiers** — same lifecycle (triage →
-  review → commit → PR → land) and same one-commit-PR shape. The only
-  difference is *where the work tree lives*.
-- Choose by **project policy, not task size**: `main_protected: true`
-  projects must use `/do` (it isolates work in a worktree); `/quickfix` edits
-  in place on `main` and is valid only when `main_protected: false`.
+- `/do` carries a change through the full lifecycle — triage → review →
+  commit → PR → land — in an isolated worktree, landing a one-commit PR.
 - "Lightweight" means **no staged phases and no open design** — *not* "small."
   A wide but settled change is still a `/do`; reach for `/draft-plan` only when
   the design is open or the work needs to be staged into ordered phases.
@@ -159,14 +153,13 @@ Or, to draft **and** execute everything in one autonomous pass:
 
 ```text
 /investigate <description or #issue>
-/do "fix <root cause>" pr        # or: /quickfix "fix <root cause>"
+/do "fix <root cause>" pr
 ```
 
 - `/investigate` does deep root-cause debugging: it proves *why* the bug
   happens and produces a regression test, rather than guessing at a fix.
-- Once the root cause is known, ship the fix with `/do pr` (worktree) or
-  `/quickfix` (no worktree) — the fix is now a known change, not an
-  investigation.
+- Once the root cause is known, ship the fix with `/do pr` (worktree) —
+  the fix is now a known change, not an investigation.
 
 ## 8. Pre-commit quality gate
 

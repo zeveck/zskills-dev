@@ -2071,7 +2071,7 @@ def _parse_action_now(
 
     Returns `None` when the issue is actionable (no skip needed) — i.e.
     when the `**Action now:**` line names a runnable action like
-    `/do pr`, `/quickfix`, `/run-plan`, `fix-agent`, or
+    `/do pr`, `/run-plan`, `fix-agent`, or
     `include in next sprint`.
 
     Returns `{code, label, source}` when the issue should be skipped:
@@ -2136,7 +2136,7 @@ def _parse_action_now(
     # Action-now-level signals: match PREFIX of the action-now value
     # (per the rule "Action now: <kind>"). Mid-sentence mentions of
     # `/draft-plan` etc. in qualified-actionable blurbs (e.g.
-    # "Fix #1 + #4 prose roll-in (combined /quickfix S). Fix #2 + #3
+    # "Fix #1 + #4 prose roll-in (combined /do pr S). Fix #2 + #3
     # deferred to /draft-plan when prioritized") must NOT match.
     if action_raw:
         # `none` — split into `needs-decision` (genuinely needs human
@@ -2187,7 +2187,7 @@ def _parse_action_now(
             "source": source,
         }
 
-    # Everything else is actionable (`/do pr`, `/quickfix`, `fix-agent`,
+    # Everything else is actionable (`/do pr`, `fix-agent`,
     # `include in next sprint`, etc.) — no chip.
     return None
 
