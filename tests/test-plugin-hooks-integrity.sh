@@ -97,10 +97,21 @@ if [ "$ZS_SRC_REPO" = "zeveck/zskills-dev" ]; then
   GAP1_TEMPLATE_ONLY=""
 fi
 
-# Gap-2 shim-sourcing exclusion: SessionStart materialiser. It carries its OWN
-# dual-install probe (detect-install-state.sh) and is NOT a double-fire-prone
-# PreToolUse hook, so it legitimately does NOT source the conditional-skip shim.
-SHIM_EXCLUDE="session-start-materialise.sh"
+# Gap-2 shim-sourcing exclusions — hooks that legitimately do NOT source the
+# D16(a) conditional-skip shim:
+#
+#   session-start-materialise.sh — carries its OWN dual-install probe
+#     (detect-install-state.sh) and is NOT a double-fire-prone PreToolUse hook.
+#
+#   nudge-restart-to-materialise.sh (#1080) — a PLUGIN-ONLY UserPromptSubmit
+#     hook with NO .claude/settings.json same-basename sibling. The shim exists
+#     to defer a plugin hook when a settings.json-registered sibling of the
+#     SAME basename would otherwise double-fire (dual-install); this hook has no
+#     such sibling (the /update-zskills lane materialises at install time and
+#     never reaches the half-installed state this nudges about), so there is
+#     nothing to double-fire against. It self-extinguishes once SessionStart
+#     materialises (lane flips fresh -> plugin), so it cannot leak across lanes.
+SHIM_EXCLUDE="session-start-materialise.sh nudge-restart-to-materialise.sh"
 
 in_list() {
   # in_list <needle> <space-separated-list>
@@ -343,6 +354,28 @@ if [ "$d4_ok" -eq 1 ]; then
   pass "2c. D4 .template pair (block-unsafe-project, block-agents) source the shim in their .template files"
 else
   fail "2c. a D4 .template hook does not source the shim"
+fi
+
+# 2d (#1080) — positive coverage for the nudge-restart-to-materialise.sh
+# UserPromptSubmit hook. It is a plugin-only hook with NO settings.json
+# sibling, so it legitimately does NOT source the shim and IS on SHIM_EXCLUDE.
+# Assert it is registered, exists in-tree, is excluded, and does NOT source
+# the shim — so a future edit that wrongly drops it from the exclusion list (or
+# adds a spurious shim line) fails closed.
+NUDGE_HOOK="nudge-restart-to-materialise.sh"
+nudge_reg=0
+for r in "${REGISTERED[@]}"; do [ "$r" = "$NUDGE_HOOK" ] && nudge_reg=1 && break; done
+nudge_problems=""
+[ "$nudge_reg" -eq 1 ] || nudge_problems="$nudge_problems not-registered"
+[ -f "$REPO_ROOT/hooks/$NUDGE_HOOK" ] || nudge_problems="$nudge_problems absent"
+in_list "$NUDGE_HOOK" "$SHIM_EXCLUDE" || nudge_problems="$nudge_problems not-excluded"
+if [ -f "$REPO_ROOT/hooks/$NUDGE_HOOK" ] && grep -q "$SHIM_REL" "$REPO_ROOT/hooks/$NUDGE_HOOK"; then
+  nudge_problems="$nudge_problems unexpectedly-sources-shim"
+fi
+if [ -z "$nudge_problems" ]; then
+  pass "2d. nudge-restart-to-materialise.sh is registered, in-tree, SHIM_EXCLUDE'd, and (correctly) does NOT source the shim"
+else
+  fail "2d. nudge-restart-to-materialise.sh wiring wrong:$nudge_problems"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
