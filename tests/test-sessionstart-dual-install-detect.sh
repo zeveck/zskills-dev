@@ -198,6 +198,53 @@ else
   sed 's/^/      /' "$err5"
 fi
 
+# ── 5'. partial-materialise leftover: 0-byte artifact is NOT legacy (#1079) ─
+#    A materialise that aborted mid-write can leave a 0-byte
+#    .claude/agents/verifier.md. A 0-byte file is never a real legacy install,
+#    so the detector must NOT classify it as update-zskills. With a plugin
+#    signal present (a sentinelled hook), the lane must resolve to `plugin`;
+#    with no other signal it must resolve to `fresh` — never `update-zskills`.
+#    (Confirm this FAILS without the part-3 [ -s ] non-empty guard: a 0-byte
+#    verifier.md would otherwise match the un-sentinelled agent-artifact rule.)
+P5b="$TMP/empty-artifact-plugin"
+base_fixture "$P5b"
+write_sentinelled_hook "$P5b/.claude/hooks/inject-bash-timeout.sh"   # plugin signal
+mkdir -p "$P5b/.claude/agents"
+: > "$P5b/.claude/agents/verifier.md"                                 # 0-byte leftover
+[ ! -s "$P5b/.claude/agents/verifier.md" ] || fail "5'-pre: planted verifier.md not 0-byte"
+got="$(detect_install_state "$P5b")"
+if [ "$got" != update-zskills ]; then
+  pass "5'a. 0-byte verifier.md + plugin signal → not update-zskills (got $got)"
+else
+  fail "5'a. 0-byte verifier.md mis-classified as update-zskills (part-3 [ -s ] guard missing)"
+fi
+[ "$got" = plugin ] && pass "5'b. 0-byte artifact + plugin signal resolves to plugin" \
+  || fail "5'b. expected plugin (0-byte artifact ignored, sentinelled hook wins), got $got"
+
+# 5''. 0-byte artifact ALONE (no other signal) → fresh, never update-zskills.
+P5c="$TMP/empty-artifact-only"
+base_fixture "$P5c"
+mkdir -p "$P5c/.claude/agents"
+: > "$P5c/.claude/agents/verifier.md"
+got="$(detect_install_state "$P5c")"
+if [ "$got" = fresh ]; then
+  pass "5''. 0-byte verifier.md alone → fresh (not update-zskills)"
+else
+  fail "5''. 0-byte verifier.md alone mis-classified as $got (expected fresh)"
+fi
+
+# 5'''. a 0-byte .claude/hooks/*.sh alone is likewise not legacy evidence.
+P5d="$TMP/empty-hook-only"
+base_fixture "$P5d"
+mkdir -p "$P5d/.claude/hooks"
+: > "$P5d/.claude/hooks/block-stale-skill-version.sh"
+got="$(detect_install_state "$P5d")"
+if [ "$got" = fresh ]; then
+  pass "5'''. 0-byte .claude/hooks/*.sh alone → fresh (not update-zskills)"
+else
+  fail "5'''. 0-byte hook alone mis-classified as $got (expected fresh)"
+fi
+
 # ── 6. W6.3 — the nag fires EVERY session (no once-per-session gate): a
 #    second materialise run on the uz fixture RE-EMITS the nag. ──────────────
 err3b="$TMP/err3b"; run_mat "$P3" "$err3b"

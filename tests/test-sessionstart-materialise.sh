@@ -283,6 +283,94 @@ else
 fi
 
 echo ""
+echo "=== Atomic write: injector abort leaves no partial/0-byte artifact (#1079) ==="
+
+# A materialise whose sentinel-injection aborts mid-write must NOT truncate or
+# partially write the destination. We point ZSKILLS_PYTHON at a stub that
+# PASSES the interpreter version probe (`python -c '...'`, delegated to the
+# real python3) but FAILS every other invocation — including the
+# inject_sentinel `python - <tmpfile>` form. The materialiser must leave a
+# pre-existing dest UNTOUCHED and never create a 0-byte file at an absent dest.
+STUB_DIR="$TMP/pystub"
+mkdir -p "$STUB_DIR"
+REAL_PY="$(command -v python3)"
+cat > "$STUB_DIR/python3" <<STUB
+#!/usr/bin/env bash
+# Delegate the version/-c probes to real python3 so zskills_resolve_python
+# accepts this stub; fail (exit 1) on the inject_sentinel "- <tmpfile>" form.
+if [ "\$1" = "-c" ]; then
+  exec "$REAL_PY" "\$@"
+fi
+exit 1
+STUB
+chmod +x "$STUB_DIR/python3"
+
+# (a-i) Pre-existing real artifact at a dest is NOT truncated on injector abort.
+ABORT="$TMP/abortproj"
+mkdir -p "$ABORT/.claude/agents"
+cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$ABORT/"
+# Seed a config so the materialiser does not early-exit on a missing config.
+cp "$REPO_ROOT/.claude/zskills-config.json" "$ABORT/.claude/"
+# A pre-existing sentinelled verifier.md (so safe_to_write would normally
+# allow an overwrite — the point is the injector aborts BEFORE any write).
+PRE_BODY="$(printf '%s\n' '---' '# zskills-materialised: 0.0.0' 'name: verifier' 'PRESERVE ME')"
+printf '%s' "$PRE_BODY" > "$ABORT/.claude/agents/verifier.md"
+PRE_SIZE="$(stat -c %s "$ABORT/.claude/agents/verifier.md")"
+
+env ZSKILLS_PYTHON="$STUB_DIR/python3" \
+    CLAUDE_PROJECT_DIR="$ABORT" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
+    bash "$REPO_ROOT/$MAT" 2>/dev/null || true
+
+AFTER_BODY="$(cat "$ABORT/.claude/agents/verifier.md" 2>/dev/null || echo MISSING)"
+AFTER_SIZE="$(stat -c %s "$ABORT/.claude/agents/verifier.md" 2>/dev/null || echo -1)"
+if [ "$AFTER_BODY" = "$PRE_BODY" ] && [ "$AFTER_SIZE" = "$PRE_SIZE" ]; then
+  pass "21. injector abort leaves pre-existing artifact byte-identical (not truncated)"
+else
+  fail "21. injector abort truncated/altered the pre-existing artifact (size $PRE_SIZE -> $AFTER_SIZE)"
+fi
+
+# (a-ii) Absent dest stays absent (no 0-byte file created) on injector abort.
+# The implementer hook dest had no pre-existing file in the abort fixture.
+IMPL_DEST="$ABORT/.claude/agents/implementer.md"
+if [ ! -e "$IMPL_DEST" ]; then
+  pass "22. injector abort leaves an absent dest absent (no 0-byte file created)"
+elif [ -f "$IMPL_DEST" ] && [ ! -s "$IMPL_DEST" ]; then
+  fail "22. injector abort created a 0-byte implementer.md (partial leftover)"
+else
+  # A non-empty implementer.md would only appear if injection somehow
+  # succeeded — unexpected with the failing stub, but not a partial leftover.
+  pass "22. injector abort: implementer.md is non-empty (no partial leftover)"
+fi
+
+echo ""
+echo "=== Self-heal: a pre-existing 0-byte artifact is overwritten (#1079) ==="
+
+# A prior partial materialise can leave a 0-byte artifact. A subsequent working
+# materialise must HEAL it — overwrite the empty file with real sentinelled
+# content (safe_to_write treats a 0-byte file as overwritable).
+HEAL="$TMP/healproj"
+mkdir -p "$HEAL/.claude/agents"
+cp "$REPO_ROOT/.claude/zskills-config.json" "$HEAL/.claude/"
+cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$HEAL/"
+# Plant a 0-byte verifier.md (the partial-materialise leftover).
+: > "$HEAL/.claude/agents/verifier.md"
+[ ! -s "$HEAL/.claude/agents/verifier.md" ] || fail "precondition: planted verifier.md not 0-byte"
+
+env CLAUDE_PROJECT_DIR="$HEAL" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
+    bash "$REPO_ROOT/$MAT" 2>/dev/null
+
+HV="$HEAL/.claude/agents/verifier.md"
+if [ -s "$HV" ] \
+   && head -n 3 "$HV" | grep -Eq '^# zskills-materialised:' \
+   && grep -q '^name: verifier' "$HV"; then
+  pass "23. self-heal: 0-byte verifier.md overwritten with real sentinelled content"
+else
+  fail "23. self-heal: 0-byte verifier.md NOT healed"
+  printf '      size=%s\n' "$(stat -c %s "$HV" 2>/dev/null || echo MISSING)"
+  head -3 "$HV" 2>/dev/null | sed 's/^/      /'
+fi
+
+echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"
 exit "$FAIL_COUNT"
