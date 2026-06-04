@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # log-session-stop.sh — Stop / SubagentStop hook. Session-logging.
 #
 # Re-renders the session transcript JSONL (the `transcript_path` field of
@@ -21,11 +21,23 @@
 # is what keeps the in-situ permission lines surviving the fresh render.
 #
 # Log-dir resolution precedence (shared with the helper + the permission
-# hook): ZSKILLS_LOG_DIR env > logging.dir config > Python
-# tempfile.gettempdir()/zskills-session-logs/<project>/. The `logging`
-# config object also carries `enabled` (default true) — when false this
-# hook no-ops immediately. Resolution + the master-toggle read happen
-# INSIDE the embedded Python (cross-platform tempdir, no jq).
+# hook): ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache default
+# (${XDG_CACHE_HOME:-~/.cache}/zskills-session-logs/<project> on Linux,
+# ~/Library/Caches/... on macOS, %LOCALAPPDATA%\... on Windows). The
+# `logging` config object also carries `enabled` (default true) — when
+# false this hook no-ops immediately. Resolution + the master-toggle read
+# happen INSIDE the embedded Python (cross-platform, no jq).
+#
+# PUBLISH-WHERE-IT-WROTE REGISTRY (issue #1059). The drift bug: the reader
+# (session-logs.sh) used to re-resolve the path independently via
+# tempfile.gettempdir(), which honors per-context $TMPDIR — so writer and
+# reader diverged and logs became unfindable. The fix: after resolving its
+# log dir, this hook RECORDS that absolute path into a shared registry at
+# <main-repo-root>/.zskills/session-log-dirs, where main root =
+# `git rev-parse --git-common-dir`/.. (so ALL worktrees of a repo share ONE
+# registry — same anchor the tracking system uses). The reader then reads
+# the registry instead of recomputing. The registry is self-describing,
+# append-only, deduped, and race-safe (see record_log_dir() below).
 #
 # The markdown rendering is done in Python per the repo's "Python is
 # required" rule (no jq). The interpreter is embedded as an inline
@@ -64,11 +76,13 @@ INPUT=$(cat 2>/dev/null) || exit 0
   TIMEZONE="${TIMEZONE:-${TZ:-UTC}}" \
   "$PYTHON" - <<'PY' 2>/dev/null || exit 0
 import difflib
+import hashlib
 import json
 import os
+import platform
 import re
+import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime
 try:
@@ -110,20 +124,127 @@ def read_config(project_dir):
     return enabled, log_dir_cfg
 
 
+# ── SHARED RESOLUTION (issue #1059) ──────────────────────────────────────
+# KEEP IDENTICAL to skills/update-zskills/scripts/session-logs.sh. The
+# project_base derivation, per-OS cache default, and registry path/format
+# are duplicated verbatim across the hook and the helper so writer and
+# reader never diverge. tests/test-session-logging.sh asserts agreement.
+
+def project_base(project_dir):
+    """The <project> path segment: the project-dir basename,
+    path-separator-safe. Unified between hook and helper."""
+    base = os.path.basename(os.path.normpath(project_dir)) or "project"
+    return base.replace(os.sep, "_").replace("/", "_")
+
+
+def default_cache_dir(project_dir):
+    """Per-OS stable cache root (replaces tempfile.gettempdir(), which
+    honored per-context $TMPDIR and caused writer/reader drift). Used when
+    logging.dir is blank AND as the registry-absent fallback.
+
+      Linux/other : ${XDG_CACHE_HOME:-$HOME/.cache}/zskills-session-logs/<p>
+      macOS       : $HOME/Library/Caches/zskills-session-logs/<p>
+      Windows     : %LOCALAPPDATA%\\zskills-session-logs\\<p>
+                    (fallback: ~ when LOCALAPPDATA unset)
+    """
+    base = project_base(project_dir)
+    system = platform.system()
+    if system == "Windows":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    elif system == "Darwin":
+        root = os.path.join(os.path.expanduser("~"), "Library", "Caches")
+    else:
+        root = (os.environ.get("XDG_CACHE_HOME")
+                or os.path.join(os.path.expanduser("~"), ".cache"))
+    return os.path.join(root, "zskills-session-logs", base)
+
+
 def resolve_log_dir(project_dir, cfg_dir):
-    """Precedence: ZSKILLS_LOG_DIR env > logging.dir config >
-    tempfile.gettempdir()/zskills-session-logs/<project>/."""
+    """Precedence: ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache
+    default. KEEP IDENTICAL to the helper."""
     env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
     if env_dir:
         return env_dir
     if cfg_dir:
         return cfg_dir
-    project_base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    # Path-separator-safe: basename already strips separators, but guard
-    # against any residual separator from odd inputs.
-    project_base = project_base.replace(os.sep, "_").replace("/", "_")
-    return os.path.join(tempfile.gettempdir(), "zskills-session-logs",
-                        project_base)
+    return default_cache_dir(project_dir)
+
+
+def main_repo_root(project_dir):
+    """The shared anchor for the registry — the main repo root, so all
+    worktrees of a repo share ONE registry. main root =
+    `git rev-parse --git-common-dir`/.. (the same anchor the tracking
+    system uses). Falls back to project_dir when git is unavailable or the
+    dir is not a repo. KEEP IDENTICAL to the helper."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=project_dir, capture_output=True, text=True, timeout=5)
+        if out.returncode == 0:
+            common = out.stdout.strip()
+            if common:
+                if not os.path.isabs(common):
+                    common = os.path.join(project_dir, common)
+                return os.path.abspath(os.path.join(common, ".."))
+    except Exception:
+        pass
+    return os.path.abspath(project_dir)
+
+
+REGISTRY_HEADER = (
+    "# zskills session logs are written to the dir(s) below (newest last).\n"
+    "# Set logging.dir in .claude/zskills-config.json to pin one location.\n"
+)
+
+
+def record_log_dir(project_dir, log_dir, ts_iso):
+    """Append the resolved absolute log dir to the shared registry at
+    <main-repo-root>/.zskills/session-log-dirs — self-describing,
+    append-only, deduped, race-safe.
+
+    Race-safety mechanism: a `mkdir`-as-atomic-claim per path acts as the
+    dedup gate (mkdir on an existing dir fails atomically, so exactly one
+    concurrent writer wins the right to append a given path). The append
+    itself is a single os.open(O_APPEND) write whose length is well under
+    PIPE_BUF (>=512 on every POSIX target), so POSIX guarantees the line is
+    written atomically and never interleaves with a concurrent writer's
+    line. Together: no duplicate lines and no corruption under concurrency.
+    """
+    log_dir = os.path.abspath(log_dir)
+    root = main_repo_root(project_dir)
+    zsk = os.path.join(root, ".zskills")
+    registry = os.path.join(zsk, "session-log-dirs")
+    marks = os.path.join(zsk, "session-log-dirs.marks")
+    try:
+        os.makedirs(marks, exist_ok=True)
+    except OSError:
+        return
+    # Atomic dedup claim: hash the path -> marker dir. mkdir fails if the
+    # path was already recorded (by this or a concurrent writer).
+    h = hashlib.sha256(log_dir.encode("utf-8", "replace")).hexdigest()[:32]
+    mark = os.path.join(marks, h)
+    try:
+        os.mkdir(mark)
+    except FileExistsError:
+        return  # already recorded — dedup.
+    except OSError:
+        return
+    # We won the claim: append the line. Seed the self-describing header on
+    # first creation (when the file does not yet exist).
+    line = "%s\t%s\n" % (ts_iso, log_dir)
+    try:
+        need_header = not os.path.exists(registry)
+        fd = os.open(registry, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a") as f:
+            if need_header:
+                f.write(REGISTRY_HEADER)
+            f.write(line)
+    except OSError:
+        # Roll back the claim so a later fire can retry the append.
+        try:
+            os.rmdir(mark)
+        except OSError:
+            pass
 
 
 def parse_jsonl(path):
@@ -583,6 +704,26 @@ def main():
         os.makedirs(log_dir, exist_ok=True)
     except OSError:
         return
+
+    # Publish where we wrote into the shared registry so the reader can find
+    # the logs without recomputing the path (issue #1059). Best-effort: a
+    # registry failure must never abort the actual log write.
+    try:
+        now = datetime.now()
+        if ZoneInfo is not None and tz_name:
+            try:
+                now = now.astimezone(ZoneInfo(tz_name))
+            except Exception:
+                now = now.astimezone()
+        else:
+            now = now.astimezone()
+        reg_ts = now.strftime("%Y-%m-%dT%H:%M%z")
+        # Normalize +HHMM -> +HH:MM for ISO-8601 readability.
+        if len(reg_ts) >= 5 and reg_ts[-5] in "+-":
+            reg_ts = reg_ts[:-2] + ":" + reg_ts[-2:]
+        record_log_dir(project_dir, log_dir, reg_ts)
+    except Exception:
+        pass
 
     short_session = session_id[:8]
     if is_subagent:
