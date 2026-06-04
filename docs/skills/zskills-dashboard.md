@@ -9,10 +9,18 @@
 <div class="flow-step"><p>The <strong>agent</strong> starts the dashboard server, detached</p></div>
 <div class="flow-step"><p><strong>You</strong> view plans, issues, and worktrees in the browser</p></div>
 <div class="flow-step"><p><strong>You</strong> drag cards to prioritize across the Accepted and Ready columns</p></div>
-<div class="flow-step optional"><p><strong>You</strong> can hit the Run button to trigger a run</p></div>
+<div class="flow-step"><p>Plans you queue in <strong>Accepted</strong> get run by <code>/work-on-plans</code><br>Issues in <strong>Ready</strong> get fixed by <code>/fix-issues</code></p></div>
 </div>
 
 </details>
+
+![The zskills dashboard — plan columns (Drafted → Accepted), per-plan status chips and phase progress, and the live Recent-activity feed.](../guides/assets/zskills-dashboard.png)
+
+> **Try it live:** a browser-only demo runs at
+> **<https://zeveck.github.io/zskills-dev/dashboard-demo/>** — drop plans into
+> *Accepted* (and issues into *Ready*) and watch them get worked, with the
+> activity feed and run-status chips updating live. *(Plan names in the demo are
+> illustrative placeholders.)*
 
 ## What it does
 

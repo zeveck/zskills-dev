@@ -369,6 +369,10 @@ function inlineMarkdown(s, baseUrl) {
     }
     return `<a href="${resolved}" target="_blank" rel="noopener">${text}</a>`;
   });
+  // Autolinks: <https://example.com> → a clickable link. escapeHtml() has
+  // already turned the angle brackets into &lt; / &gt;, so match those.
+  s = s.replace(/&lt;(https?:\/\/[^\s<>&]+)&gt;/g,
+    '<a href="$1" target="_blank" rel="noopener">$1</a>');
   // GFM task list checkboxes — prevent false matches on array[x], obj[ ] (word char before [)
   s = s.replace(/(?<!\w)\[x\]/gi, '<input type="checkbox" checked class="zl-task-checkbox">');
   s = s.replace(/(?<!\w)\[ \]/g, '<input type="checkbox" class="zl-task-checkbox">');

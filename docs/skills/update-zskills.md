@@ -29,7 +29,6 @@ After it finishes, it reports what it installed or updated and a one-line versio
 ```
 /update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
                 [cherry-pick | locked-main-pr | direct]
-                [--with-addons | --with-block-diagram-addons]
 ```
 
 ## Typical usage
@@ -54,7 +53,7 @@ The two everyday forms are `/update-zskills install` to set a project up from sc
 
 ## Arguments
 
-These can be combined: a mode token, a landing keyword, and an add-on flag are independent and may appear together (for example, `/update-zskills install locked-main-pr --with-addons`).
+These can be combined: a mode token and a landing keyword are independent and may appear together (for example, `/update-zskills install locked-main-pr`).
 
 | Argument | Required | Description |
 |----------|----------|-------------|
@@ -65,12 +64,8 @@ These can be combined: a mode token, a landing keyword, and an add-on flag are i
 | `cherry-pick` | No | Set landing to cherry-pick from a worktree onto an unprotected `main` |
 | `locked-main-pr` | No | Set landing to pull requests on a protected `main` |
 | `direct` | No | Set landing to direct commits on an unprotected `main` |
-| `--with-addons` | No | Also install/update the available add-on skill packs, not just the core skills |
-| `--with-block-diagram-addons` | No | Like `--with-addons`, but limited to the block-diagram add-on pack |
 
 The three landing keywords (`cherry-pick`, `locked-main-pr`, `direct`) are mutually exclusive — pass at most one. A bare landing keyword on its own (no `install`) only rewrites the two landing-related config fields and leaves everything else, including the rest of your config, untouched; it does not pull or update skills. Paired with `install`, it sets the landing mode as part of the full install.
-
-By default only the core skills are installed or updated. Add `--with-addons` (or the narrower `--with-block-diagram-addons`) to also bring in the add-on packs — these are extra, domain-specific skills layered on top of the core set.
 
 ## Examples
 
@@ -79,7 +74,6 @@ By default only the core skills are installed or updated. Add `--with-addons` (o
 /update-zskills install
 /update-zskills --rerender
 /update-zskills --migrate-paths
-/update-zskills install --with-addons
 /update-zskills install direct
 /update-zskills locked-main-pr
 ```

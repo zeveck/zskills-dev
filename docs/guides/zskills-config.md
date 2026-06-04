@@ -113,7 +113,7 @@ whether the project is PR-only or lets agents work on `main` directly.
 | `execution.dashboard_completed_limit` | Max closed issues fetched per dashboard snapshot. | `500` |
 
 `landing` and `main_protected` are usually set together by a **preset** rather
-than edited by hand — see [Landing & protection](#landing--protection).
+than edited by hand — see [Landing & protection](#landing-protection).
 
 ### `testing` — how tests run
 
@@ -148,12 +148,13 @@ Consumed (and toggled) by the session-logging hooks.
 
 | Field | What it does | Default |
 |---|---|---|
-| `logging.enabled` | Master switch. `false` makes the session-logging hooks no-op. | `true` |
-| `logging.dir` | Where session logs are written — used as-is, so give an **absolute** path. Empty = a temp directory keyed by project name, with the path recorded in the main checkout's `.zskills/session-log-dirs` registry (newest last) so you can always find where it logged; set this for a stable, predictable location. | `""` |
+| `logging.enabled` | Master switch — **off by default**; set `true` to opt in. When `false` or absent, the session-logging hooks no-op. | `false` |
+| `logging.dir` | Where session logs are written — used as-is, so give an **absolute** path. Empty = a per-OS cache directory keyed by project name (e.g. `~/.cache/zskills-session-logs/<project>` on Linux), with the path recorded in the main checkout's `.zskills/session-log-dirs` registry (newest last) so you can always find where it logged; set this for a stable, predictable location. | `""` |
 
-Pointing `logging.dir` at a persistent path gives you a readable per-session
-transcript and permission trail — a handy monitoring/audit record, especially
-for unattended runs (see [Inspecting & monitoring](inspecting-and-monitoring.md)).
+With logging turned on (`logging.enabled: true`), pointing `logging.dir` at a
+persistent path gives you a readable per-session transcript and permission trail
+— a handy monitoring/audit record, especially for unattended runs (see
+[Inspecting & monitoring](inspecting-and-monitoring.md)).
 
 ### `commit` — commit metadata
 

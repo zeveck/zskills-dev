@@ -185,18 +185,24 @@ it.
 
 </details>
 
-**When:** You want to find test gaps before they bite.
+**When:** You want to find test gaps and likely bugs before they bite — and, on
+a schedule, keep finding them as the codebase moves.
 
 ```text
-/qe-audit
+/qe-audit                     # commit audit: scan recent work for coverage gaps
+/qe-audit bash "undo/redo"    # bash mode: adversarially stress-test a feature for bugs
+/qe-audit every 1h            # continuous coverage — re-audit hourly in the background
 ```
 
-- `/qe-audit` proactively scans the repo for test-coverage gaps and likely
-  bugs and **files GitHub issues** — it generates work, where
-  `/verify-changes` only gates your current changes.
-- `/manual-testing` is an internal helper you don't run directly —
-  `/verify-changes` dispatches it to verify UI behavior with real
-  mouse/keyboard events (`playwright-cli`).
+- Two modes, both filing **GitHub issues**: the default **commit audit** scans
+  recent work for coverage gaps and likely bugs, while **`bash`** adversarially
+  stress-tests a feature to shake out bugs (`/qe-audit bash "undo/redo"`, or a
+  bare `/qe-audit bash` to let it pick under-tested areas). Either way it
+  *generates* work, where `/verify-changes` only gates your current changes.
+- **Pair it with a sprint for a hands-off QA loop:** leave `/qe-audit every 1h`
+  running on the side to keep filing issues as you work, and a scheduled
+  `/fix-issues 1 every 2h auto` (recipe 7) to clear them — the audit finds, the
+  sprint fixes. See [Run something on a schedule](#13-run-something-on-a-schedule).
 
 ## 7. Backlog bug sprint
 
@@ -224,7 +230,7 @@ it.
 - `/fix-report` walks the sprint results, gates landing on your review of each
   manual verification, lands the fixes, and closes the GitHub issues.
 - `/fix-issues` is schedulable — `/fix-issues 1 every 60m auto` clears one issue
-  an hour, unattended. See [Run something on a schedule](#12-run-something-on-a-schedule).
+  an hour, unattended. See [Run something on a schedule](#13-run-something-on-a-schedule).
 
 ## 8. Unclear bug → root cause
 
@@ -232,23 +238,26 @@ it.
 <summary><code>/investigate</code> → <code>/do</code></summary>
 
 <div class="flow">
-<div class="flow-step"><p><strong><code>/investigate</code></strong> proves the root cause and leaves a regression test</p></div>
-<div class="flow-step"><p><strong><code>/do</code></strong> ships the now-known fix as a PR</p></div>
+<div class="flow-step"><p><strong><code>/investigate</code></strong> proves the root cause and produces a verified fix + regression test — left in your tree, unlanded</p></div>
+<div class="flow-step"><p><strong><code>/do auto</code></strong> ships that now-proven change as a PR</p></div>
 </div>
 
 </details>
 
-**When:** Something is broken but the root cause is not yet proven.
+**When:** Something is broken and the root cause isn't proven yet.
 
 ```text
 /investigate <description or #issue>
-/do "fix <root cause>" pr
+/do "fix <root cause>" auto
 ```
 
-- `/investigate` does deep root-cause debugging: it proves *why* the bug
-  happens and produces a regression test, rather than guessing at a fix.
-- Once the root cause is known, ship the fix with `/do` — the fix is now a
-  known change, not an investigation.
+- `/investigate` does deep root-cause debugging: it reproduces the bug, proves
+  *why* it happens, writes a failing regression test, and applies the minimal
+  fix — verifying it against the suite. The catch: it stops there, leaving that
+  verified fix in your working tree; it doesn't commit, branch, or land.
+- So that fix is really a *proven input* — once the cause is nailed, you hand
+  the now-known change to `/do auto` to ship it as a clean PR (the practical
+  path, since an in-tree fix on a protected `main` can't simply be committed).
 
 ## 9. Verify changes
 
@@ -323,10 +332,9 @@ branches and worktrees they left behind.
 ## 11. Status & monitoring
 
 <details class="flow-cmd">
-<summary><code>/session-report</code> · <code>/briefing</code> · <code>/plans</code> · <code>/zskills-dashboard</code></summary>
+<summary><code>/briefing</code> · <code>/plans</code> · <code>/zskills-dashboard</code></summary>
 
 <div class="flow">
-<div class="flow-step"><p><strong><code>/session-report</code></strong> — what this session actually shipped vs. intended</p></div>
 <div class="flow-step"><p><strong><code>/briefing</code></strong> — project status: commits, worktrees, open checkboxes</p></div>
 <div class="flow-step"><p><strong><code>/plans</code></strong> — every plan's status and the next ready one</p></div>
 <div class="flow-step"><p><strong><code>/zskills-dashboard</code></strong> — local web UI for plans, issues, and tracking</p></div>
@@ -334,34 +342,59 @@ branches and worktrees they left behind.
 
 </details>
 
-**When:** You want to see where this session, the project, or your plans stand.
+**When:** You want to see where the project or your plans stand right now.
 
 ```text
-/session-report          # audit what THIS session actually shipped vs. intended
-/session-report handoff  # persist a durable, forward-looking end-of-session hand-off
 /briefing                # project status: commits, worktrees, open checkboxes
 /plans                   # plan dashboard: statuses, next ready plan
 /zskills-dashboard       # local web UI for plans, issues, and tracking
 ```
 
-- `/session-report` reconciles what the current session *intended* against what
-  actually landed — checked against git, PRs, and plans, not memory. Add
-  `handoff` to instead write a durable, forward-looking hand-off that you or the
-  next session can pick up from.
 - `/briefing` summarizes current project state at a glance.
 - `/plans` shows every plan's status and points you at the next ready one.
 - `/zskills-dashboard` serves a local web dashboard for plans, issues, and
   tracking markers.
 
+## 12. Review and hand off your session
+
+<details class="flow-cmd">
+<summary><code>/session-report</code> · <code>/session-report handoff</code></summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> gathers what this session said it would do</p></div>
+<div class="flow-step"><p>It checks each claim against ground truth — git, PRs, plan markers — not memory</p></div>
+<div class="flow-step"><p>It reports what actually shipped, what's still open, and the next steps</p></div>
+<div class="flow-step optional"><p>With <strong>handoff</strong> it instead writes a durable, forward-looking hand-off doc to resume from</p></div>
+</div>
+
+</details>
+
+**When:** You're wrapping up and want an honest account of what landed, what's
+still open, and where to pick up — or a durable hand-off for the next session
+(or the next person).
+
+```text
+/session-report          # audit this session: shipped vs. intended, open items, next steps
+/session-report handoff  # persist a forward-looking hand-off to resume from
+```
+
+- `/session-report` reconciles what the session *intended* against what actually
+  landed — checked against git, PRs, and plan markers, not conversation memory,
+  so "I did X" only counts when the commit or PR proves it. The result is a
+  review with open items and next steps surfaced.
+- `handoff` turns that into a durable, forward-looking document — the state of
+  play plus what to do next — written to outlast the session, so your future
+  self or a teammate can pick up cleanly.
+
 ---
 
-## 12. Run something on a schedule
+## 13. Run something on a schedule
 
 <details class="flow-cmd">
 <summary><strong><code>every SCHEDULE</code></strong> — the shared scheduling mechanic</summary>
 
 <div class="flow">
-<div class="flow-step"><p>Add <strong>every 30m</strong> (or any interval) to any of the five schedulable skills</p></div>
+<div class="flow-step"><p>Add <strong>every 30m</strong> (or any interval) to any of the six schedulable skills</p></div>
 <div class="flow-step"><p>A self-perpetuating cron is registered</p></div>
 <div class="flow-step"><p>Each fire runs the flow and re-registers the next one</p></div>
 <div class="flow-step"><p>Manage it with <strong>stop</strong> or <strong>next</strong></p></div>
@@ -373,8 +406,8 @@ branches and worktrees they left behind.
 issues as they arrive, re-audit after each batch of work, or drain the plan queue
 through the day.
 
-Five skills take `every SCHEDULE` — `/do`, `/fix-issues`, `/run-plan`,
-`/qe-audit`, and `/work-on-plans`. Append the interval to any of them:
+Six skills take `every SCHEDULE` — `/briefing`, `/do`, `/fix-issues`,
+`/qe-audit`, `/run-plan`, and `/work-on-plans`. Append the interval to any of them:
 
 ```text
 /fix-issues 1 every 60m auto                 # fix one issue an hour, landing each itself

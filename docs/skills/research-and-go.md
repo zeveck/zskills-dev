@@ -38,7 +38,7 @@ The common form is a single broad-goal description in plain English:
 
 ```
 /research-and-go Add physical modeling support for thermal and mechanical domains
-/research-and-go Implement all missing block diagram tool blocks from the gap analysis
+/research-and-go Implement all the missing API endpoints from the gap analysis
 /research-and-go Close the runtime deployment parity gap
 ```
 
@@ -63,7 +63,7 @@ The description is the only argument. A landing keyword (`pr` or `direct`) appea
 
 ```
 /research-and-go Add physical modeling support for thermal and mechanical domains
-/research-and-go Implement all missing block diagram tool blocks from the gap analysis
+/research-and-go Implement all the missing API endpoints from the gap analysis
 /research-and-go Close the runtime deployment parity gap
 ```
 
