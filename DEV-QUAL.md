@@ -5,45 +5,17 @@ This file is the **maintainer-facing manual dev-quality checklist** for
 zskills. It holds the five manual install scenarios a human runs to
 accept a release across both distribution lanes.
 
-Like `RELEASING.md`, this is **dev-maintainer-only and prod-stripped**: its
-entire content sits inside `<!-- prod-strip:start --> … <!-- prod-strip:end
--->` markers AND the build scripts remove the file wholesale, so it never
-ships to either lane's consumers. You will not see this file on
-`github.com/zeveck/zskills` or in any installed plugin tree. (If you are
-adding a new dev-only top-level doc, mirror BOTH mechanisms — the marker
-wrap and the `for f in RELEASING.md DEV-QUAL.md; do … done` removal loops in
-`scripts/build-prod.sh`, `scripts/build-plugin-release.sh`, and
-`tests/test-plugin-mirrorless-resolution.sh`.)
-
 ## How to use this checklist
 
-These are **manual** acceptance scenarios — a human runs them, by hand,
-against a release candidate. They complement, not replace, the automated
-gate (`bash tests/run-all.sh`).
-Each scenario states its **purpose**, **preconditions**, **step-by-step
-commands** (traced to the real install machinery — no invented commands),
-and **expected observable results** (what to check to call it a PASS).
+These are **manual** acceptance scenarios — a human runs them by hand against a
+release candidate. They complement, not replace, the automated gate
+(`bash tests/run-all.sh`). Each scenario states its purpose, preconditions,
+step-by-step commands, and the observable results that make it a PASS.
 
-Internalize the **plugin-lane mental model** from `CLAUDE.md` before running
-these:
-
-- A real consumer is **single-lane** — it installs zskills via the plugin
-  lane OR the legacy `/update-zskills` lane, never both.
-- **Mirror-less plugin is the norm and the goal**: a real plugin consumer
-  has NO `.claude/skills/` mirror — only the 5 materialised artifacts +
-  `.claude/zskills-config.json`, everything resolving under
-  `${CLAUDE_PLUGIN_ROOT}`.
-- **Dual install** (both lanes present at once) is NOT a supported consumer
-  state. It exists only in this dogfooding repo and transiently during a
-  lane switch; the system actively pushes to consolidate it.
-- **The dogfood trap**: zskills-dev itself carries a `.claude/skills/`
-  mirror because it is the source repo. Never treat the presence of that
-  mirror as evidence the plugin lane works — validate **mirror-less** or you
-  reproduce the "dogfood-mask" that shipped the non-functional plugin lanes
-  in #799/#831.
-
-The lane lock lives at `.claude/zskills-install-lane` (bare value `plugin`
-or `update-zskills`, written LAST by `scripts/switch-install-path.sh`).
+zskills ships **two install lanes**, and a real consumer uses exactly one: the
+**plugin lane** (`/plugin install zs@zskills`) and the legacy **`/update-zskills`**
+lane (which mirrors the skills into the project's `.claude/`). The scenarios
+below exercise each lane and the switch between them.
 
 ---
 

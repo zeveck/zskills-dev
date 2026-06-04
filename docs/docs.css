@@ -83,10 +83,17 @@ html, body {
   font-size: 15px;
   color: var(--muted);
 }
+.zl-docs-header-link {
+  margin-left: auto;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 14px;
+}
+.zl-docs-header-link:hover { text-decoration: underline; }
 
 /* Theme toggle button (Phase 3 addition — not lifted). */
 .zl-docs-theme-toggle {
-  margin-left: auto;
+  margin-left: 0;
   background: transparent;
   border: 1px solid var(--line);
   color: var(--ink);
@@ -187,6 +194,10 @@ html, body {
 #zl-docs-main pre code { background: none; padding: 0; border: none; }
 #zl-docs-main hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 #zl-docs-main a { color: var(--accent); }
+/* Bare slash-command mentions (e.g. /do) — accent-colored like skill names in
+ * flow diagrams. The .skill class is applied by MarkdownRenderer's inline-code
+ * pass only to single `/word` tokens, so flags/verbs/paths stay neutral. */
+#zl-docs-main code.skill { color: var(--accent); }
 #zl-docs-main img { max-width: 100%; border-radius: 6px; margin: 10px 0; }
 
 /* Loading placeholder — shown before the first doc renders and during
@@ -248,3 +259,67 @@ html, body {
     padding: 16px 20px;
   }
 }
+
+/* ── Workflow flow strips (ported from PRESENTATION.html, themed to viewer vars) ── */
+/* Vertical flow: larger stacked boxes with down-arrow connectors — plenty of
+   room for the real wording (no horizontal scroll, no tiny text). */
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;               /* room for the down-arrow between boxes */
+  margin: 20px auto;       /* centered column */
+  max-width: 580px;
+}
+.flow-step {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px 18px;
+  position: relative;
+  text-align: center;
+}
+.flow-step p { font-size: 0.95em; color: var(--ink); margin: 0; line-height: 1.5; }
+.flow-step strong { color: var(--accent); font-weight: 600; }
+/* down-arrow connector between stacked steps */
+.flow-step + .flow-step::before {
+  content: '';
+  position: absolute;
+  top: -15px; left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid var(--accent);   /* points down to this box */
+}
+/* optional / conditional step (brainstorm·quiz lead-in, "if auto" trailing) — dashed + dimmed */
+.flow-step.optional { border-style: dashed; background: transparent; }
+.flow-step.optional p { color: var(--muted); font-style: italic; }
+.flow-step.optional strong { color: var(--muted); }
+.flow-step.optional::before { border-top-color: var(--muted); }
+
+/* Collapsible per-command flow — framed as a callout card so it stands out
+   from the surrounding prose. Open/closed persisted by docs-app.js. */
+details.flow-cmd {
+  margin: 22px auto;
+  max-width: 620px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);   /* accent stripe draws the eye */
+  border-radius: 10px;
+  background: var(--panel2);               /* fallback for older browsers */
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+details.flow-cmd > summary {
+  cursor: pointer;
+  padding: 11px 18px;
+  font-size: 1.02em;
+  font-weight: 600;
+  color: var(--ink);
+  border-radius: 9px;
+  list-style-position: inside;
+}
+details.flow-cmd[open] > summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: 9px 9px 0 0;
+}
+details.flow-cmd > summary:hover { color: var(--accent); }
+details.flow-cmd > summary code { color: var(--accent); }

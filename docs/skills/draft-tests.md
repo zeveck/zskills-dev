@@ -2,6 +2,18 @@
 
 > Drafts test specifications into an existing plan's pending phases through adversarial review. Adds a `### Tests` subsection to each phase that still needs work; already-completed phases are never touched. Sister skill to `/draft-plan`, scoped to test specs.
 
+<details class="flow-cmd" open>
+<summary>How it runs — test specs into a plan</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> reads the plan's pending phases — completed phases are never touched</p></div>
+<div class="flow-step"><p>A <strong>QE-reviewer subagent</strong> and a <strong>devil's-advocate subagent</strong> draft the test specs</p></div>
+<div class="flow-step"><p>A <strong>refiner subagent</strong> sharpens them, looping until converged</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> writes a Tests subsection into each pending phase</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/draft-tests` takes a plan file — the kind `/draft-plan` produces — and writes test specifications into it. For every phase that is still pending, it appends a `### Tests` subsection describing what that phase should be tested for. It then pressure-tests those specs through several rounds of adversarial review and refinement, the same way `/draft-plan` pressure-tests a plan, until the specs hold up.

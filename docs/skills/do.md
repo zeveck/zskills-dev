@@ -2,6 +2,21 @@
 
 > Lightweight task dispatcher for ad-hoc work: documentation, examples, refactoring, content updates. Worktree/direct/pr landing modes via flag or config. Recurring via `every SCHEDULE`; `stop`/`next` manage the schedule.
 
+<details class="flow-cmd" open>
+<summary>How it runs — worktree → PR</summary>
+
+<div class="flow">
+<div class="flow-step"><p><strong>You</strong> describe the task</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> turns your task into a plan</p></div>
+<div class="flow-step"><p>A <strong>reviewer subagent</strong> checks the plan and loops until it approves<br>(you can raise the round count with <code>--rounds</code> (default 1))</p></div>
+<div class="flow-step"><p>An <strong>implementer subagent</strong> builds it in a worktree</p></div>
+<div class="flow-step"><p>A <strong>verifier subagent</strong> verifies the change</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> lands it via a PR and monitors CI (up to 2 fix attempts)</p></div>
+<div class="flow-step optional"><p>If you pass <strong>auto</strong>, it requests merge — GitHub merges once required checks pass</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/do` is the everyday workhorse: it takes a single self-contained task and runs it end to end — researching the change, making it, verifying it, and (when you ask) landing it. "Lightweight" here is relative to `/draft-plan`, not a size limit: it means no multi-phase plan and no open design to work out, *not* "small." Documentation, examples, refactors, a new UI element, plumbing new UI, one-off fixes, and content updates all fit. What sends a task elsewhere is unresolved design or work that needs staging into ordered phases (`/draft-plan`), or an issue backlog to clear (`/fix-issues`) — never the number of files touched.
@@ -11,8 +26,6 @@ Given a plain-English description, `/do` first checks that the task is actually 
 Once it decides to proceed, `/do` dispatches a fresh review agent to sanity-check its plan before any code is written, then does the work, then verifies it. Verification matches the kind of change: code changes run the full test suite and a separate `/verify-changes` pass, while content-only changes (markdown, images, presentations) skip the test suite and instead get a focused review of the diff. The `auto` flag controls whether the result lands autonomously — it does not control whether verification runs; code changes are always verified.
 
 How the result reaches `main` depends on the landing mode (see Arguments). The common shape in a protected-`main` repo is a pull request: `/do` opens a worktree, makes the change there, runs the verification gate locally, opens a PR, and watches CI. Output is brief and inline — `/do` writes no persistent report file; the commit (or PR) is the artifact.
-
-`/do` is the everyday workhorse for one-commit changes: it isolates the work in a worktree, runs the verification gate, and lands a single-commit PR. Reach for it whenever a change is small enough not to warrant a full plan but you still want the review-and-verify lifecycle around it.
 
 ## Usage
 

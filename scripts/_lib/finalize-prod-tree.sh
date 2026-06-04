@@ -222,7 +222,8 @@ finalize_prod_tree() {
   find "$tree" -type f -name '*CANARY*' -print -delete 2>/dev/null || true
 
   # ── 3. Dev→prod URL rewrite (#1002) — TREE WALK, run AFTER all strips ─────
-  # Walk docs/, skills/, README.md, CHANGELOG.md AND the .claude/ legacy-lane
+  # Walk docs/, skills/, README.md, CHANGELOG.md, the root marketing pages
+  # (PRESENTATION.html + index.html) AND the .claude/ legacy-lane
   # mirror (.md/.html/.js/.json) and rewrite every dev Pages/repo URL to the
   # prod equivalent. The .claude/ mirror is included because the prod tree
   # ships it for the /update-zskills lane, so its copies of run-plan/SKILL.md
@@ -231,11 +232,11 @@ finalize_prod_tree() {
   # the strip steps above are never processed. rewrite_dev_urls is idempotent
   # (grep-guarded) and honors the `zskills-dev-url-allow` marker, so files
   # without a dev URL — or allow-listed prose like CHANGELOG.md — are untouched.
-  _fpt_log "rewriting dev→prod URLs across $tree (docs, skills, .claude mirror, README, CHANGELOG)"
+  _fpt_log "rewriting dev→prod URLs across $tree (docs, skills, .claude mirror, README, CHANGELOG, PRESENTATION, index)"
   local _f
   while IFS= read -r -d '' _f; do
     rewrite_dev_urls "$_f"
-  done < <(cd "$tree" && find docs skills .claude README.md CHANGELOG.md \
+  done < <(cd "$tree" && find docs skills .claude README.md CHANGELOG.md PRESENTATION.html index.html \
                 \( -name '*.md' -o -name '*.html' -o -name '*.js' -o -name '*.json' \) \
                 -type f -print0 2>/dev/null | while IFS= read -r -d '' rel; do printf '%s\0' "$tree/$rel"; done)
 

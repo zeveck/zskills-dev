@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <title>Z Skills System</title>
 <style>
   :root {
@@ -273,7 +274,8 @@
   <a href="#patterns">Patterns</a>
   <a href="#safety">Safety</a>
   <span class="nav-sep">&#9474;</span>
-  <a href="https://github.com/zeveck/zskills" class="cross">GitHub &rarr;</a>
+  <a href="https://zeveck.github.io/zskills-dev/docs/" class="cross">Docs &rarr;</a>
+  <a href="https://github.com/zeveck/zskills-dev" class="cross">GitHub &rarr;</a>
 </nav>
 
 <div class="container">
@@ -281,9 +283,9 @@
 <!-- HERO -->
 <section class="hero" style="margin-bottom: 6px; padding-bottom: 20px;">
   <h1>Z Skills System</h1>
-  <p>Z Skills turns Claude Code into a disciplined engineering team. 23 core skills (21 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
-  <p>Currently: 21 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
-  <p style="font-size: 0.95em; color: var(--text-dim);">Install via the plugin marketplace (<code>/plugin install zs@zskills</code>, slash prefix <code>/zs:</code>) or the <code>/update-zskills</code> script (bare slash prefix). Both lanes are first-class and permanent &mdash; full setup in the <a href="https://github.com/zeveck/zskills">README</a>.</p>
+  <p>Z Skills accelerates and automates engineering work, adding guardrails and guidance to help Claude Code with various software development workflows. Its 23 skills assist with planning, building, testing, fixing, verifying, and shipping, turning many tasks into disciplined commands gated by review and verification. Six can run on a schedule, for unattended, round-the-clock output.</p>
+  <p>Branches, worktrees, commits, and pull requests are how work gets planned, verified, and landed &mdash; so a git-based project is assumed.</p>
+  <p style="font-size: 0.95em; color: var(--text-dim);">Install via the plugin marketplace (<code>/plugin install zs@zskills</code>, slash prefix <code>/zs:</code>) or the <code>/update-zskills</code> script (bare slash prefix) &mdash; full setup in the <a href="https://github.com/zeveck/zskills-dev">README</a>.</p>
 </section>
 
 <!-- ALL 23 SKILLS -->
@@ -346,7 +348,7 @@
           <p>Commit audit: reviews recent commits for test gaps. Bash mode: adversarial stress-testing. Both file GitHub issues.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--accent2);">
-          <h5><code>/manual-testing</code></h5>
+          <h5><code>/manual-testing</code> <span style="font-size: 0.7em; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-weight: 400; margin-left: 6px;">helper</span></h5>
           <p>Playwright-cli recipes with exact CSS selectors, event sequences, and auth bypass for browser-based verification.</p>
         </div>
       </div>
@@ -407,21 +409,6 @@
         </div>
       </div>
 
-      <h4 style="color: var(--accent); margin: 24px 0 12px;">Block Diagram Add-on</h4>
-      <div class="skill-mini-grid">
-        <div class="skill-mini" style="border-color: var(--pink);">
-          <h5><code>/add-block</code></h5>
-          <p>Full 13-step lifecycle for new block types: plan, implement, register, UI, docs, tests, example, codegen, verification, landing.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--pink);">
-          <h5><code>/add-example</code></h5>
-          <p>Example model creation: research the concept, design layout, build model file, register, test, screenshot, verify.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--pink);">
-          <h5><code>/model-design</code></h5>
-          <p>Layout guidelines for block diagrams and state charts, based on MAAB/NASA standards.</p>
-        </div>
-      </div>
 
 </section>
 
@@ -621,87 +608,13 @@
 
   <p>Skills add softer enforcement at decision points: pre-landing checklists, verification timeouts (45 min for verifiers, 2h for implementers), and a Failure Protocol that kills crons and preserves state on errors.</p>
 
-  <details>
-    <summary>Incident Log and Lessons Learned (click to expand)</summary>
-    <div class="details-body">
-
-      <p>Every safety rule traces back to a real incident. Here are the ones that shaped the system.</p>
-
-      <table>
-        <tr><th>Incident</th><th>What Happened</th><th>What It Drove</th></tr>
-        <tr>
-          <td><strong>17-File Wipe</strong></td>
-          <td>Agent "cleaned up" 17 files of other agents' uncommitted work</td>
-          <td>Hook blocks <code>git checkout --</code>, <code>git restore</code></td>
-        </tr>
-        <tr>
-          <td><strong>9-File Stash Drop</strong></td>
-          <td><code>git stash pop</code> failed; agent ran <code>git stash drop</code>, destroying the only copy</td>
-          <td>Hook blocks <code>git stash drop/clear</code></td>
-        </tr>
-        <tr>
-          <td><strong>Silent 13-Fix Revert</strong></td>
-          <td>Agent checked out old files to investigate, never restored them, committed -- reverting 13 fixes</td>
-          <td>Hook blocks <code>git checkout &lt;commit&gt; -- &lt;file&gt;</code></td>
-        </tr>
-        <tr>
-          <td><strong>50-Fix Sweep</strong></td>
-          <td><code>git add .</code> swept another session's unfinished changes into a 50-fix commit</td>
-          <td>Hook blocks <code>git add .</code> / <code>git add -A</code></td>
-        </tr>
-        <tr>
-          <td><strong>Visual Feature Disaster</strong></td>
-          <td>100% visual feature landed with zero manual testing or screenshots</td>
-          <td>Transcript hooks require <code>playwright-cli</code> for UI commits</td>
-        </tr>
-        <tr>
-          <td><strong>Issue Misread</strong></td>
-          <td>"Reset button" paraphrased as "clear canvas" -- wrong feature built</td>
-          <td>Verbatim issue body + plan text in all agent dispatches</td>
-        </tr>
-        <tr>
-          <td><strong>3-Hour Test Thrash</strong></td>
-          <td>Agents wasted 3 hours trying to run tests in worktrees without dev servers</td>
-          <td>Verbatim test recipe included in every agent dispatch</td>
-        </tr>
-        <tr>
-          <td><strong>Auto-mode Bleed</strong></td>
-          <td>After auto-mode execution, agent kept committing without permission in interactive mode. Context compaction preserved the auto-commit pattern.</td>
-          <td>Explicit mode reset after auto runs</td>
-        </tr>
-        <tr>
-          <td><strong>Pre-staged Sweep</strong></td>
-          <td>Commit swept 146 lines of another session's work because files were pre-staged in the index</td>
-          <td>Pre-staging index check in <code>/commit</code></td>
-        </tr>
-        <tr>
-          <td><strong>Force-removed Worktree Logs</strong></td>
-          <td>Agent dismissed modified logs as "just log files" and force-removed worktree, losing the build record</td>
-          <td>Log extraction requirement before worktree removal</td>
-        </tr>
-      </table>
-
-      <h4 style="color: var(--accent); margin: 24px 0 12px;">What we've learned about LLM compliance</h4>
-
-      <table>
-        <tr><th>Approach</th><th>Effectiveness</th></tr>
-        <tr><td>Hook hard blocks</td><td><span class="strength-high">High</span></td></tr>
-        <tr><td>Concrete recipes at decision points</td><td><span class="strength-high">High</span></td></tr>
-        <tr><td>Verbatim text requirements</td><td><span class="strength-high">High</span></td></tr>
-        <tr><td>Transcript-based verification</td><td><span class="strength-high">High</span></td></tr>
-        <tr><td>Past failure stories in prompts</td><td><span class="strength-low">Low-Med</span></td></tr>
-        <tr><td>Rules in long appendix sections</td><td><span class="strength-low">Low</span></td></tr>
-      </table>
-
-    </div>
-  </details>
 </section>
 
 <!-- CLOSING -->
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
   <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>23 core skills (21 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
-  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6 / 4.7) &mdash; Z Skills System.</p>
+  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills-dev">github.com/zeveck/zskills</a></p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Z Skills System by Rich Conlan. Built with Claude Code (Claude Opus 4.6 / 4.7 / 4.8).</p>
 </section>
 
 </div>

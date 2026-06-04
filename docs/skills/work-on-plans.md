@@ -2,6 +2,17 @@
 
 > Drive your ready plans as a batch: take the plans queued as ready and run each one with `/run-plan` until it lands. Curate the queue (`add`/`rank`/`remove`/`default`) and run on a recurring schedule. The plan-side counterpart to `/fix-issues` for bugs.
 
+<details class="flow-cmd" open>
+<summary>How it runs — drain the plan queue</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> reads the queue from the dashboard "Accepted" column</p></div>
+<div class="flow-step"><p>It runs each plan via <code>/run-plan</code> (whose build and verify subagents do the work)</p></div>
+<div class="flow-step"><p>It moves to the next plan, looping until the count is done</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/work-on-plans` works through your queue of ready-to-run plans, running each one for you. It is the way to sprint across the plan backlog instead of starting plans one at a time: you give it a count (or `all`), and it runs that many plans from the front of the queue, each one through `/run-plan`.

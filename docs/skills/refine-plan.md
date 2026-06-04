@@ -2,6 +2,18 @@
 
 > Refine an in-progress plan by reviewing its remaining phases against the work that has actually been built. Surfaces stale references, invalidated assumptions, and specification gaps, then refines until the review converges. Completed phases are never modified.
 
+<details class="flow-cmd" open>
+<summary>How it runs — re-align a mid-flight plan</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> reads the completed phases — read-only, they're never modified</p></div>
+<div class="flow-step"><p>A <strong>reviewer subagent</strong> and a <strong>devil's-advocate subagent</strong> check the remaining phases for drift</p></div>
+<div class="flow-step"><p>A <strong>refiner subagent</strong> rewrites the remaining phases, looping until converged</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> appends a Drift Log, ready to resume with <code>/run-plan</code></p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/refine-plan` takes a plan you are partway through executing and brings its **unfinished** phases back in line with reality. Plans drift during execution: the phases you have already shipped may have built something a little different from what was originally written down, while the phases still ahead of you keep referencing the original spec. `/refine-plan` closes that gap — it reviews only the remaining phases against what was *actually* built, not what was *planned*, and rewrites them so the rest of the execution stays accurate.

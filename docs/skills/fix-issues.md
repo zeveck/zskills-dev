@@ -2,6 +2,19 @@
 
 > Work through a backlog of GitHub issues in one sprint: pick the issues, fix each in isolation, run the tests, and (optionally) open and land a pull request per fix. Recurring via `every SCHEDULE`; `stop`/`next` manage the schedule. `sync` refreshes issue trackers and closes already-fixed issues; `plan` drafts plans for issues too complex to fix in a sprint.
 
+<details class="flow-cmd" open>
+<summary>How it runs — batch sprint</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> picks N issues by priority or the dashboard Ready column</p></div>
+<div class="flow-step"><p><strong>Implementer subagents</strong> fix them in parallel worktrees</p></div>
+<div class="flow-step"><p><strong>Verifier subagents</strong> verify each fix</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> writes a sprint report</p></div>
+<div class="flow-step optional"><p>With <strong>auto</strong> it lands and merges each fix; otherwise it stops at the report for you to land via <code>/fix-report</code></p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/fix-issues N` runs a batch bug-fixing sprint over your GitHub issues. You give it a count `N`, and it prioritizes that many open issues, fixes each one in its own isolated worktree, runs the test suite before anything is committed, and writes a sprint report you can hand off to `/fix-report`. With the `auto` flag it lands each fix for you (via `/land-pr` in PR mode); without it, it asks for approval at the key gates first.

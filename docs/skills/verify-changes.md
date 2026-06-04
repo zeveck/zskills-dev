@@ -2,6 +2,19 @@
 
 > Verify recent changes really work: review the diffs, check that tests cover them, run the suite, manually verify UI changes with playwright-cli, fix anything broken, re-verify until clean, then report with recommendations.
 
+<details class="flow-cmd" open>
+<summary>How it runs — full verification</summary>
+
+<div class="flow">
+<div class="flow-step"><p>A <strong>fresh verifier subagent</strong> reviews the diff and audits test coverage — fresh eyes on the actual code, not session memory</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> runs the full test suite</p></div>
+<div class="flow-step"><p>It dispatches <code>/manual-testing</code> for a real browser pass on UI changes</p></div>
+<div class="flow-step"><p>It fixes what surfaces and re-verifies, looping until clean</p></div>
+<div class="flow-step"><p>It reports findings and recommendations</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/verify-changes` confirms that the changes you just made actually work, before you commit or land them. It looks at the recent changes (by default everything uncommitted in your working tree), reads each changed file to understand what changed and whether it looks correct, checks that the tests cover the changes, runs the test suite, manually exercises any UI changes in a browser, fixes problems it finds, re-verifies, and then reports what passed and what still needs a human to sign off.

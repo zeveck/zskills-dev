@@ -2,6 +2,16 @@
 
 > Generate a project briefing: worktree status, open checkboxes, recent commits. Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 1d, 2d, 7d.
 
+<details class="flow-cmd" open>
+<summary>How it runs — project status</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> scans the current repo state</p></div>
+<div class="flow-step"><p>It reports commits, worktrees, and open checkboxes</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/briefing` gathers the current state of your project and presents it as a structured briefing. It looks at three things: the status of your worktrees, the open sign-off checkboxes (`[ ]` items) sitting in report files, and the recent commits that have landed on `main`. The result is a quick read on what needs your attention, what is in flight, and what has already landed.

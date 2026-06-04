@@ -2,6 +2,18 @@
 
 > QE audit: check recent commits for test coverage gaps, or bash/stress-test features to find bugs. Files GitHub issues for findings. Recurring via `every SCHEDULE`; `stop`/`next` manage it.
 
+<details class="flow-cmd" open>
+<summary>How it runs — hunt gaps, file issues</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>original agent</strong> scans recent commits for risky changes</p></div>
+<div class="flow-step"><p><strong>Audit subagents</strong> comb the batches in parallel with fresh eyes</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> re-verifies each finding</p></div>
+<div class="flow-step"><p>It files GitHub issues with repro recipes</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/qe-audit` runs a quality-engineering pass over your recent work and files GitHub issues for what it finds. It does not fix anything — it looks for missing tests, coverage gaps, and bugs, and turns each real finding into an issue you (or `/fix-issues`) can act on later.

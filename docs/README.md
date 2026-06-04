@@ -2,6 +2,10 @@
 
 Z Skills turns Claude Code into a disciplined engineering team — 21 user-facing slash commands that plan, build, test, fix, and ship with verification at every step.
 
+It's **built for Claude Code** — that's where the skills, hooks, and slash commands are designed to run — though some pieces work with other agents too. It's also built around **git**: branches, worktrees, commits, and pull requests are how work gets planned, verified, and landed, so a git-based project is assumed.
+
+For the high-level tour, see the **[Z Skills presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**.
+
 These docs are organised in two halves:
 
 - **[Guides](guides/README.md)** — install instructions, end-to-end workflows, and operational concepts. **Start here if you're new to zskills.**

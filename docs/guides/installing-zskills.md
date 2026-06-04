@@ -29,13 +29,24 @@ The first command registers the `zskills` marketplace; the second installs the
 `zs` plugin (the full distribution). Restart the session when prompted so the
 plugin's hooks load.
 
-On the first session after install, the plugin writes a handful of files into
+> **If the install fails to clone with a git SSH error** — something like
+> `git@github.com: Permission denied (publickey)` followed by
+> `fatal: Could not read from remote repository` — your git is configured to
+> reach GitHub over **SSH** (usually a global `insteadOf` rewrite), but the
+> plugin clones over **HTTPS**. Tell Claude *"configure git to use HTTPS instead
+> of SSH so the install works"* and re-run `/plugin install zs@zskills`.
+
+On the first session after install, the plugin writes its managed files into
 your project's `.claude/`: the two agent definitions (`.claude/agents/`), two
 hook scripts (`.claude/hooks/`), and the agent-rules file
 (`.claude/rules/zskills/managed.md`). These are plugin-managed — when you
-upgrade, the plugin refreshes them. If you've edited one of these files
-yourself, your edited copy is left alone. See
-[`.gitignore` guidance](#gitignore-guidance) for whether to track them.
+upgrade, the plugin refreshes them, leaving any you've edited yourself alone.
+
+If you don't already have a `.claude/zskills-config.json`, the plugin also seeds
+a default one (plus its schema) so the skills have settings to read — review it
+and tune it for your project (see [Configuring zskills](zskills-config.md)). An
+existing config is never overwritten. See
+[`.gitignore` guidance](#gitignore-guidance) for whether to track these files.
 
 By default the plugin install lands work in **`locked-main-pr`** mode
 (`execution.landing: pr`, `main_protected: true`): agents don't commit to
@@ -52,6 +63,10 @@ git clone https://github.com/zeveck/zskills.git /tmp/zskills
 mkdir -p .claude/skills
 cp -r /tmp/zskills/skills/* .claude/skills/
 ```
+
+If `git clone` fails with the same `git@github.com: Permission denied` SSH error
+as under [Plugin install](#plugin-install), the cause and fix are identical —
+point git at HTTPS, then retry.
 
 ```
 /update-zskills install

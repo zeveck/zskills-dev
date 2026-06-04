@@ -4,6 +4,18 @@
 > switch off a merged feature branch, pull main, and delete local branches
 > whose work is already on main. Preview by default.
 
+<details class="flow-cmd" open>
+<summary>How it runs — catch the clone up</summary>
+
+<div class="flow">
+<div class="flow-step"><p>The <strong>agent</strong> fetches and prunes the remote-tracking branches GitHub has already deleted</p></div>
+<div class="flow-step"><p>If you're on a now-merged branch, it switches to main and pulls</p></div>
+<div class="flow-step"><p>It removes the worktrees held by merged branches (clean ones only)</p></div>
+<div class="flow-step"><p>It deletes the merged local branches — and remote ones too, with <code>remote</code> / <code>all</code></p></div>
+</div>
+
+</details>
+
 ## What it does
 
 After you merge a pull request on GitHub, your local clone still has the

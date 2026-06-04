@@ -2,6 +2,21 @@
 
 > Deep debugging for one complex bug at a time. A disciplined workflow — reproduce, trace, state the root cause, fix, verify — that makes the agent prove it understands the bug before it writes a fix.
 
+<details class="flow-cmd" open>
+<summary>How it runs — one agent, doesn't land</summary>
+
+<div class="flow">
+<div class="flow-step"><p><strong>You</strong> describe the bug, or point at an issue</p></div>
+<div class="flow-step"><p>The <strong>agent</strong> reproduces it and watches it fail</p></div>
+<div class="flow-step"><p>It traces the code to the root cause</p></div>
+<div class="flow-step"><p>It states the cause and proves it — <strong>you</strong> confirm</p></div>
+<div class="flow-step"><p>It writes a regression test that fails first</p></div>
+<div class="flow-step"><p>It makes the minimal fix</p></div>
+<div class="flow-step"><p>It verifies the test passes, then runs the full suite</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/investigate` takes one bug whose cause is unclear and works it end to end: it reproduces the bug, traces the failure back to its source, states the root cause in writing, applies a minimal fix, and verifies that fix. The defining discipline is that no fix may be written until the root cause has been proven — the skill exists precisely because the natural instinct is to skip straight to "try a fix," and every step here is built to prevent that.
@@ -41,7 +56,7 @@ When the input is an issue number, `/investigate` also claims that issue first, 
 ## Companion skills
 
 - **`/fix-issues`** — the batch counterpart. `/investigate` is for one bug at a time; for working through several issues, use `/fix-issues`, which will redirect you here when a single bug needs deeper digging. When `/fix-issues` can't diagnose a bug within its normal flow (two failed attempts), it skips that issue with a note that it needs deeper investigation, and you then run `/investigate` on it. There is no automatic escalation — the hand-off is your decision.
-- **`/do`** — where the fix goes once the root cause is known. `/do` assumes the fix is already understood; `/investigate` is what you run first when it isn't. Once `/investigate` has proven the cause, the fix itself can be carried by `/do`, which isolates the work in a worktree and lands a one-commit PR.
+- **`/do`** — where the fix goes once the root cause is known. `/do` assumes the fix is already understood; `/investigate` is what you run first when it isn't. Once `/investigate` has proven the cause, `/do` carries the fix to a verified, landed change.
 
 ## Arguments
 

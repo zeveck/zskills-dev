@@ -25,6 +25,7 @@ export const DOCS_CATALOG = [
       { name: "Installing zskills", path: "docs/guides/installing-zskills.md" },
       { name: "Z Skills Workflows", path: "docs/guides/workflows.md" },
       { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/inspecting-and-monitoring.md" },
+      { name: "Configuring zskills", path: "docs/guides/zskills-config.md" },
       { name: "Switching install lanes", path: "docs/guides/switching-install-lanes.md" },
       { name: "How tracking keeps pipelines safe", path: "docs/guides/tracking-overview.md" }
     ]
@@ -32,32 +33,62 @@ export const DOCS_CATALOG = [
   {
     section: "Skills",
     items: [
-      { name: "Z Skills Reference", path: "docs/skills/README.md" },
-      { name: "/briefing", path: "docs/skills/briefing.md" },
-      { name: "/cleanup-merged", path: "docs/skills/cleanup-merged.md" },
-      { name: "/commit", path: "docs/skills/commit.md" },
-      { name: "/create-worktree", path: "docs/skills/create-worktree.md" },
-      { name: "/do", path: "docs/skills/do.md" },
-      { name: "/draft-plan", path: "docs/skills/draft-plan.md" },
-      { name: "/draft-tests", path: "docs/skills/draft-tests.md" },
-      { name: "/fix-issues", path: "docs/skills/fix-issues.md" },
-      { name: "/fix-report", path: "docs/skills/fix-report.md" },
-      { name: "/investigate", path: "docs/skills/investigate.md" },
-      { name: "/plans", path: "docs/skills/plans.md" },
-      { name: "/qe-audit", path: "docs/skills/qe-audit.md" },
-      { name: "/refine-plan", path: "docs/skills/refine-plan.md" },
-      { name: "/research-and-go", path: "docs/skills/research-and-go.md" },
-      { name: "/research-and-plan", path: "docs/skills/research-and-plan.md" },
-      { name: "/run-plan", path: "docs/skills/run-plan.md" },
-      { name: "/session-report", path: "docs/skills/session-report.md" },
-      { name: "/update-zskills", path: "docs/skills/update-zskills.md" },
-      { name: "/verify-changes", path: "docs/skills/verify-changes.md" },
-      { name: "/work-on-plans", path: "docs/skills/work-on-plans.md" },
-      { name: "/zskills-dashboard", path: "docs/skills/zskills-dashboard.md" }
+      { name: "Z Skills Reference", path: "docs/skills/README.md" }
     ]
   },
   {
-    section: "Internal Skills",
+    section: "Execution",
+    items: [
+      { name: "/do", path: "docs/skills/do.md" },
+      { name: "/run-plan", path: "docs/skills/run-plan.md" },
+      { name: "/investigate", path: "docs/skills/investigate.md" }
+    ]
+  },
+  {
+    section: "Planning & Design",
+    items: [
+      { name: "/draft-plan", path: "docs/skills/draft-plan.md" },
+      { name: "/refine-plan", path: "docs/skills/refine-plan.md" },
+      { name: "/draft-tests", path: "docs/skills/draft-tests.md" },
+      { name: "/research-and-plan", path: "docs/skills/research-and-plan.md" },
+      { name: "/plans", path: "docs/skills/plans.md" }
+    ]
+  },
+  {
+    section: "Quality Assurance",
+    items: [
+      { name: "/verify-changes", path: "docs/skills/verify-changes.md" },
+      { name: "/qe-audit", path: "docs/skills/qe-audit.md" }
+    ]
+  },
+  {
+    section: "Automation",
+    items: [
+      { name: "/fix-issues", path: "docs/skills/fix-issues.md" },
+      { name: "/work-on-plans", path: "docs/skills/work-on-plans.md" },
+      { name: "/zskills-dashboard", path: "docs/skills/zskills-dashboard.md" },
+      { name: "/research-and-go", path: "docs/skills/research-and-go.md" }
+    ]
+  },
+  {
+    section: "Reporting",
+    items: [
+      { name: "/session-report", path: "docs/skills/session-report.md" },
+      { name: "/briefing", path: "docs/skills/briefing.md" },
+      { name: "/fix-report", path: "docs/skills/fix-report.md" }
+    ]
+  },
+  {
+    section: "Utilities",
+    items: [
+      { name: "/commit", path: "docs/skills/commit.md" },
+      { name: "/cleanup-merged", path: "docs/skills/cleanup-merged.md" },
+      { name: "/update-zskills", path: "docs/skills/update-zskills.md" },
+      { name: "/create-worktree", path: "docs/skills/create-worktree.md" }
+    ]
+  },
+  {
+    section: "Internal",
     items: [
       { name: "/land-pr", path: "docs/skills/land-pr.md" },
       { name: "/manual-testing", path: "docs/skills/manual-testing.md" }

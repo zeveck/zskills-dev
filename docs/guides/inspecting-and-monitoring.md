@@ -104,7 +104,7 @@ without asking the agent anything.
 ![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed.](assets/zskills-dashboard.png)
 
 > **Try it live:** an interactive, browser-only demo of this dashboard runs at
-> **<http://zskills.synapticnoise.com/dashboard-demo/>** — drop plans into *Accepted*
+> **<https://zeveck.github.io/zskills-dev/dashboard-demo/>** — drop plans into *Accepted*
 > (and issues into *Ready*) and watch them get worked, with the activity feed
 > and run-status chips updating live. *(The screenshot above is from that demo;
 > its plan names are illustrative placeholders.)*
@@ -290,7 +290,30 @@ the dashboard, or `cat` the files:
 
 ---
 
-## 7. Cheat sheet
+## 7. Session logs — an opt-in transcript trail
+
+zskills can write a per-session log — what the agent did, plus every permission
+request — to disk **once you turn it on**, turning "what happened across
+sessions" into something you can read after the fact. Two config keys control it
+(see [Configuring zskills](zskills-config.md)):
+
+- `logging.enabled` (**default `false`** — opt-in) — the master switch; set it
+  `true` to turn session logging on. When off or absent, both hooks no-op.
+- `logging.dir` — where logs land. Left empty they go to a per-OS cache directory
+  keyed by project name (e.g. `~/.cache/zskills-session-logs/<project>` on Linux),
+  and the hook records that path in the **main checkout's**
+  `.zskills/session-log-dirs` (newest last — one registry shared by all the
+  repo's worktrees) so you can always find where it logged. Point it at a stable
+  **absolute** path to keep a durable trail you can `cat` later.
+
+Because it captures the permission requests too, this is a useful monitoring and
+audit record for unattended (`auto` / scheduled) runs — turn it on
+(`logging.enabled: true`) and point `logging.dir` somewhere persistent before you
+walk away.
+
+---
+
+## 8. Cheat sheet
 
 ```bash
 # --- live: what's running now ---

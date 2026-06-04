@@ -2,6 +2,20 @@
 
 > Decompose a broad goal into a sequence of executable sub-plans. Researches the domain, identifies sub-problems and dependencies, and produces a meta-plan whose phases each hand off to `/run-plan`. Stops once the meta-plan is ready for review.
 
+<details class="flow-cmd" open>
+<summary>How it runs — decompose, then stop for review</summary>
+
+<div class="flow">
+<div class="flow-step"><p><strong>You</strong> describe the broad goal</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> researches the domain</p></div>
+<div class="flow-step"><p>It decomposes the goal into dependent sub-plans</p></div>
+<div class="flow-step"><p><strong>You</strong> confirm the split</p></div>
+<div class="flow-step"><p>Each sub-plan is drafted via <code>/draft-plan</code> (its own reviewer, devil's-advocate, and refiner subagents)</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> writes a meta-plan and stops for your review</p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/research-and-plan` takes a goal that's too large for a single plan and breaks it into a set of smaller, focused sub-plans. It researches the domain first — surveying what the goal covers, what already exists, and which pieces are genuinely separate sub-problems — then works out how those pieces depend on each other and roughly how big each one is. Sub-problems that would be too large to finish in one sitting get split further.

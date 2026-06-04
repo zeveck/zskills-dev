@@ -2,6 +2,20 @@
 
 > Draft a high-quality plan through iterative adversarial review: research, draft, review, devil's-advocate, refine -- repeated until convergence. Output is a plan file ready for `/run-plan` execution.
 
+<details class="flow-cmd" open>
+<summary>How it runs — adversarial drafting</summary>
+
+<div class="flow">
+<div class="flow-step"><p><strong>You</strong> describe the goal</p></div>
+<div class="flow-step optional"><p>Optionally <strong>you</strong> open with <strong>brainstorm</strong> (design dialogue) or <strong>quiz</strong> (requirements interview) to seed the research</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> researches the problem and writes a first draft</p></div>
+<div class="flow-step"><p>A <strong>reviewer subagent</strong> and a <strong>devil's-advocate subagent</strong> attack the draft</p></div>
+<div class="flow-step"><p>A <strong>refiner subagent</strong> rewrites it, looping until the reviews converge</p></div>
+<div class="flow-step"><p>The <strong>original agent</strong> writes the plan file, ready for <code>/run-plan</code></p></div>
+</div>
+
+</details>
+
 ## What it does
 
 `/draft-plan` turns a description of work into a written plan file you can execute with `/run-plan`. It does this by drafting the plan and then attacking it: one pass researches the problem, another writes a first draft, and then reviewers and a deliberately adversarial "devil's advocate" poke holes in it while a refiner addresses every finding. This review-and-refine cycle repeats until the plan stops accumulating substantive problems (or hits the round budget you set).
