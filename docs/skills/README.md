@@ -1,6 +1,6 @@
 # Z Skills Reference
 
-Per-skill reference for the **23 user-facing Z Skills**, plus the **2 internal
+Per-skill reference for the **22 user-facing Z Skills**, plus the **2 internal
 helpers** they dispatch (`/land-pr` and `/manual-testing` — not for direct use;
 in the docs viewer they appear under their own **Internal Skills** section).
 Looking for how to *combine* these skills into end-to-end workflows? See

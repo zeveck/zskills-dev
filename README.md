@@ -36,7 +36,7 @@ direct — your choice).
 - [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
 - [`docs/guides/workflows.md`](docs/guides/workflows.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
 - [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) — install via the plugin marketplace or the `/update-zskills` script.
-- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 23 user-facing skills + 2 helpers.
+- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 22 user-facing skills + 2 helpers.
 - [`docs/guides/inspecting-and-monitoring.md`](docs/guides/inspecting-and-monitoring.md) — observe a running zskills project.
 
 **[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
