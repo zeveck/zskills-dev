@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # log-permission-request.sh — PermissionRequest hook. Session-logging.
 #
 # Fires ONLY when a permission dialog would appear (Claude Code does NOT
@@ -28,8 +28,10 @@
 #
 # Log-dir resolution + the logging.enabled master toggle match
 # log-session-stop.sh exactly (shared precedence: ZSKILLS_LOG_DIR env >
-# logging.dir config > tempfile.gettempdir()/zskills-session-logs/
-# <project>/).
+# logging.dir config > per-OS cache default — see issue #1059). The sidecar
+# lands in the SAME resolved log dir the Stop hook reads from, so identical
+# resolution is what keeps them in agreement. This hook does NOT write the
+# registry; the Stop hook publishes the dir.
 
 # D16(a) plugin-lane conditional-skip shim. Must be the first executable
 # line. Event-agnostic, so it de-dupes the PermissionRequest event when
@@ -65,8 +67,8 @@ fi
   "$PYTHON" - >/dev/null 2>&1 <<'PY'
 import json
 import os
+import platform
 import sys
-import tempfile
 from datetime import datetime, timezone
 
 PERMISSION_SUMMARY_MAX = 200
@@ -91,15 +93,33 @@ def read_config(project_dir):
     return enabled, log_dir_cfg
 
 
+# KEEP IDENTICAL to log-session-stop.sh / session-logs.sh (issue #1059).
+def project_base(project_dir):
+    base = os.path.basename(os.path.normpath(project_dir)) or "project"
+    return base.replace(os.sep, "_").replace("/", "_")
+
+
+def default_cache_dir(project_dir):
+    """Per-OS stable cache root (replaces tempfile.gettempdir())."""
+    base = project_base(project_dir)
+    system = platform.system()
+    if system == "Windows":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    elif system == "Darwin":
+        root = os.path.join(os.path.expanduser("~"), "Library", "Caches")
+    else:
+        root = (os.environ.get("XDG_CACHE_HOME")
+                or os.path.join(os.path.expanduser("~"), ".cache"))
+    return os.path.join(root, "zskills-session-logs", base)
+
+
 def resolve_log_dir(project_dir, cfg_dir):
     env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
     if env_dir:
         return env_dir
     if cfg_dir:
         return cfg_dir
-    base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    base = base.replace(os.sep, "_").replace("/", "_")
-    return os.path.join(tempfile.gettempdir(), "zskills-session-logs", base)
+    return default_cache_dir(project_dir)
 
 
 def summarize_input(tool_name, tool_input):

@@ -203,12 +203,18 @@ resolved="$(ZSKILLS_LOG_DIR="$LOGD1" CLAUDE_PROJECT_DIR="$PROJ" bash "$HELPER")"
 [ "$resolved" = "$LOGD1" ] && pass "5a. no-arg prints resolved dir (env precedence)" \
   || fail "5a. no-arg resolved dir" "got [$resolved] want [$LOGD1]"
 
-# Default precedence (no env, no config dir): tempdir/zskills-session-logs/<project>.
-default_dir="$(CLAUDE_PROJECT_DIR="$PROJ" bash "$HELPER")"
-if [[ "$default_dir" == */zskills-session-logs/proj ]]; then
-  pass "5b. default dir is <tempdir>/zskills-session-logs/<project> ($default_dir)"
+# Default precedence (no env, no config dir, no registry): per-OS cache
+# default <cache-root>/zskills-session-logs/<project> (issue #1059 replaced
+# the old tempfile.gettempdir() default). Use a FRESH project with no
+# registry (the shared $PROJ now has one from Cases 1+3's Stop writes).
+PROJ5B="$WORK/proj5b"
+mkdir -p "$PROJ5B/.claude"
+echo '{}' > "$PROJ5B/.claude/zskills-config.json"
+default_dir="$(CLAUDE_PROJECT_DIR="$PROJ5B" XDG_CACHE_HOME="$WORK/xdg" bash "$HELPER")"
+if [[ "$default_dir" == "$WORK/xdg/zskills-session-logs/proj5b" ]]; then
+  pass "5b. default dir is <cache-root>/zskills-session-logs/<project> ($default_dir)"
 else
-  fail "5b. default dir" "got $default_dir"
+  fail "5b. default dir" "got $default_dir want $WORK/xdg/zskills-session-logs/proj5b"
 fi
 
 # Dest arg: copies the logs.
@@ -290,6 +296,275 @@ if [ -f "$probe" ]; then
 else
   fail "6c. tmp-window mode 0o600" "probe not created"
 fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 7 — cross-context agreement (issue #1059 regression test) ==="
+# The actual bug: writer (Stop hook) and reader (helper) each independently
+# re-resolved the log dir via tempfile.gettempdir(), which honors $TMPDIR.
+# With different TMPDIRs they diverged and logs became unfindable. The fix:
+# the Stop hook publishes its resolved dir into a shared registry at
+# <main-repo-root>/.zskills/session-log-dirs; the reader reads the registry.
+# This test writes with one TMPDIR/XDG and reads with a DIFFERENT one, and
+# asserts the reader still finds the logs (via the registry, NOT recompute).
+CC_PROJ="$WORK/ccproj"
+mkdir -p "$CC_PROJ/.claude"
+echo '{}' > "$CC_PROJ/.claude/zskills-config.json"
+( cd "$CC_PROJ" && git init -q . )
+# Write: blank logging.dir, no ZSKILLS_LOG_DIR -> per-OS default under
+# XDG_CACHE_HOME=cacheA; a deliberately DIFFERENT TMPDIR.
+mkdir -p "$WORK/cc-tmpA" "$WORK/cc-tmpB"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"ccsess01\",\"transcript_path\":\"$TR\"}" | \
+  HOME="$WORK/cc-home" XDG_CACHE_HOME="$WORK/cc-cacheA" TMPDIR="$WORK/cc-tmpA" \
+  CLAUDE_PROJECT_DIR="$CC_PROJ" TZ=UTC bash "$STOP_HOOK"
+WRITTEN_DIR="$WORK/cc-cacheA/zskills-session-logs/ccproj"
+if [ -f "$WRITTEN_DIR/2026-06-03-1200-ccsess01.md" ]; then
+  pass "7a. Stop hook wrote to the per-OS default (cacheA) dir"
+else
+  fail "7a. Stop hook wrote to per-OS default" "no md under $WRITTEN_DIR"
+fi
+# Registry recorded the written dir.
+REG="$CC_PROJ/.zskills/session-log-dirs"
+if [ -f "$REG" ] && grep -qF "$WRITTEN_DIR" "$REG"; then
+  pass "7b. registry recorded the resolved dir at <main-root>/.zskills/session-log-dirs"
+else
+  fail "7b. registry recorded dir" "$(cat "$REG" 2>/dev/null)"
+fi
+# Read with a DIFFERENT TMPDIR/XDG: must resolve to the WRITTEN dir via the
+# registry, not recompute to cacheB.
+read_dir="$(HOME="$WORK/cc-home" XDG_CACHE_HOME="$WORK/cc-cacheB" TMPDIR="$WORK/cc-tmpB" \
+  CLAUDE_PROJECT_DIR="$CC_PROJ" bash "$HELPER")"
+if [ "$read_dir" = "$WRITTEN_DIR" ]; then
+  pass "7c. reader (different TMPDIR/XDG) resolves the WRITTEN dir via registry"
+else
+  fail "7c. cross-context agreement" "reader got [$read_dir] want [$WRITTEN_DIR]"
+fi
+# And a copy across contexts actually finds the markdown.
+CC_DEST="$WORK/cc-dest"
+HOME="$WORK/cc-home" XDG_CACHE_HOME="$WORK/cc-cacheB" TMPDIR="$WORK/cc-tmpB" \
+  CLAUDE_PROJECT_DIR="$CC_PROJ" bash "$HELPER" "$CC_DEST" >/dev/null
+if [ -f "$CC_DEST/2026-06-03-1200-ccsess01.md" ]; then
+  pass "7d. cross-context copy lands the markdown in dest"
+else
+  fail "7d. cross-context copy" "dest: $(ls "$CC_DEST" 2>/dev/null)"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 8 — registry semantics: header, append, dedup, union ==="
+RS_PROJ="$WORK/rsproj"
+mkdir -p "$RS_PROJ/.claude"
+echo '{}' > "$RS_PROJ/.claude/zskills-config.json"
+( cd "$RS_PROJ" && git init -q . )
+RS_REG="$RS_PROJ/.zskills/session-log-dirs"
+RS_A="$WORK/rs-logA"
+RS_B="$WORK/rs-logB"
+# First write -> dir A (via ZSKILLS_LOG_DIR override).
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"rs000001\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$RS_A" CLAUDE_PROJECT_DIR="$RS_PROJ" TZ=UTC bash "$STOP_HOOK"
+# Self-describing header present.
+if head -2 "$RS_REG" | grep -q "zskills session logs are written" \
+   && head -2 "$RS_REG" | grep -q "logging.dir"; then
+  pass "8a. registry has a self-describing header block"
+else
+  fail "8a. self-describing header" "$(head -2 "$RS_REG" 2>/dev/null)"
+fi
+# Second write -> SAME dir A: must NOT append a duplicate line.
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"rs000002\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$RS_A" CLAUDE_PROJECT_DIR="$RS_PROJ" TZ=UTC bash "$STOP_HOOK"
+acount="$(grep -cF "$RS_A" "$RS_REG")"
+[ "$acount" -eq 1 ] && pass "8b. duplicate dir is deduped (1 line, not 2)" \
+  || fail "8b. dedup" "got $acount lines for $RS_A"
+# Third write -> dir B: appends a NEW line (union, newest last).
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"rs000003\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$RS_B" CLAUDE_PROJECT_DIR="$RS_PROJ" TZ=UTC bash "$STOP_HOOK"
+if grep -qF "$RS_A" "$RS_REG" && grep -qF "$RS_B" "$RS_REG"; then
+  pass "8c. distinct dirs both recorded (append-only union)"
+else
+  fail "8c. append union" "$(cat "$RS_REG" 2>/dev/null)"
+fi
+# Newest last: dir B's line comes AFTER dir A's line.
+a_ln="$(grep -nF "$RS_A" "$RS_REG" | head -1 | cut -d: -f1)"
+b_ln="$(grep -nF "$RS_B" "$RS_REG" | head -1 | cut -d: -f1)"
+if [ -n "$a_ln" ] && [ -n "$b_ln" ] && [ "$b_ln" -gt "$a_ln" ]; then
+  pass "8d. newest dir is recorded last"
+else
+  fail "8d. newest last" "a_ln=$a_ln b_ln=$b_ln"
+fi
+# Helper unions logs across BOTH recorded dirs that still exist.
+RS_DEST="$WORK/rs-dest"
+CLAUDE_PROJECT_DIR="$RS_PROJ" bash "$HELPER" "$RS_DEST" >/dev/null
+# Both A and B got the same filenames (same SID? no — different SIDs).
+nfiles="$(find "$RS_DEST" -name '*.md' | wc -l | tr -d ' ')"
+if [ "$nfiles" -ge 1 ]; then
+  pass "8e. helper unions logs across recorded dirs into dest ($nfiles md files)"
+else
+  fail "8e. union copy" "dest md count=$nfiles"
+fi
+# Helper print-dir unions: BOTH A and B appear (both exist).
+union_out="$(CLAUDE_PROJECT_DIR="$RS_PROJ" bash "$HELPER")"
+if echo "$union_out" | grep -qF "$RS_A" && echo "$union_out" | grep -qF "$RS_B"; then
+  pass "8f. helper print-dir unions existing recorded dirs"
+else
+  fail "8f. union print" "got [$union_out]"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 9 — registry race-safe under concurrent writers ==="
+RC_PROJ="$WORK/rcproj"
+mkdir -p "$RC_PROJ/.claude"
+echo '{}' > "$RC_PROJ/.claude/zskills-config.json"
+( cd "$RC_PROJ" && git init -q . )
+RC_REG="$RC_PROJ/.zskills/session-log-dirs"
+RC_DIR="$WORK/rc-log"
+# Two concurrent Stop hooks both resolving the SAME dir: must produce
+# exactly ONE registry line for that dir (no interleaving, no dup).
+pids=()
+for i in 1 2 3 4; do
+  ( echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"rcsess0$i\",\"transcript_path\":\"$TR\"}" | \
+      ZSKILLS_LOG_DIR="$RC_DIR" CLAUDE_PROJECT_DIR="$RC_PROJ" TZ=UTC bash "$STOP_HOOK" ) &
+  pids+=($!)
+done
+for p in "${pids[@]}"; do wait "$p"; done
+rccount="$(grep -cF "$RC_DIR" "$RC_REG" 2>/dev/null || echo 0)"
+[ "$rccount" -eq 1 ] && pass "9a. concurrent writers -> exactly one registry line (race-safe dedup)" \
+  || fail "9a. concurrent dedup" "got $rccount lines for $RC_DIR"
+# No corrupted/partial lines: every non-comment line is <ts>\t<abspath>.
+bad=0
+while IFS= read -r ln; do
+  [ -z "${ln// /}" ] && continue
+  case "$ln" in
+    \#*) continue ;;
+  esac
+  # Must contain a tab and an absolute path after it.
+  printf '%s' "$ln" | grep -qP '^\S+\t/' || bad=1
+done < "$RC_REG"
+[ "$bad" -eq 0 ] && pass "9b. no corrupted/interleaved registry lines" \
+  || fail "9b. line integrity" "found a malformed line in $RC_REG"
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 10 — worktree write records into MAIN-ROOT registry ==="
+# A write whose cwd/project is a WORKTREE must record into the main repo
+# root's .zskills/session-log-dirs (shared across all worktrees), and the
+# main-repo helper must see it.
+WT_MAIN="$WORK/wt-main"
+mkdir -p "$WT_MAIN/.claude"
+echo '{}' > "$WT_MAIN/.claude/zskills-config.json"
+( cd "$WT_MAIN" && git init -q . && git config user.email t@t && git config user.name t \
+    && git commit -q --allow-empty -m init )
+WT_LEAF="$WORK/wt-leaf"
+( cd "$WT_MAIN" && git worktree add -q "$WT_LEAF" -b leafbranch ) 2>/dev/null
+mkdir -p "$WT_LEAF/.claude"
+echo '{}' > "$WT_LEAF/.claude/zskills-config.json"
+WT_LOG="$WORK/wt-log"
+# Write from the WORKTREE (CLAUDE_PROJECT_DIR = worktree path).
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"wtsess01\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$WT_LOG" CLAUDE_PROJECT_DIR="$WT_LEAF" TZ=UTC bash "$STOP_HOOK"
+MAIN_REG="$WT_MAIN/.zskills/session-log-dirs"
+if [ -f "$MAIN_REG" ] && grep -qF "$WT_LOG" "$MAIN_REG"; then
+  pass "10a. worktree write recorded into MAIN-root registry (shared)"
+else
+  fail "10a. main-root registry" "main_reg=$(cat "$MAIN_REG" 2>/dev/null); leaf_reg_exists=$([ -f "$WT_LEAF/.zskills/session-log-dirs" ] && echo y || echo n)"
+fi
+# The main-repo helper sees the worktree's logged dir.
+main_read="$(CLAUDE_PROJECT_DIR="$WT_MAIN" bash "$HELPER")"
+if echo "$main_read" | grep -qF "$WT_LOG"; then
+  pass "10b. main-repo helper sees the worktree-written dir via shared registry"
+else
+  fail "10b. main helper sees worktree dir" "got [$main_read]"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 11 — per-OS cache default (mocked platform + env) ==="
+# CI is Linux-only, so the macOS/Windows branches are UNIT-mocked by
+# overriding platform.system() and the relevant env. We drive the exact
+# default_cache_dir() logic the hooks + helper share.
+osprobe() {
+  # $1 = platform.system() return; remaining env passed by caller.
+  local sysname="$1"; shift
+  "$PYTHON" - "$sysname" <<'PYOS'
+import os, platform, sys
+sysname = sys.argv[1]
+platform.system = lambda: sysname  # mock
+
+def project_base(project_dir):
+    base = os.path.basename(os.path.normpath(project_dir)) or "project"
+    return base.replace(os.sep, "_").replace("/", "_")
+
+def default_cache_dir(project_dir):
+    base = project_base(project_dir)
+    system = platform.system()
+    if system == "Windows":
+        root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    elif system == "Darwin":
+        root = os.path.join(os.path.expanduser("~"), "Library", "Caches")
+    else:
+        root = (os.environ.get("XDG_CACHE_HOME")
+                or os.path.join(os.path.expanduser("~"), ".cache"))
+    return os.path.join(root, "zskills-session-logs", base)
+
+print(default_cache_dir("/some/where/myproj"))
+PYOS
+}
+# Sanity: the mocked default_cache_dir() above must byte-match the one
+# embedded in BOTH the source hook and the helper (guards against drift).
+for f in "$STOP_HOOK" "$PERM_HOOK" "$HELPER"; do
+  if grep -q 'def default_cache_dir(project_dir):' "$f" \
+     && grep -q 'Library", "Caches"' "$f" \
+     && grep -q 'LOCALAPPDATA' "$f" \
+     && grep -q 'XDG_CACHE_HOME' "$f"; then
+    pass "11-pre. $(basename "$f") embeds the shared default_cache_dir() branches"
+  else
+    fail "11-pre. shared default_cache_dir" "$(basename "$f") missing a branch"
+  fi
+done
+# Linux: XDG_CACHE_HOME honored. (Run each probe in a subshell so env
+# manipulation applies to the python child, not to a shell function via
+# `env -u` — which would no-op on a function.)
+got="$(HOME=/h XDG_CACHE_HOME=/xdgroot osprobe Linux)"
+[ "$got" = "/xdgroot/zskills-session-logs/myproj" ] \
+  && pass "11a. Linux uses \$XDG_CACHE_HOME" || fail "11a. Linux XDG" "got $got"
+# Linux: XDG unset -> ~/.cache.
+got="$( unset XDG_CACHE_HOME; HOME=/homedir osprobe Linux )"
+[ "$got" = "/homedir/.cache/zskills-session-logs/myproj" ] \
+  && pass "11b. Linux falls back to \$HOME/.cache" || fail "11b. Linux ~/.cache" "got $got"
+# macOS (Darwin): ~/Library/Caches.
+got="$(HOME=/Users/bob osprobe Darwin)"
+[ "$got" = "/Users/bob/Library/Caches/zskills-session-logs/myproj" ] \
+  && pass "11c. macOS uses ~/Library/Caches" || fail "11c. macOS" "got $got"
+# Windows: %LOCALAPPDATA% (a single literal backslash per separator).
+got="$(LOCALAPPDATA='C:\Users\bob\AppData\Local' osprobe Windows)"
+case "$got" in
+  *'AppData\Local'*'zskills-session-logs'*myproj) pass "11d. Windows uses %LOCALAPPDATA% ($got)" ;;
+  *) fail "11d. Windows LOCALAPPDATA" "got $got" ;;
+esac
+# Windows: LOCALAPPDATA unset -> ~ fallback.
+got="$( unset LOCALAPPDATA; HOME=/winhome osprobe Windows )"
+[ "$got" = "/winhome/zskills-session-logs/myproj" ] \
+  && pass "11e. Windows falls back to ~ when LOCALAPPDATA unset" || fail "11e. Windows ~ fallback" "got $got"
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 12 — registry-absent fallback resolves sanely ==="
+# No registry (e.g. run before the first Stop, or outside a repo): the
+# helper falls back to its own per-OS resolution and still prints a dir.
+NA_PROJ="$WORK/naproj"
+mkdir -p "$NA_PROJ/.claude"
+echo '{}' > "$NA_PROJ/.claude/zskills-config.json"
+( cd "$NA_PROJ" && git init -q . )   # repo, but NO registry written yet.
+na_dir="$(CLAUDE_PROJECT_DIR="$NA_PROJ" XDG_CACHE_HOME="$WORK/na-xdg" bash "$HELPER")"
+if [ "$na_dir" = "$WORK/na-xdg/zskills-session-logs/naproj" ]; then
+  pass "12a. registry-absent -> per-OS fallback resolution"
+else
+  fail "12a. registry-absent fallback" "got $na_dir"
+fi
+# Env override still wins even with no registry.
+na_env="$(ZSKILLS_LOG_DIR="$WORK/na-env" CLAUDE_PROJECT_DIR="$NA_PROJ" bash "$HELPER")"
+[ "$na_env" = "$WORK/na-env" ] && pass "12b. ZSKILLS_LOG_DIR wins with no registry" \
+  || fail "12b. env override no-registry" "got $na_env"
 
 echo ""
 echo "---"
