@@ -38,7 +38,6 @@ export const DOCS_CATALOG = [
       { name: "/commit", path: "docs/skills/commit.md" },
       { name: "/create-worktree", path: "docs/skills/create-worktree.md" },
       { name: "/do", path: "docs/skills/do.md" },
-      { name: "/doc", path: "docs/skills/doc.md" },
       { name: "/draft-plan", path: "docs/skills/draft-plan.md" },
       { name: "/draft-tests", path: "docs/skills/draft-tests.md" },
       { name: "/fix-issues", path: "docs/skills/fix-issues.md" },

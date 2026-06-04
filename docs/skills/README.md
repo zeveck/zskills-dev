@@ -16,7 +16,6 @@ Looking for how to *combine* these skills into end-to-end workflows? See
 | [`/commit`](commit.md) | Safe commit workflow with optional push, land, or PR |
 | [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work |
 | [`/do`](do.md) | Lightweight task dispatcher for ad-hoc work |
-| [`/doc`](doc.md) | Audit and fix documentation gaps |
 | [`/draft-plan`](draft-plan.md) | Draft plans through iterative adversarial review |
 | [`/draft-tests`](draft-tests.md) | Draft test specifications into existing plans |
 | [`/fix-issues`](fix-issues.md) | Orchestrate batch bug-fixing sprints |
@@ -87,12 +86,6 @@ Skills for committing, landing, and cleaning up branches.
 - [/commit](commit.md) -- Safe commit workflow with push, land, or PR modes
 - [/cleanup-merged](cleanup-merged.md) -- Post-PR-merge local normalization and branch cleanup
 - [/create-worktree](create-worktree.md) -- Create isolated git worktrees for agent work
-
-### Content & Documentation
-
-Skills for managing documentation across the project.
-
-- [/doc](doc.md) -- Audit and fix documentation gaps across the project
 
 ### Reporting & Status
 

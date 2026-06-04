@@ -13,8 +13,8 @@
 <!-- prod-strip:end -->
 # Z Skills
 
-**25 core skills that plan, build, test, fix, and ship** — so one
-developer can run a full engineering team. (23 user-facing slash
+**24 core skills that plan, build, test, fix, and ship** — so one
+developer can run a full engineering team. (22 user-facing slash
 commands, 2 internal helpers, three block-diagram add-ons, and a
 battery of safety hooks.)
 
@@ -484,7 +484,6 @@ by other skills — see Helpers below.
 | `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
 | `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
 | `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
-| `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
 | `/create-worktree` | Unified worktree creation. Primarily dispatched internally by `/run-plan`, `/fix-issues`, `/do` (which pass `--pipeline-id` verbatim — the script rejects invocations without the flag, rc 5); invocable directly but rarely needed. |
 

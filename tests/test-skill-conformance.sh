@@ -3657,7 +3657,7 @@ for _h in "${HOOK_STAMP_TARGETS[@]}"; do
 done
 
 echo ""
-echo "=== weak-skill static invariants — doc / qe-audit / session-report ==="
+echo "=== weak-skill static invariants — qe-audit / session-report ==="
 # SKILL_VERIFICATION_SMOKES Phase 3: the LLM-judgment-bound skills have no
 # executable behavioral surface a shell smoke can drive — their only
 # deterministic property is static SKILL.md structure. Guard the documented
@@ -3666,14 +3666,6 @@ echo "=== weak-skill static invariants — doc / qe-audit / session-report ==="
 # conformance check are SKIPPED and recorded in the phase notes; e.g.
 # qe-audit's `## Files to change` is already asserted at the #681 section
 # above, so it is NOT re-asserted here.)
-
-# doc — compact argument-hint is just <description>; modes stay documented
-# in the body (mode-prose checks below), de-advertised from the hint.
-check_fixed doc "argument-hint is compact <description>" 'argument-hint: "<description>"'
-check_fixed doc "mode prose: /doc blocks"      '/doc blocks'
-check_fixed doc "mode prose: /doc examples"    '/doc examples'
-check_fixed doc "mode prose: /doc newsletter"  '/doc newsletter'
-check_fixed doc "disable-model-invocation flag" 'disable-model-invocation: true'
 
 # qe-audit — meta-command precedence prose (stop/next/now). The
 # `## Files to change` issue-body requirement is ALREADY covered at the
