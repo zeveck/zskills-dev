@@ -105,19 +105,33 @@ writing the 5 consumer artifacts, and **no `.claude/skills/` mirror**.
   carries the `.claude/skills/` mirror — the dogfooding exception, case 3 in
   the mental model — so it does NOT validate mirror-less resolution. Use
   Scenario 5 for that.)
-- For the **real consumer path**: a marketplace install
-  (`/plugin marketplace add zeveck/zskills` → `/plugin install zs@zskills`)
-  in a clean consumer repo — the marketplace install resolves, clones, and
-  caches the plugin tree, then the SessionStart materialiser seeds the
-  consumer artifacts.
+- For the **genuine PRE-PUBLISH consumer path**: the dev manifest
+  self-references the dev repo, so qual uses the SAME two-line flow a real
+  consumer runs — just pointed at `zeveck/zskills-dev` instead of the
+  not-yet-published `zeveck/zskills`:
+  ```
+  /plugin marketplace add zeveck/zskills-dev
+  /plugin install zs@zskills
+  ```
+  run in a clean consumer repo. The marketplace install resolves the dev
+  manifest, clones + caches the dev plugin tree, then the SessionStart
+  materialiser seeds the consumer artifacts — no hand-rolled local test
+  marketplace needed. (POST-publish, the same flow against `zeveck/zskills`
+  is what end consumers run; the publish path rewrites `zs` `source.repo`
+  dev→prod — see RELEASING.md "Marketplace self-reference, translated on
+  publish".)
 
 **Steps.**
-1. Launch the plugin-loaded session:
+1. Launch the plugin-loaded session. Either in-place dogfood, or — for the
+   genuine pre-publish consumer flow — the two-line dev-marketplace install:
    ```bash
    claude --plugin-dir .        # in-place dogfood from zskills-dev
    ```
-   (Real consumers instead use the `/plugin marketplace add` +
-   `/plugin install zs@zskills` flow.)
+   ```
+   # genuine pre-publish consumer path (in a CLEAN consumer repo):
+   /plugin marketplace add zeveck/zskills-dev
+   /plugin install zs@zskills
+   ```
 2. Confirm the plugin loaded: the skills are namespaced under `/zs:`
    (e.g. `/zs:do`, `/zs:fix-issues`).
 3. On SessionStart, `hooks/session-start-materialise.sh` runs. In a

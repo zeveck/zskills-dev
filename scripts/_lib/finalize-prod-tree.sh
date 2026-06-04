@@ -113,6 +113,60 @@ rewrite_dev_urls() {
   fi
 }
 
+# rewrite_marketplace_repo <marketplace-json-path>
+#
+# Translate the DEV marketplace manifest to its PROD form on publish. The dev
+# repo's .claude-plugin/marketplace.json self-references the dev repo so that
+# pre-publish plugin qual uses the genuine consumer flow
+# (`/plugin marketplace add zeveck/zskills-dev` + `/plugin install zs@zskills`).
+# On publish the prod tree must instead point consumers at the prod repo, so
+# this function rewrites ONLY the `zs` plugin's `source.repo` field from
+# `zeveck/zskills-dev` back to `zeveck/zskills`. This is the bare-SLUG analog of
+# rewrite_dev_urls (which only matches URL forms `github.com/...`); the
+# marketplace manifest carries the bare slug `"repo": "zeveck/zskills-dev"`,
+# which the URL-anchored regex would never touch.
+#
+# A field-scoped Python json load/mutate/dump is used (NOT a blanket sed across
+# the file) so `ref`, `source.source`, the `zsbd` `./block-diagram` source, the
+# marketplace `name`/`version`/`$schema`, and key ordering survive intact — a
+# clean round-trip that changes ONLY that one value. Idempotent: a no-op when
+# the file is already prod-pointing (or has no `zs` github source). Defined at
+# file scope so the function unit test
+# (tests/test-build-rewrite-marketplace-repo.sh) can source this lib and call
+# it directly, exactly as tests/test-build-rewrite-dev-urls.sh does with
+# rewrite_dev_urls.
+rewrite_marketplace_repo() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  local PYTHON
+  PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; return 1; }
+  "$PYTHON" - "$file" <<'PY'
+import json, sys
+
+path = sys.argv[1]
+DEV = "zeveck/zskills-dev"
+PROD = "zeveck/zskills"
+
+with open(path) as f:
+    mp = json.load(f)
+
+changed = False
+for p in mp.get("plugins", []):
+    if not isinstance(p, dict) or p.get("name") != "zs":
+        continue
+    src = p.get("source")
+    if isinstance(src, dict) and src.get("source") == "github" and src.get("repo") == DEV:
+        src["repo"] = PROD
+        changed = True
+
+if changed:
+    with open(path, "w") as f:
+        json.dump(mp, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+PY
+}
+
 finalize_prod_tree() {
   local tree="$1"
   local self_script="${2:-}"
@@ -184,6 +238,28 @@ finalize_prod_tree() {
   done < <(cd "$tree" && find docs skills .claude README.md CHANGELOG.md \
                 \( -name '*.md' -o -name '*.html' -o -name '*.js' -o -name '*.json' \) \
                 -type f -print0 2>/dev/null | while IFS= read -r -d '' rel; do printf '%s\0' "$tree/$rel"; done)
+
+  # ── 4. Marketplace dev→prod repo rewrite (self-reference translation) ─────
+  # The dev manifest's `zs` source.repo self-references zeveck/zskills-dev so
+  # pre-publish plugin qual uses the genuine consumer flow. On publish the prod
+  # tree must point consumers at zeveck/zskills. .claude-plugin/ is NOT in the
+  # tree-walk above (find docs skills .claude README.md CHANGELOG.md), so invoke
+  # the field-scoped rewrite explicitly on the manifest (guard for existence).
+  local _mp="$tree/.claude-plugin/marketplace.json"
+  if [ -f "$_mp" ]; then
+    _fpt_log "rewriting marketplace zs source.repo dev→prod in $_mp"
+    rewrite_marketplace_repo "$_mp"
+    # Residue invariant (safety guard): the published marketplace manifest must
+    # carry ZERO `zskills-dev` — a BARE substring match (NOT the URL-anchored
+    # regex the dev-URL checks use; the bare slug would slip past a
+    # `github.com/...` regex). build-prod.sh runs `set -euo pipefail`, so this
+    # non-zero return aborts the publish before any push.
+    if grep -q 'zskills-dev' "$_mp"; then
+      echo "finalize_prod_tree: ERROR — prod marketplace manifest still contains 'zskills-dev': $_mp" >&2
+      return 1
+    fi
+    _fpt_done "marketplace zs source.repo is prod-pointing (0 zskills-dev residue)"
+  fi
 
   # If the caller is build-prod.sh finalizing IN-PLACE, its own running
   # script matched the build-*.sh strip above and is already gone. The

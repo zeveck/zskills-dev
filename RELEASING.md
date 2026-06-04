@@ -53,18 +53,41 @@ Release steps:
    skills/hooks and re-renders `managed.md`). The CHANGELOG entry is the
    per-line summary for both.
 
+### Marketplace self-reference, translated on publish
+
+The dev manifest's `zs` `source.repo` SELF-REFERENCES the dev repo
+(`zeveck/zskills-dev`), NOT prod. This is deliberate: it lets pre-publish
+plugin qual use the GENUINE consumer flow — `/plugin marketplace add
+zeveck/zskills-dev` + `/plugin install zs@zskills` — against the dev repo's own
+manifest, instead of a hand-rolled local test marketplace. On publish the prod
+tree must instead point consumers at prod, so the build path REWRITES it,
+exactly analogous to the dev→prod URL rewrite: the shared finalizer
+(`scripts/_lib/finalize-prod-tree.sh`) runs `rewrite_marketplace_repo` over the
+prod tree's `.claude-plugin/marketplace.json`, swapping `zeveck/zskills-dev` →
+`zeveck/zskills` in ONLY the `zs` `source.repo` field (a field-scoped Python
+round-trip, NOT a blanket sed; `ref`, `source.source`, and the `zsbd`
+`./block-diagram` source are untouched). A **residue invariant** immediately
+after the rewrite asserts the built manifest carries ZERO `zskills-dev` (bare
+substring) and `return 1`s the build if any survives — and because
+`build-prod.sh` runs `set -euo pipefail`, that aborts the publish BEFORE any
+push. `tests/test-build-rewrite-marketplace-repo.sh` unit-tests the rewrite,
+and `tests/test-prod-tree-no-dev-urls.sh` asserts the BUILT tree's manifest is
+prod-pointing.
+
 ### Cross-lane invariant
 
 For `/plugin marketplace add zeveck/zskills` **without an explicit ref**,
 Claude Code reads `marketplace.json` from the prod repo's **default branch,
 `main`** — which is exactly where the button publishes. No special default-
 branch setting is needed: prod's default branch is `main` (correct), the
-button pushes to `main`, and `marketplace.json`'s `zs` `source.ref` is `main`.
-The pin-by-version idiom is the bare `<version>` tag the button pushes (e.g.
-`2026.06.0`, NOT `prod/2026.06.0`). `tests/test-plugin-ref-consistency.sh`
-guards this consistency (marketplace ref ↔ workflow push branch ↔ docs pin
-idiom); `tests/test-plugin-d4-hook-siblings.sh` guards that `build-prod.sh`'s
-published tree actually contains the D4 hook siblings.
+button pushes to `main`, and the PUBLISHED `marketplace.json`'s `zs`
+`source.ref` is `main` (the publish-time `rewrite_marketplace_repo` changes
+ONLY `source.repo`, never `ref`). The pin-by-version idiom is the bare
+`<version>` tag the button pushes (e.g. `2026.06.0`, NOT `prod/2026.06.0`).
+`tests/test-plugin-ref-consistency.sh` guards this consistency (marketplace ref
+↔ workflow push branch ↔ docs pin idiom — and `source.ref` is identical in dev
+and prod since only `source.repo` is translated); `tests/test-plugin-d4-hook-siblings.sh`
+guards that `build-prod.sh`'s published tree actually contains the D4 hook siblings.
 
 ## TL;DR
 
