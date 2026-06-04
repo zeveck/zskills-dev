@@ -12,7 +12,7 @@ Skill distribution repo and presentation site for Z Skills.
 - `hooks/` — source hook scripts
 - `scripts/` — consumer-customizable stubs (stop-dev.sh, test-all.sh) and release-only repo tooling (build-prod.sh, mirror-skill.sh); skill machinery moved to `.claude/skills/<owner>/scripts/` (port.sh, clear-tracking.sh, statusline.sh in `update-zskills`; plan-drift-correct.sh in `run-plan`; full mapping in `skills/update-zskills/references/script-ownership.md`)
 - `CLAUDE_TEMPLATE.md` — template for CLAUDE.md generation in target projects
-- `.claude-plugin/` — plugin lane manifests: `plugin.json` (the `zs` plugin) + `marketplace.json` (lists `zs` and `zsbd`); `block-diagram/.claude-plugin/plugin.json` is the `zsbd` addon manifest
+- `.claude-plugin/` — plugin lane manifests: `plugin.json` (the `zs` plugin) + `marketplace.json` (interim: lists a SINGLE plugin, `zs`; the `zsbd` addon has been delisted from the marketplace and its block-diagram skills ride bundled inside `zs`'s `skills` field); `block-diagram/.claude-plugin/plugin.json` is the `zsbd` addon manifest, still shipped on disk pending a future separate-repo split. Note `plugin.json` carries NO `hooks` field — Claude Code auto-loads `hooks/hooks.json` from the plugin root, so a manifest reference to it causes a duplicate-hooks load error.
 - `hooks/hooks.json` — plugin-lane hook registrations (mirrors `.claude/settings.json` but points at `${CLAUDE_PLUGIN_ROOT}`); `hooks/_lib/plugin-hook-skip-if-mirrored.sh` is the D16(a) conditional-skip shim that prevents double-fire when both lanes are installed
 - `PRESENTATION.html` — main site (index.html redirects here)
 - `README.md`, `CHANGELOG.md` — documentation

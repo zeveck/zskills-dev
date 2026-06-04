@@ -15,7 +15,10 @@
 #     enumerates exactly the 4 SKILL.md-bearing block-diagram dirs
 #     (RE-DERIVED at run time via find — NOT a frozen list, per D2);
 #   - the zs `skills` field references both ./skills/ and ./block-diagram/
-#     and `hooks` points at ./hooks/hooks.json; NO `agents` field on either.
+#     and there is NO `hooks` field (the standard hooks/hooks.json is
+#     auto-loaded by Claude Code from the plugin root — a manifest `hooks`
+#     reference to it causes a duplicate-hooks load error); NO `agents`
+#     field on either.
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -104,8 +107,8 @@ if zs is not None:
     skills = zs.get("skills")
     out(isinstance(skills, list) and "./skills/" in skills and "./block-diagram/" in skills,
         "zs: skills references ./skills/ and ./block-diagram/", repr(skills))
-    out(zs.get("hooks") == "./hooks/hooks.json",
-        "zs: hooks points at ./hooks/hooks.json", repr(zs.get("hooks")))
+    out("hooks" not in zs,
+        "zs: no 'hooks' field (standard hooks/hooks.json auto-loaded)", repr(zs.get("hooks")))
 
 # ---- zsbd skills field + roster re-derivation ----
 if zsbd is not None:

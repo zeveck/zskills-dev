@@ -34,7 +34,7 @@ echo "=== plugin self-load (zs + zsbd) ==="
 
 # ── (a) claude plugin validate --strict ──────────────────────────────────
 if command -v claude >/dev/null 2>&1; then
-  # Marketplace manifest (covers both plugin entries).
+  # Marketplace manifest (now lists a single entry: zs).
   if claude plugin validate "$REPO_ROOT" --strict 2>&1 | grep -q 'Validation passed'; then
     pass "(a) claude plugin validate --strict: marketplace manifest passes"
   else

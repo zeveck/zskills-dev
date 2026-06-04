@@ -25,10 +25,15 @@ Release steps:
 
 1. **Bump BOTH `plugin.json.version` files in lockstep** (D10):
    `.claude-plugin/plugin.json` (the `zs` plugin) and
-   `block-diagram/.claude-plugin/plugin.json` (the `zsbd` addon). They MUST
-   stay equal — `tests/test-plugin-marketplace.sh` asserts
-   `zs.version == zsbd.version`. Choose the next `YYYY.MM.N` value (same
-   scheme as the git tag). Commit the bump on dev.
+   `block-diagram/.claude-plugin/plugin.json` (the `zsbd` addon manifest,
+   still shipped on disk). They MUST stay equal —
+   `tests/test-plugin-marketplace.sh` asserts `zs.version == zsbd.version`.
+   Choose the next `YYYY.MM.N` value (same scheme as the git tag). Commit the
+   bump on dev. **Interim note:** the marketplace now lists a SINGLE plugin
+   (`zs`); the `zsbd` addon has been delisted from the marketplace and its
+   block-diagram skills ride bundled inside `zs`. The `zsbd` manifest stays on
+   disk pending a future separate-repo split, which is why the lockstep bump
+   still touches both files.
 2. **(Optional) Dry-build / inspect locally.** Two ways:
    - **Workflow dry-run:** click Run workflow with **Dry run** checked — it
      builds the prod tree and shows the file diff in the run summary, pushing
