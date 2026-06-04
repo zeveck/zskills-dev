@@ -1,0 +1,266 @@
+---
+title: Test Suite Parallelization & Isolation
+created: 2026-06-04
+status: active
+---
+
+# Plan: Test Suite Parallelization & Isolation
+
+## Overview
+
+Cut `bash tests/run-all.sh` wall-clock from ~19 min (1162s) by running suites
+concurrently. **There are TWO honest headline numbers, on two different core
+counts — lead with both, don't conflate them:**
+
+- **Agent-side (dev box, 32-core): ~2–3 min.** This is where the BIG, dominant
+  win lands — the suite runs 3–5× per pipeline (implementer self-check,
+  verifier, re-run) on the fat-core dev box, so the ~16-min-per-pipeline saving
+  here is the primary value prop.
+- **CI merge-gate (`ubuntu-latest`, ~4-core): ~8–10 min (~2×).** The heavy
+  shards (`setup_project_test_on_main`: git-init + a `python3` config-patch per
+  case) are git/fork-bound and scale weakly with cores, so on 4 workers the
+  realistic win is ~2×, NOT the 6–9× the 32-core number would imply. This is a
+  modest but real win, and it is the GATING number for flipping CI.
+
+The value prop is real and dominant on the agent side; the CI win is modest.
+Achieved by:
+1. **Splitting `test-hooks.sh`** — the dominant Amdahl pole (446s = 38% of total; **2384 runtime assertions**, not 778 source call-sites) — into independent sub-suites that can run concurrently.
+2. **Isolating** the few genuinely collision-prone suites (research showed it is NOT an 80-suite sweep).
+3. **Running suites concurrently** via a bounded-worker runner with byte-identical pass/fail accounting.
+
+…without softening a single assertion. Also fixes the `test-create-worktree` repo-root worktree leak (parallel-safety + cleanliness).
+
+**The parallel floor (be honest about it — there are TWO tall poles, not one,
+PLUS an additive serial bucket).** Splitting `test-hooks.sh` removes the 446s
+pole, but it is not the only one. The serial bucket runs OUTSIDE the parallel
+pool (before/after it, per Phase 3/4), so its time is **additive** to the pool
+wall-clock — not max()'d into it. After the split the floor is:
+
+    floor ≈ max( conformance ~60s,  heaviest bypass-enumeration shard ~70s )  +  Σ(serial bucket)
+
+- `test-skill-conformance.sh` is ~60s standalone (measured: `real 0m59.711s`) and its memoization is **DEFERRED** (see Out of scope). Under inter-suite parallelism it is ONE worker for ~60s, and it is *nested inside ≥4 more suites* (`test-hooks.sh`, `test-fix-issues-sprint-worktree-gate.sh`, `test-fixture-race-isolation.sh`, `test-skill-file-drift-extended-scope.sh`) — so several ~60s conformance-class runs compete for CPU concurrently.
+- The heaviest split shard (the project-hook bypass-enumeration section, §below) carries a per-case `setup_project_test_on_main` floor (git-init + a `python3` config-patch per case — ~half its cost) plus hook-spawn (~the other half) ≈ ~70s.
+- The serial bucket (`test_zskills_monitor_server` ~13s + attended `test-plugin-live-load` ~2s **unattended**) adds ~15s on top of the pool poles — small, so "neither serial suite is in the heavy tail" holds. **BUT** when the attended gate fires (creds present + throttle elapsed), `test-plugin-live-load` runs the real `claude` CLI and the serial-bucket term balloons; that is exactly why the **perf** AC (Phase 4), not just the parity AC, pins the attended gate OFF.
+
+So on the **32-core dev box** the floor is ~2–3 min (the ~60–70s pool poles +
+~15s serial bucket, with concurrency to spare). On the **4-core CI runner** the
+poles don't change but the ~202 suites pack onto 4 workers, so wall-clock is
+~8–10 min (~2× the serial). The perf AC (Phase 4) is stated against this floor
+explicitly, on the **actual CI core count**, with the serial bucket as an
+additive term and the attended gate pinned OFF.
+
+**Why this matters (three layers) — the dominant win is agent-side, the CI win is modest:**
+- **Direct (agent-side, the big one):** the suite runs 3–5× per pipeline (implementer self-check, verifier, re-run) on the 32-core dev box → ~55–95 min of serial test-waiting today → ~10–15 min at the ~2–3 min agent-side floor. This is where the saving is large.
+- **Reliability:** a slow suite makes live pipelines *look* hung (observed this session with #1086).
+- **Convergence (CI-side, ~2× not super-linear):** a wide test window lets `main` move during verify → re-rebase → re-verify thrash. The CI/merge-gate leg is the 4-core ~2× win (19→~8–10 min), so this layer shrinks the rebase window meaningfully but ONLY ~2× — do not oversell it as super-linear; the super-linear effect, if any, follows from the agent-side floor, not the modest CI cut.
+
+## Critical Invariants (never violate)
+
+- **NEVER soften a test.** No loosened tolerances, removed/skipped assertions, or dropped cases. Isolate or serial-pin only. Structural guard: **assertion-count conservation, stated as TWO distinct, non-contradictory gates** (see below) — they are not the same number.
+  - **Gate A (sub-suite VECTOR, not just the scalar sum):** Σ(test-hooks sub-suite runtime pass counts) == **2384** — the measured `test-hooks.sh` subtotal (`Results: 2384 passed, 0 failed`, rc=0) — AND the per-sub-suite count vector is captured at the moment of the cut and asserted, not just the scalar total. **Why the vector, not just the sum:** each suite emits ONE `Results:` line from a single `PASS_COUNT`/`FAIL_COUNT` script-global (`tests/test-hooks.sh:4861`), so a dropped assert in sub-suite X (2384→2383) compensated by a stray gain in sub-suite Y (2383→2384) re-sums to 2384 and a scalar gate passes WHILE an assertion was silently lost — the exact "NEVER soften a test" failure this plan exists to prevent. The cut MUST record each sub-suite's individual Results count (e.g. `block-unsafe=N1, bypass-generic=N2, bypass-project=N3, …`) to the baseline artifact and assert the vector. This is the deterministic part and the HARD GATE for Phase 1's split. **Caveat (self-registration delta):** if the new sub-suites follow the 23-suite repo convention and each self-asserts its own registration (`grep -q "test-X.sh" run-all.sh`), each adds **+1** runtime assert. `test-hooks.sh` does NOT currently self-assert, so the sub-suite subtotal would become `2384 + (number of sub-suites that self-assert)`. **Phase 1 MUST decide this explicitly** (see Phase 1) and state the resulting subtotal numerically; "Σ == 2384" holds ONLY if the sub-suites deliberately omit self-registration.
+  - **Gate B (whole-suite TOTAL):** the parallel whole-suite Overall == serial whole-suite Overall — **but only with the attended live-load gate held constant** (see next bullet). The whole-suite total is NOT a fixed number across the project: it shifts by the documented self-registration delta from Gate A's decision, and by the conditional gates (RUN_RACE_TESTS / RUN_E2E). Compare parallel-vs-serial under IDENTICAL gate state, not against a memorized literal.
+- **The attended live-load gate makes whole-suite Overall non-deterministic — pin it for any count-conservation comparison.** `test-plugin-live-load.sh` runs §B with more `pass` asserts when `ZSKILLS_LIVE_ATTENDED=1` (claude CLI + creds + throttle window elapsed), else §B SKIPs; the gate REFRESHES its `~/.zskills/last-attended-plugin-run` marker after a passing run, so two consecutive whole-suite runs can take DIFFERENT branches and report DIFFERENT Overall counts. For all parallel-vs-serial parity ACs, run with `ZSKILLS_LIVE_ATTENDED` unset / no-creds so every run hits the identical (SKIP) gate decision, OR exclude that one suite from the comparison.
+- **The parallel runner is ADDITIVE** alongside `run-all.sh` until proven count-identical; the CI merge gate stays byte-for-byte intact during development.
+- **Keep the literal `run_suite` registry inside `run-all.sh`** — 23 suites self-assert registration via `grep -q "test-X.sh" run-all.sh`. The parallel runner READS that registry; do NOT move to a separate manifest. (Note: `test-plugin-live-load.sh` is registered TWICE — the `ZSKILLS_LIVE_ATTENDED=1` branch and the plain branch of the attended-gate if/else — so any enumerator must DEDUPE it.)
+- **Runtime path-isolation only — NOT hook compliance.** Isolation fixtures use distinct on-disk paths per concurrent worker. The `block-unsafe-generic.sh` rm-gate is **irrelevant to test cleanup**: it is a `PreToolUse` hook on the AGENT's Bash tool (`.claude/settings.json` matcher `Bash`), so it never sees an `rm` executed inside a `bash tests/X.sh` subprocess. Do NOT write isolation fixtures to "satisfy the rm-gate." (For the record, the gate's `is_safe_destruct` rejects ANY `$` — `hooks/block-unsafe-generic.sh:875` — so a `$$`-bearing literal would FAIL it if it ever did hit the tool; another reason not to anchor on it.) In-script cleanup uses `rm -rf -- "$VAR"`, matching `test-update-zskills-paths-migration.sh:53`.
+- **Surface-don't-patch.** Preserve #1036's trap + `.gitignore` anchors for create-worktree; do not regress them.
+- **No `kill -9`/`pkill`/`killall`.** Reap children with `wait`; per-suite `timeout` (SIGTERMs its own child) is permitted and is NOT the banned pattern.
+- **Cap concurrency at `min(configured, nproc)`.** Dev box is 32-core; CI (`ubuntu-latest`) is ~4-core. A fixed 8–12 oversubscribes CI 2–3×. The cap is the literal `min(configured, nproc)` — on the dev box that resolves to `configured` (e.g. 8–12, since `nproc`=32 ≥ configured); on 4-core CI it resolves to 4 (`nproc` < configured), so CI is never oversubscribed. (If a 1-core box must still run 2-way, use `min(configured, max(2, nproc))`; default is plain `min(configured, nproc)`.) No abstract `sensible_fn` and no contradictory "floor at nproc" wording — the cap is a CEILING at `nproc`, not a floor. Document the dev-vs-CI expectation separately. `/tmp` is Docker overlay; 16-way is unproven and unnecessary given the fat tail.
+
+## Progress Tracker
+| Phase | Status | Commit | Notes |
+|-------|--------|--------|-------|
+| 0 — Baseline capture + shared infra: result-parser + registry reader | ⬚ | | |
+| 1a — Extract hooks-harness lib (incl. test-hooks-helpers); verify monolith still 2384 | ⬚ | | |
+| 1b — Relocate test-hooks sections into sub-suites | ⬚ | | |
+| 2 — Targeted isolation (apply-preset, paths-migration) | ⬚ | | |
+| 3 — create-worktree sandbox + serial-pin heavy/global | ⬚ | | |
+| 4 — Parallel runner + CI switch | ⬚ | | |
+
+## Phase 0 — Baseline capture + shared infra: result-parser + registry reader
+### Goal
+Capture the serial baseline counts to a durable artifact (so every later "unchanged vs baseline" AC has a concrete referent), then factor the Results-line parser out of `run-all.sh` into a sourceable helper and provide a registered-suite enumerator, so serial and parallel runners share one parsing contract and cannot drift.
+### Work Items
+- [ ] **BASELINE CAPTURE (do this first).** Record, to a durable artifact the verifier can read (the Progress Tracker Notes column AND a `$TEST_OUT/.baseline-*.txt` capture file per CLAUDE.md capture-to-file discipline), the live serial numbers with the attended gate pinned OFF (`ZSKILLS_LIVE_ATTENDED` unset):
+  - `bash tests/run-all.sh` whole-suite **Overall** pass/fail (the Gate B referent).
+  - `bash tests/test-hooks.sh` subtotal == **2384 passed, 0 failed (of 2384)**, rc=0 (measured 2026-06-04; the Gate A referent).
+  - `bash tests/test-skill-conformance.sh` wall-clock ≈ **60s** (measured `real 0m59.711s`; the second-Amdahl-pole referent).
+- [ ] Extract the ANSI-strip + anchored `Results:` regex (run-all.sh:34–43) into `tests/lib/parse-results.sh` exposing `parse_results <output>` → echoes "PASS FAIL". `run-all.sh` sources it; behavior byte-identical. **The parse is currently INTERLEAVED with accumulation, not a clean block** (run-all.sh:34–50: parse → `TOTAL_PASS += passed` → `OVERALL_EXIT=1` on non-zero `exit_code`). `parse_results` echoes ONLY "PASS FAIL"; the **caller retains** exit-code capture, the `TOTAL_PASS/TOTAL_FAIL` accumulation, the 0/0 fall-through (no Results line → 0/0), AND the `OVERALL_EXIT` flip on any non-zero suite rc. The unparseable-but-nonzero-exit signal MUST survive: an unparseable suite still flips `OVERALL_EXIT` via its rc, never silently dropped.
+- [ ] Add `tests/lib/suite-registry.sh` exposing `list_registered_suites` that STATICALLY parses `run_suite "<name>" "<path>"` lines from `run-all.sh` (single source of truth): it MUST (a) exclude the `run_suite() {` function-definition line (run-all.sh:13), (b) **dedupe `test-plugin-live-load.sh`** (registered TWICE via the attended-gate if/else, run-all.sh:276 + 279), and (c) report the conditional/gated suites as METADATA, not bare entries — `test-fixture-race-isolation.sh` (RUN_RACE_TESTS), `e2e-parallel-pipelines.sh` (RUN_E2E), and the attended-gate `test-plugin-live-load.sh`.
+- [ ] No central exclusion list is needed for the new libs: suite registration is **self-asserted per test** (each test greps run-all.sh for its OWN basename; there is no global "every file must be registered" loop in `test-skill-conformance.sh`). The new libs simply carry NO self-registration assertion — exactly how `tests/lib/extract-fence.sh` and `tests/lib/landpr-harness.sh` are unregistered (run-all.sh:165–168 is just the explanatory comment, not an exclusion list to edit).
+### Design & Constraints
+- Preserve the #587-hardened anchored regex EXACTLY (`^Results: [0-9]+ passed,...`).
+- `list_registered_suites` must NOT execute `run-all.sh`; parse it statically.
+### Acceptance Criteria
+- [ ] Baseline numbers recorded to the durable artifact (whole-suite Overall, test-hooks=2384, conformance≈60s).
+- [ ] `bash tests/run-all.sh` Overall count byte-identical to the recorded baseline (attended gate pinned OFF for both).
+- [ ] `parse_results` unit-tested against colorized AND plain Results lines AND the no-Results-line fall-through (0/0, but caller still flips OVERALL_EXIT on non-zero rc).
+- [ ] `list_registered_suites` returns the DISTINCT unconditional suite paths (function-def excluded, live-load deduped) PLUS the 3 conditional/gated suites tagged as metadata — verified by an explicit enumeration, NOT by `grep -c '^[[:space:]]*run_suite' run-all.sh` (that raw count is 208: it includes the function-def line, the live-load double-registration, and the 3 conditional suites, so it is NOT the count of distinct unconditional suites).
+### Dependencies
+None.
+
+## Phase 1a — Extract the hooks-harness lib (de-risk the helper-scoping first)
+### Goal
+Factor ALL shared helpers test-hooks.sh depends on into `tests/lib/hooks-harness.sh` and prove the EXTRACTION is correct against the UNCHANGED monolith (monolith sources the new lib, count still 2384) — BEFORE relocating any section. This de-risks the cross-file helper-scoping coupling, which is the genuinely hard part of the split.
+### Work Items
+- [ ] **Account for the EXISTING external helper `tests/test-hooks-helpers.sh`** — test-hooks.sh `source`s it MID-FILE at lines **2385 and 2520** (inside the matrix / #513-project sections). That file defines `setup_project_test_on_main`, a fallback `setup_project_test`, and its own `pass`/`fail`, and **depends on `setup_project_test` (defined in test-hooks.sh §7 @ line 977) already being in scope**. It also emits its OWN `Results:` line at line 104 when run standalone — a double-count hazard if ever registered. The harness lib MUST own this: either fold `test-hooks-helpers.sh` INTO `hooks-harness.sh` (single source of truth), OR have the harness source it — and in either case guarantee `setup_project_test` is defined before any `setup_project_test_on_main` call site.
+- [ ] Factor the shared preamble + project helpers into `tests/lib/hooks-harness.sh`: `pass`/`fail`, `expect_deny`/`expect_allow`, `make_branch_repo`, `expect_*_from_repo`, and the project-hook helpers `setup_project_test` (line 977) / `teardown_project_test` (line 1013) / `expect_project_*` / `setup_project_test_on_main`. The lone `trap 'rm -f "$INV_TEST"' EXIT` (line 3736) is fixture-scoped — it must NOT go into the shared harness (it would fire per-sub-suite); it travels with whichever sub-suite owns `$INV_TEST`. The new lib carries no self-registration assertion (unregistered like `extract-fence.sh`).
+- [ ] **The harness OWNS the hook-path script-globals the moved helpers close over — and `PROJECT_HOOK` must be ABSOLUTIZED.** The helpers don't just call each other; they reference module-level globals set inline in the monolith body. The landmine: `setup_project_test` does `cp "$PROJECT_HOOK" …` (test-hooks.sh:984; also used @1659/2021/2283/2350/4273) and `PROJECT_HOOK="hooks/block-unsafe-project.sh.template"` is defined **RELATIVE** at line 974 — cwd-fragile — whereas `HOOK` (`$REPO_ROOT/hooks/block-unsafe-generic.sh`@7), `AGENTS_HOOK` (@3423), `WARN_HOOK` (@4610) are absolute. When the harness moves these globals it MUST absolutize `PROJECT_HOOK` to `$REPO_ROOT/hooks/block-unsafe-project.sh.template`. Enumerate ALL script-globals the factored helpers reference (`PROJECT_HOOK`, `HOOK`, `AGENTS_HOOK`, `WARN_HOOK`, plus any other relative path a moved helper closes over) and define them in the harness so a Phase-1b sub-suite that sources the harness and calls `setup_project_test` from an arbitrary cwd builds the fixture correctly instead of silently `cp`-ing an empty/wrong source. (The Phase-1a equivalence check runs the monolith at repo-root cwd, so it will NOT catch a relative-path break — that is caught by the 1b arbitrary-cwd smoke below.)
+- [ ] **VERIFY against the unchanged monolith:** make `test-hooks.sh` source `hooks-harness.sh` (replacing its inline copies) WITHOUT moving any test section, run it, confirm `Results: 2384 passed, 0 failed (of 2384)`, rc=0.
+### Design & Constraints
+- This step moves NO test sections — only helper definitions into the lib. The monolith stays one file; only its helper source changes.
+- Removing `test-hooks-helpers.sh`'s standalone `Results:` emission (or keeping it gated behind the `BASH_SOURCE == $0` self-test guard at line ~65) prevents a stray Results line.
+### Acceptance Criteria
+- [ ] `bash tests/test-hooks.sh` (sourcing the new lib, sections unmoved) == `Results: 2384 passed, 0 failed (of 2384)`, rc=0.
+- [ ] `bash tests/run-all.sh` Overall unchanged vs Phase 0 baseline.
+- [ ] `hooks-harness.sh` defines (or sources, with ordering guaranteed) every helper named above; no duplicate `setup_project_test_on_main` definition exists.
+### Dependencies
+Phase 0 (baseline recorded).
+
+## Phase 1b — Relocate test-hooks sections into independent sub-suites
+### Goal
+Remove the dominant Amdahl pole by relocating the section bodies of the 4865-line monolith into ~8 independent sub-suites, each sourcing `hooks-harness.sh`, conserving every assertion.
+### Work Items
+- [ ] Split along the actual in-file `echo "=== … ==="` section markers (NOT a fictional "§513" alone — the real bypass-enumeration markers are `echo "=== Hook-bypass property enumeration (#513) ==="` at **line 2638** (generic hook) and `echo "=== Hook-bypass property enumeration: project hook (#513) ==="` at **line 2813** (project hook); the class-pinned matrices are at 2522/2555/2578/2592). Put the two **bypass-enumeration sections each in its OWN file** — they are the runtime-dominant pair (dynamic case counts via `GEN_PROP_CASES`/`PROJ_PROP_CASES`, NOT a fixed "700 each" — MEASURE each sub-suite's `Results:` count before finalizing the cut rather than trusting a pre-stated figure). Suggested set: `test-hooks-block-unsafe.sh`, `test-hooks-bypass-generic.sh` (the #513 generic enumeration, line 2638), `test-hooks-bypass-project.sh` (the #513 project enumeration + project matrices, lines 2522/2813, which require `test-hooks-helpers.sh`'s `setup_project_test_on_main`), `test-hooks-main-protected.sh`, `test-hooks-worktree-cd.sh`, `test-hooks-agent.sh`, `test-hooks-warn-drift.sh`, `test-hooks-misc.sh`.
+- [ ] Each sub-suite sources `hooks-harness.sh` and emits the canonical `Results: N passed, M failed (of T)` line. Any sub-suite using `setup_project_test_on_main` must have `setup_project_test` in scope (guaranteed via the harness from Phase 1a).
+- [ ] Replace `run-all.sh`'s single `run_suite "test-hooks.sh"` (line 53) with the N sub-suite `run_suite` lines; remove `test-hooks.sh` (no shim — avoid double-count).
+- [ ] **REPOINT the 7 `test-skill-conformance.sh` assertions that grep `tests/test-hooks.sh` by PATH — or they fail-closed when the monolith is removed (CRITICAL coupling).** `test-skill-conformance.sh` sets `HOOKS_TEST="$REPO_ROOT/tests/test-hooks.sh"` (line 3448) and runs 7 content-grep assertions against that exact file. `grep -c … <missing> 2>/dev/null || echo 0` returns 0 (the file is gone), so the four `check_min_count` asserts go `0 -ge N` → FALSE → FAIL, and the two `grep -qF` asserts take their `else` → FAIL = **7 conformance failures inside `run-all.sh`**, making Phase 1b's own "0 failed" AC unreachable. This is NOT a softening — the protective intent (bypass-matrix axis preservation #564/#556/#565; #594 PID-scoping) is preserved, just relocated to track the moved code. Repoint each to the token's NEW home:
+
+  | # | conformance line | grepped token | current home (test-hooks.sh) | repoint target |
+  |---|---|---|---|---|
+  | A | 3468 | `for branch in main feat/test` (≥2) | 2756, 2912 | the two bypass sub-suites (`test-hooks-bypass-generic.sh` + `test-hooks-bypass-project.sh`) |
+  | B | 3475 | `dest="${force}${refp}HEAD"` (≥2) | 2765, 2920 | same two bypass sub-suites |
+  | C | 3481 | `for target in main master feat/test` (≥2) | 2681, 2833 | same two bypass sub-suites |
+  | D | 3487 | `^make_branch_repo()` (≥1) | 64 (preamble) | `tests/lib/hooks-harness.sh` (preamble moved there in 1a) |
+  | E1 | 3495 | `FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-$$` | 4801 | the sub-suite owning that fixture (`test-hooks-misc.sh` per the §-marker cut) |
+  | E2 | 3500 | `SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-$$` | 4680 | the sub-suite owning `WARN_HOOK` (`test-hooks-warn-drift.sh`) |
+
+  Implementation: change `HOOKS_TEST` to iterate the relevant `tests/test-hooks-*.sh` set (or grep the specific destination file per row); for D, grep `tests/lib/hooks-harness.sh`. (Note A/B/C each need ≥2 matches that were both in ONE file — once split across two bypass sub-suites the count is summed across the two files, OR each axis is asserted ≥1-per-bypass-file; pick whichever keeps the ≥2 protective intent and state it.) `test-skill-conformance.sh` is a test, not a skill, so NO `metadata.version` bump — but the edit is MANDATORY for Phase 1b's 0-failed AC.
+- [ ] **DECIDE the self-registration delta explicitly (Gate A):** either (a) sub-suites OMIT self-registration (document why — diverges from the 23-suite convention but keeps Σ == 2384 exactly), OR (b) each sub-suite self-asserts and Gate A becomes `Σ == 2384 + N` (state N numerically). Recommended: (a) — `test-hooks.sh` already omits self-registration, so the sub-suites inherit that and Σ stays a clean 2384.
+- [ ] Verify no test self-asserts `grep -q "test-hooks.sh"` against run-all.sh (confirmed NONE today); if any appears, update it.
+### Design & Constraints
+- **HARD GATE (Gate A):** capture the per-sub-suite Results VECTOR (each sub-suite's individual count) AND assert Σ == 2384 (assuming the recommended no-self-registration choice; otherwise == 2384 + N, stated). Verify by running each sub-suite, recording its individual count, and summing — the per-suite vector is the real guard against a compensated ±1 swap; the scalar sum alone is insufficient.
+- Sections are independently relocatable (per-section mktemp, no cross-section shared repo; the single EXIT trap is fixture-scoped and travels with its owner) — confirmed by research + Phase 1a.
+- This is a **MOVE, not a rewrite.** Every assertion preserved verbatim.
+- **Coupling (CRITICAL): removing `test-hooks.sh` breaks 7 path-based conformance greps.** `test-skill-conformance.sh:3448–3504` greps the monolith by path for the bypass-matrix axes (#564/#556/#565), `make_branch_repo`, and the #594 PID-scoped fixtures. They MUST be repointed in the same phase (see the repoint work item + table above) or `run-all.sh` carries 7 fail-closed failures and Phase 1b cannot meet its 0-failed AC. This is the round-2 analogue of the round-1 missed-helper coupling (DA-1), at the conformance layer.
+- **Coupling: `PROJECT_HOOK` must be absolutized in Phase 1a** (relative @974) before any sub-suite calls `setup_project_test` from a non-repo-root cwd; the arbitrary-cwd smoke below proves it.
+### Acceptance Criteria
+- [ ] Per-sub-suite Results vector recorded to the baseline artifact (each `test-hooks-*.sh` count individually), AND Σ(sub-suite pass counts) == 2384 (or 2384 + N per the documented self-registration choice), 0 failed. The vector is asserted, not only the scalar sum (guards against a compensated ±1 between two sub-suites).
+- [ ] `bash tests/run-all.sh` Overall pass count == Phase 0 baseline + (documented self-registration delta), 0 failed — the two gates reconciled, not contradictory. **Conformance still passes after monolith removal** — the 7 repointed assertions (A–E2) find their tokens in the harness lib + bypass sub-suites + fixture-owning sub-suites, not the removed `test-hooks.sh`.
+- [ ] **Arbitrary-cwd smoke:** a sub-suite that sources `hooks-harness.sh` and calls `setup_project_test` / `setup_project_test_on_main` passes when invoked from a cwd OTHER than repo root (proves `PROJECT_HOOK` and the other hook-path globals were absolutized in 1a, not left relative).
+- [ ] No `test-hooks.sh` registered (no double-count); no stray `Results:` line from `test-hooks-helpers.sh`.
+### Dependencies
+Phase 1a (harness lib proven against the monolith). Phase 0 (registry reader sees the new sub-suites).
+
+## Phase 2 — Targeted isolation
+### Goal
+Make the genuinely collision-prone suites concurrency-safe. (Research: NOT an 80-suite sweep — bare `mktemp -d` honors `$TMPDIR`; hardcoded-`/tmp` suites are mostly `$$`-scoped or JSON string literals never written to disk.)
+### Work Items
+- [ ] `test-apply-preset.sh`: fixed `/tmp/zskills-apply-test-N` → per-worker-unique paths. Use a per-suite scratch root from `$(mktemp -d)` (bare mktemp honors the per-suite `TMPDIR` the Phase-4 runner injects) and clean up with `rm -rf -- "$VAR"` (a variable-holding, in-script rm — gate-irrelevant, see below). If a fixed namespace under `/tmp` is genuinely required, scope it by mktemp suffix, not `$$`.
+- [ ] `test-update-zskills-paths-migration.sh`: this suite hardcodes `TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")"` and therefore IGNORES the injected `TMPDIR` — give it a per-worker-unique `$TEST_OUT` (e.g. a `$(mktemp -d)`-derived path) and clean up via `rm -rf -- "$dir"` exactly as it already does at line 53.
+- [ ] Confirm (do NOT blanket-edit) that the Phase-4 runner injects `TMPDIR=$(mktemp -d)` per suite so the ~73 bare-mktemp suites isolate for free.
+### Design & Constraints
+- **No hook involved.** Do NOT frame cleanup around `block-unsafe-generic.sh`'s rm-gate — that hook is `PreToolUse` on the agent's Bash tool (`.claude/settings.json` matcher `Bash`) and NEVER sees an `rm` run inside a `bash tests/X.sh` subprocess (verified: test files already do `rm -rf /tmp/...` and `rm -rf -- "$dir"` at test-time without any hook interception). The only gate concern would be an agent typing such an rm into the Bash tool directly — and there a `$$`-bearing path would actually be BLOCKED (`is_safe_destruct` rejects any `$`, `hooks/block-unsafe-generic.sh:875`), which is a second reason the `/tmp/...-$$-N` form from the prior draft was wrong. In-script cleanup uses `rm -rf -- "$VAR"`; isolation is about distinct on-disk paths per concurrent worker, period.
+- Do NOT touch suites research showed already-safe (avoid scope creep / needless churn).
+### Acceptance Criteria
+- [ ] Two concurrent copies of each edited suite (distinct PIDs / distinct TMPDIR) pass with no cross-collision (run both with `&`, `wait`, confirm both `Results:` are clean).
+- [ ] No assertion changed.
+### Dependencies
+None (parallelizable with Phase 1).
+
+## Phase 3 — create-worktree sandbox + serial-pin heavy/global
+### Goal
+Stop `test-create-worktree` from creating worktrees in the real repo root (cases 8 & 17), and quarantine the genuinely unparallelizable suites.
+### Work Items
+- [ ] `test-create-worktree.sh` cases 8 & 17: invoke `create-worktree.sh` against a THROWAWAY sandbox repo (`git init` + 1 commit + a **NON-main branch**) so `MAIN_ROOT` resolves to the sandbox; relative / `../PROJECT_NAME` roots then land in the sandbox. The non-main branch is required by **create-worktree.sh's OWN guards, NOT a hook** — the script's collision guard refuses a NEW branch named `main` (`skills/create-worktree/scripts/create-worktree.sh:230`, exit 5) and its BASE-resolution under `--no-preflight` takes `MAIN_ROOT`'s current branch (`:248-254`); `block-unsafe-project.sh` (main_protected) is PreToolUse-on-Bash-tool and CANNOT fire on the test subprocess. The load-bearing cwd detail: `MAIN_ROOT` is computed from `git rev-parse --git-common-dir` **at the invocation cwd**, so each invocation must `cd` into the sandbox first; `$SCRIPT` stays pointed at the REAL `skills/create-worktree/scripts/create-worktree.sh` so peer scripts (`sanitize-pipeline-id.sh`) resolve via `$SCRIPT_DIR` — this is exactly why "no config/script copies needed" holds.
+- [ ] For case 17's 3-cwd invariance: recreate all three cwd anchors INSIDE the sandbox (sandbox root, a sandbox subdir, a sandbox nested-worktree created via the script against the sandbox), so the test still exercises 3 distinct cwds, all resolving `--git-common-dir` to the sandbox.
+- [ ] PRESERVE #1036's `register_synth_dir`/trap and the `.gitignore` `/cwdinv-*` `/cw-smoke-*` anchors — do not regress.
+- [ ] Define the **serial-only bucket**: `test_zskills_monitor_server` (port `19000+$$%500` range + heavy server procs) and the attended-gate / `test-plugin-live-load` suite (global `~/.zskills/last-attended-plugin-run` marker). These run in a serial phase, OUTSIDE the parallel pool.
+- [ ] **Carry the attended-gate block into the serial bucket VERBATIM** (do not just "run it serially"): the gate logic lives at run-all.sh:269-280 — source `tests/lib/attended-gate.sh`, read the throttle marker `~/.zskills/last-attended-plugin-run` + `ZSKILLS_ATTENDED_THROTTLE_SECONDS`, run the `ZSKILLS_LIVE_ATTENDED=1` branch + `attended_gate_refresh_marker` when `attended_gate_should_run` passes, else the plain branch. `list_registered_suites` (Phase 0) must dedupe the double-registration so the serial bucket runs it ONCE with the gate decision, not twice.
+### Design & Constraints
+- Acceptance test for the leak: a high-frequency watcher on the repo root during a full `test-create-worktree` run records ZERO new entries.
+- The serial bucket is a correctness fallback, not a perf compromise — neither suite is in the heavy tail.
+### Acceptance Criteria
+- [ ] Watcher over a full `test-create-worktree` run records 0 new entries in the real repo root AND 0 leaked `git worktree list` entries containing the test slug.
+- [ ] All `test-create-worktree` assertions still pass.
+- [ ] `monitor_server` + attended suite (with the attended-gate decision logic carried over verbatim) documented and wired as the serial bucket.
+### Dependencies
+None (parallelizable with Phases 1–2).
+
+## Phase 4 — Parallel runner + CI switch
+### Goal
+Run isolated suites concurrently at 8–12 workers with byte-identical accounting to serial `run-all.sh`, then switch CI.
+### Work Items
+- [ ] Add a parallel fan-out path. Preferred (research): make `run-all.sh` ITSELF fan out behind a flag (e.g. `ZSKILLS_PARALLEL=1` / `-j N`), default serial until proven — keeps self-registration greps anchored. (Decide vs a thin `run-all-parallel.sh` that reads `list_registered_suites`; document the choice + rationale.) Prior art for bg+wait fan-out is in-repo at `tests/e2e-parallel-pipelines.sh`; `export -f` + `export REPO_ROOT CLAUDE_PROJECT_DIR` for the worker subshells (`CLAUDE_PROJECT_DIR` is already exported at run-all.sh:7).
+- [ ] **Worker cap = literal `min(configured, nproc)`** — a CEILING at `nproc` so the 4-core CI runner is not oversubscribed (resolves to `configured` on the 32-core dev box, to 4 on CI). No `sensible_fn` placeholder. Per-suite capture to `$DIR/<suite>.out` + `<suite>.rc`; parse each `.out` via `parse_results`; sum; `OVERALL_EXIT` = any non-zero `.rc` (preserve the unparseable-but-nonzero-exit signal — an empty/no-Results `.out` still flips OVERALL_EXIT via its `.rc`). Print results in REGISTERED order (human parity with serial).
+- [ ] Per-suite `timeout 600` (SIGTERMs its own child). The serial bucket (Phase 3) runs before/after the pool, never inside it.
+- [ ] Per-suite `TMPDIR=$(mktemp -d)` injection.
+- [ ] Honor RUN_RACE_TESTS / RUN_E2E gates via `suite-registry` metadata (remain opt-in); dedupe the live-load double-registration so it is dispatched once (to the serial bucket).
+- [ ] CI: flip `.github/workflows/test.yml:34` to the parallel invocation; keep ONE gating `test` job (NO matrix — don't fragment the merge-gate status check). CI runs `ubuntu-latest` (~4 cores), so `min(configured, nproc)` caps workers at 4 there.
+### Design & Constraints
+- The parallel whole-suite total MUST equal the serial total **under an identical attended-gate decision** (pin `ZSKILLS_LIVE_ATTENDED` unset for both legs of the comparison — see Critical Invariants; the attended gate otherwise makes Overall vary run-to-run).
+- Output ordering deterministic for log readability despite concurrent execution.
+### Acceptance Criteria
+- [ ] Parallel Overall (pass + fail) == serial Overall (== Phase 0 baseline + documented self-registration delta), 3 consecutive runs, 0 flakes — **all runs with the attended gate pinned OFF** so the count is deterministic.
+- [ ] Wall-clock measured against the floor `max(conformance ~60s, heaviest bypass-project shard ~70s) + Σ(serial bucket)` (the serial bucket runs OUTSIDE the pool, so it is ADDITIVE, not max()'d in): capture via `time ZSKILLS_PARALLEL=1 bash tests/run-all.sh > "$TEST_OUT/.parallel.txt" 2>&1` (per CLAUDE.md capture-to-file), report the number from the file. **Pin the attended gate OFF for this PERF measurement** (`ZSKILLS_LIVE_ATTENDED` unset / no creds) — exactly as the parity AC does — so the serial-bucket term is the deterministic ~15s (`monitor_server` ~13s + unattended live-load ~2s), NOT a live-`claude` lottery that contaminates the wall-clock the way the attended gate would contaminate the parity count. State the **dev (32-core)** result AND the **CI (4-core ubuntu-latest)** result SEPARATELY — measure on the actual CI core count (or cap `-j` to 4 and measure locally) before flipping the merge gate. The merge-gate win (parallel ≤ serial on 4 cores, no regression) is the gating number, not the 32-core figure.
+- [ ] CI green on the parallel invocation; single merge-gate job preserved.
+### Dependencies
+Phases 0–3.
+
+## Out of scope / deferred
+- **Conformance memoization — DEFERRED.** `test-skill-conformance` (~60s measured: `real 0m59.711s`) is many independent `grep` subprocesses, not one cache-able computation; a correct cache key is impractical and risks masking failures. Parallelism covers it — but note it is the SECOND tall Amdahl pole (nested in ≥4 suites), so the parallel floor is bounded by it, NOT eliminated (see Overview "parallel floor").
+- **cp -r template-git-repo micro-opt — DROPPED.** `git init`+commit is ~21ms; not the dominant lever. NOTE the per-case cost in the §28/bypass-project section is roughly HALF setup (git-init + a `python3` config-patch per case via `setup_project_test_on_main` — `tests/test-hooks-helpers.sh:57-62`, spawned ~700× in that section) and HALF hook-spawn — so "the cost is purely hook-spawn" undercounts; relevant only if anyone later tries to speed that shard internally (also deferred).
+- **restart-nudge user-visibility (#1088) — separate PR.** Orthogonal to test speed.
+
+## Plan Quality
+### Round history
+- **Round 1 (2026-06-04):** reviewer (9 findings: 3 MAJOR M1–M3, 6 MINOR m4–m9) + devil's-advocate (14 findings: 2 CRITICAL DA-1/DA-2, 5 HIGH DA-3–DA-7, 3 MEDIUM DA-8–DA-10, 4 LOW/NOTE DA-11–DA-14). Refiner verified every empirical claim against `/workspaces/zskills` and dispositioned all 23 — see `## Refiner Disposition (Round 1)`. Substantive fixes landed: missed external helper `test-hooks-helpers.sh` mapped into Phase 1a; rm-gate rationale deleted (Phase 2 reframed to runtime path-isolation); two non-contradictory count gates (sub-suite subtotal 2384 vs whole-suite total) with the self-registration delta made explicit; baseline-capture WI added (Phase 0); attended-gate non-determinism pinned for parity ACs; second Amdahl pole (conformance ~60s) + 4-core CI honesty added to the perf floor; Phase 1 split into 1a/1b; create-worktree sandbox rationale corrected to the script's own guards. One reviewer claim NOT-reproduced and justified: the "no §513 anchor exists" sub-claim (the `#513` marker DOES exist at lines 2638/2813) — the surrounding finding (vague labels, unsupported "700 each") still fixed.
+- **Round 2 (2026-06-04):** reviewer (1 CRITICAL R2-C1, 1 MINOR R2-m1; all 7 round-1 fixes validated correct) + devil's-advocate (2 HIGH R2-1/R2-2, 2 MEDIUM R2-3/R2-4, 3 LOW no-action). Refiner verified every empirical claim against `/workspaces/zskills` and dispositioned all 6 substantive findings — see `## Refiner Disposition (Round 2)`. Substantive fixes landed: conformance-repoint work item + 7-row token table added to Phase 1b (R2-C1, the highest-impact miss — same coupling family as round-1's DA-1, at the conformance layer); `PROJECT_HOOK` absolutization owned by Phase 1a + arbitrary-cwd smoke added to Phase 1b AC (R2-1); Overview + motivation reframed to lead with BOTH honest numbers (agent-side 32-core ~2–3 min dominant win; CI 4-core ~2× ≈ 8–10 min gating) (R2-2); Gate A upgraded from scalar sum to per-sub-suite VECTOR (R2-3); floor formula corrected to `max(pool poles) + Σ(serial bucket)` and attended-gate-OFF pin extended to the PERF AC (R2-4); worker cap made literal `min(configured, nproc)` with the "floor" tension removed (R2-m1).
+
+**Convergence:** Converged at round 2 — the refiner verified every finding against the repo and fixed/justified all; 0 remaining substantive issues. PLUS a post-round-2 orchestrator **coupling-completeness sweep**: grepped the whole repo for every external reference to `test-hooks.sh` and its moved symbols. Result — the only code coupling beyond those already mapped (the helper file in 1a + the 7 conformance greps in 1b) is `make_branch_repo` in `test-skill-conformance.sh`, already covered by the Phase-1b repoint table (row D). The ~31 `test-hooks.sh` references in `docs/issues/ISSUES_PLAN.md` are all in **closed-issue** write-ups (127 of 128 issues closed; the 1 open — #67 GitLab — does not reference `test-hooks.sh`), i.e. a stale 2026-05-19 historical snapshot, NOT live coupling. `BLOCK_UNSAFE_HARDENING.md` (which created `test-hooks-helpers.sh`) is `status: complete` — no active cross-plan conflict.
+
+**Remaining concerns:** none blocking. Honest caveats carried in the Overview: (1) the headline ~2–3 min is the 32-core agent-side figure; CI's 4 cores get ~2× (~8–10 min) — the dominant win is agent-side, which is where 3–5 of the 4–6 per-pipeline runs happen. (2) The implementation is detail-heavy — the recurring missed-coupling pattern (helper file → conformance greps) signals that splitting a 2,384-assert, heavily-entangled file is fiddly; Phase 1b should expect iteration, which the phased `/run-plan` + per-phase verification is built to absorb. Worst realistic case is a caught phase-test failure, never a shipped regression (the runner is additive; the CI gate stays intact until parallel == serial is proven).
+
+## Refiner Disposition (Round 1)
+
+| # | Finding (source) | Evidence | Disposition |
+|---|---|---|---|
+| 1 | DA-1 — Phase 1 ignores `tests/test-hooks-helpers.sh` (external helper, sourced @2385/2520; defines `setup_project_test_on_main` + fallback `setup_project_test` + own `pass`/`fail` + Results@104; depends on `setup_project_test`@977 in scope) | **Verified** — `grep -n test-hooks-helpers tests/test-hooks.sh` → 2385,2520; helper defines `setup_project_test_on_main`@46, fallback `setup_project_test`@20, `Results:`@104 | **Fixed** — Phase 1a WI1 enumerates the helper as explicit input; fold-in-or-source with `setup_project_test`-before-`_on_main` ordering guaranteed; standalone Results emission gated. |
+| 2 | DA-2 / M3 — proposed `/tmp/...-$$-N` cleanup is BLOCKED by `is_safe_destruct` (`$` rejected @875) | **Verified** — `hooks/block-unsafe-generic.sh:875` `[[ "$cmd" == *'$'* ]] && return 1` | **Fixed** — removed the `$$`-literal form from Phase 2; invariant + Phase 2 now use `rm -rf -- "$VAR"` / `$(mktemp -d)`. |
+| 3 | DA-3 / M3 — rm-gate is mis-scoped: PreToolUse-on-Bash-TOOL, never fires on subprocess test | **Verified** — `.claude/settings.json` PreToolUse matcher `Bash`; in-script `rm` in test files runs without interception | **Fixed** — deleted the entire rm-gate rationale from Phase 2 + Critical Invariants; Phase 2 reframed to runtime path-isolation only. |
+| 4 | M1 — Phase 0 AC `count == grep -c '^...run_suite'` is wrong (208 incl. func-def@13, live-load double-reg@276/279, conditionals@145/317) | **Verified** — grep all=208, quote=207; line 13 = `run_suite() {`, 276 = duplicate live-load | **Fixed** — Phase 0 AC rewritten to enumerate DISTINCT unconditional paths (func-def excluded, live-load deduped) + 3 conditional suites as metadata; raw `grep -c` explicitly rejected as the yardstick. |
+| 5 | M2 — no baseline-capture step; "unchanged vs baseline" ACs have no referent | **Verified** (judgment + plan text) — no WI produced a baseline; measured test-hooks=2384, conformance≈60s | **Fixed** — Phase 0 WI1 "BASELINE CAPTURE (do this first)" records whole-suite Overall + test-hooks 2384 + conformance 60s to a durable artifact. |
+| 6 | DA-4 — whole-suite Overall non-deterministic via attended gate (refreshes marker between runs) | **Verified** — run-all.sh:269-280 (gate → `ZSKILLS_LIVE_ATTENDED=1` branch + `attended_gate_refresh_marker`); test-plugin-live-load §B guarded | **Fixed** — Gate A/B split: parity ACs pinned to attended-gate-OFF; whole-suite gate held constant; documented in Critical Invariants + Phase 4 ACs. |
+| 7 | DA-5 — second Amdahl pole (conformance ~65s, DEFERRED) undefended | **Verified** — `time bash tests/test-skill-conformance.sh` → `real 0m59.711s`; nested in ≥4 suites | **Fixed** — Overview "parallel floor" section + Phase 4 AC state `floor ≈ max(conformance ~60s, bypass-project shard ~70s, serial bucket)`; Out-of-scope note corrected. |
+| 8 | DA-6 — CI is 4-core ubuntu-latest, not 32; 8-12 workers oversubscribe | **Verified** — `test.yml:11 runs-on: ubuntu-latest`; dev `nproc`=32 | **Fixed** — worker cap = `min(configured, sensible_fn(nproc))` floored at nproc; Phase 4 AC reports dev (32) + CI (4) separately; merge-gate win is the gating number. |
+| 9 | DA-9 — sandbox non-main rationale is the script's own guard, not the main_protected hook | **Verified** — create-worktree.sh:230 collision guard (`BRANCH = main` → exit 5), :248-254 BASE logic; hook is PreToolUse/Bash | **Fixed** — Phase 3 WI1 rationale corrected to the script's collision guard + BASE-resolution; hook explicitly noted as non-firing. |
+| 10 | DA-8 — `parse_results` extraction must preserve exit-signal (parser interleaved w/ accumulation + OVERALL_EXIT) | **Verified** — run-all.sh:34-50 parse + accumulate + OVERALL_EXIT in one fn; 0/0 fall-through | **Fixed** — Phase 0 WI specifies `parse_results` echoes ONLY PASS/FAIL; caller retains exit capture, accumulation, 0/0 fall-through, OVERALL_EXIT flip; unparseable-nonzero signal must survive (+ unit test). |
+| 11 | DA-10 — Phase 1 does too much; split into 1a (harness vs unchanged monolith) + 1b (relocate) | **Judgment** (grounded in DA-1 coupling) | **Fixed** — Phase split into 1a (extract+verify against monolith, count stays 2384) and 1b (relocate sections); Progress Tracker updated. |
+| 12 | m4 — vague "§513"/"700 each" labels | **Partially reproduced** — "700 each" NOT supported (counts are dynamic `GEN_PROP_CASES`/`PROJ_PROP_CASES`); BUT DA/reviewer "no §513 anchor exists" is FALSE — `#513` markers DO exist @2638 (generic) + @2813 (project) | **Fixed (corrected)** — Phase 1b cites the REAL `echo "=== ...(#513)..."` markers at 2638/2813 + the matrix markers; replaces "700 each" with "MEASURE each sub-suite before finalizing." Justified the partial: kept the real `#513` anchor rather than removing it. |
+| 13 | DA-14 / cost-attribution — §28 cost is ~half git-init+python3 (×~700) setup, not purely hook-spawn | **Verified** — `tests/test-hooks-helpers.sh:57-62` python3 per call; section uses `setup_project_test_on_main` ~700× | **Fixed** — Out-of-scope cp-r note corrected to ~half setup (python3) / ~half hook-spawn. |
+| m5 | Imprecise "one scoped trap"; mixed cleanup (1 EXIT trap + explicit teardown) | **Verified** — `grep -cE '^[[:space:]]*trap ' test-hooks.sh`=1 (@3736); `setup/teardown_project_test`@977/1013 | **Fixed** — Phase 1a names setup/teardown_project_test; the lone `$INV_TEST` EXIT trap stays fixture-scoped (NOT in shared harness). |
+| m6 | "exclude from conformance like extract-fence" framing off — no central exclusion list | **Verified** — registration is self-asserted per test (23 via `grep -q`); no global loop in test-skill-conformance.sh | **Fixed** — Phase 0 reworded: new libs simply carry NO self-registration assertion (like extract-fence.sh/landpr-harness.sh); nothing to exclude. |
+| m7 | CI-gate under-specifies attended/conditional suites + live-load double-reg exit attribution | **Verified** — run-all.sh:269-280 attended block; live-load registered twice | **Fixed** — Phase 3 carries the attended-gate block verbatim into the serial bucket; Phase 0/4 dedupe the double-registration. |
+| m8 | Sandbox WI omits the cwd requirement (MAIN_ROOT from `--git-common-dir` at cwd) | **Verified** — create-worktree.sh computes MAIN_ROOT at invocation cwd; SCRIPT_DIR resolves peers from real repo | **Fixed** — Phase 3 WI1/WI2 state: `cd` into sandbox per invocation; `$SCRIPT` stays at real repo; recreate 3 sandbox cwd anchors for case-17 invariance. |
+| m9 | Perf AC should name exact command + capture file | **Verified** — `nproc`=32; CLAUDE.md capture-to-file | **Fixed** — Phase 4 AC names `time ... > "$TEST_OUT/.parallel.txt"`; serial baseline captured the same way. |
+| DA-7 | Splitting adds ~8 self-registration asserts → Σ ≠ 2384 (or violates convention) | **Verified** — 23 suites self-assert via `grep -q`; test-hooks does NOT | **Fixed** — Phase 1b WI forces an explicit decision; recommended (a) omit self-registration (Σ stays 2384, inherits test-hooks' own behavior); Gate A states the alternative `2384+N` numerically. |
+| DA-11 | `xargs -P`/`export -f` sound but hand-waved | **Verified** — bash 5.2, GNU xargs 4.9, CLAUDE_PROJECT_DIR exported@7 | **Fixed** — Phase 4 WI pins `export -f` + `export REPO_ROOT CLAUDE_PROJECT_DIR`; cites e2e prior art. |
+| DA-12 | `e2e-parallel-pipelines.sh` is in-repo prior art for bg+wait | **Verified** — file uses `&`+`wait` fan-out | **Fixed** — referenced in Phase 4 WI1. |
+| DA-13 | Count stability within test-hooks: GOOD (no env-gated asserts) — no action | **Verified** — no `RUN_*`/`SKIP`/`ATTENDED`-gated branches in test-hooks | **Justified (no change)** — confirms Gate A's 2384 is env-stable; instability is only whole-suite via attended gate (already fixed via #6). |
+_(finalize after convergence)_
+
+## Refiner Disposition (Round 2)
+
+| # | Finding (source) | Severity | Evidence (verified against `/workspaces/zskills`) | Disposition |
+|---|---|---|---|---|
+| 1 | R2-C1 — Phase 1b removes `test-hooks.sh` but 7 conformance assertions grep that exact path → all fail-closed → Phase 1b's 0-failed AC unreachable | CRITICAL | **Verified** — `test-skill-conformance.sh:3448` `HOOKS_TEST="$REPO_ROOT/tests/test-hooks.sh"`; `check_min_count`@3450 uses `grep -c… "$HOOKS_TEST" 2>/dev/null \|\| echo 0`; 4 `check_min_count` @3468/3475/3481/3487 + 2 `grep -qF` @3495/3500. Tokens: `for branch in main feat/test`@2756/2912, `dest="${force}${refp}HEAD"`@2765/2920, `for target in main master feat/test`@2681/2833, `^make_branch_repo()`@64, `FIXTURE_EXT_DIR=…-$$`@4801, `SKILL_DRIFT_FIXTURE=…-$$`@4680. Reproduced `grep -cF foo /nonexistent` → 0/rc=2 (the missing-file fail-closed) | **Fixed** — added a Phase 1b work item with a 7-row repoint table (A–E2: each token's current line → destination harness lib / bypass sub-suite / fixture-owning sub-suite); added a Design&Constraints CRITICAL-coupling note and a Phase 1b AC "conformance still passes after monolith removal." Noted NOT a softening (protective intent relocated, not weakened) and no `metadata.version` bump (conformance is a test). |
+| 2 | R2-1 — Phase 1a factors the functions but not the script-globals they close over; relative `PROJECT_HOOK` is the landmine | HIGH | **Verified** — `PROJECT_HOOK="hooks/block-unsafe-project.sh.template"`@974 (RELATIVE); `HOOK`@7, `AGENTS_HOOK`@3423, `WARN_HOOK`@4610 (absolute `$REPO_ROOT/…`); `setup_project_test` does `cp "$PROJECT_HOOK" …`@984 (+1659/2021/2283/2350/4273) | **Fixed** — added a Phase 1a WI: harness OWNS the hook-path globals and ABSOLUTIZES `PROJECT_HOOK` to `$REPO_ROOT/hooks/…`; enumerate every relative global a moved helper closes over. Added an arbitrary-cwd smoke to Phase 1b AC (the 1a equivalence check runs at repo-root cwd and would miss the relative break). |
+| 3 | R2-2 — perf honesty: ~2–3 min is the 32-core figure; CI 4-core is git/fork-bound ~2× (~8–10 min); don't pin the value prop to the wrong core count | HIGH | **Verified** — `nproc`=32 (dev); `.github/workflows/test.yml:11` `runs-on: ubuntu-latest` (~4-core); `run-all.sh` invoked @ test.yml:34 | **Fixed** — Overview now leads with BOTH numbers (agent-side 32-core ~2–3 min = dominant win; CI 4-core ~8–10 min ~2× = gating). "Why this matters" reframed: Direct layer = agent-side big win; Convergence layer = CI ~2×, explicitly NOT oversold as super-linear. Value prop preserved, reframed accurately. Perf AC already measures dev + CI separately. |
+| 4 | R2-3 — Gate A scalar sum masks a compensated ±1 (drop in X + gain in Y both net 2384) — the exact "never soften" failure | MEDIUM | **Verified** — single `PASS_COUNT`/`FAIL_COUNT` per suite → one `Results:` line (`test-hooks.sh:4861`); no global per-section meta-test | **Fixed** — Gate A (Critical Invariant) upgraded to a per-sub-suite VECTOR captured at the cut + asserted, not only the scalar sum, with the compensated-swap rationale spelled out. Phase 1b HARD GATE + AC both require recording the per-suite vector. |
+| 5 | R2-4 — serial bucket runs OUTSIDE the pool so it is ADDITIVE not max(); and the attended-gate-OFF pin covers only the parity AC, not the perf AC | MEDIUM | **Verified** — serial bucket (`monitor_server`@run-all.sh:185 ~13s; attended `test-plugin-live-load`@276/279 ~2s unattended) runs before/after pool per Phase 3/4; attended branch runs real `claude` (run-all.sh:276 `ZSKILLS_LIVE_ATTENDED=1`) | **Fixed** — floor formula corrected everywhere to `max(conformance ~60s, bypass shard ~70s) + Σ(serial bucket)` (Overview + Phase 4 AC); added the additive-serial-bucket explanation; extended the attended-gate-OFF pin to the PERF AC (deterministic ~15s, not a live-`claude` lottery). |
+| 6 | R2-m1 — worker cap `min(configured, sensible_fn(nproc))` abstract; "floor at nproc" wording tension | MINOR | **Verified** — invariant + Phase 4 WI both used `sensible_fn(nproc)`; `nproc`=32, CI ~4 | **Fixed** — replaced with literal `min(configured, nproc)` (a CEILING at nproc, not a floor) in the Critical Invariant + Phase 4 WI + the test.yml flip note; removed the contradictory "floor at nproc" phrasing; documented the dev(→configured)/CI(→4) resolution. |
+
+**Round-2 LOW/no-action (verified, no change needed):** R2-5 (DA-7 self-registration fix coherent — 23/~202 self-assert, no meta-test requires it; `grep -q "test-hooks"` against run-all.sh → NONE), R2-6 (Phase 1a not circular — empirical equivalence check, "unchanged" = sections-unmoved; the real residual was R2-1, now fixed), R2-7 (attended-gate pin inherited by the runner for free; the only gap was the PERF-AC pin, folded into R2-4 fix).
+
+**Remaining substantive issues: 0.** All 6 round-2 substantive findings (1 CRITICAL, 2 HIGH, 2 MEDIUM, 1 MINOR) verified true against the repo and fixed in place; the 3 LOW notes were verified as no-action. Frontmatter, Progress Tracker, and `## Phase N — Name` em-dash headings preserved (run-plan-parseable).
+_(finalize after convergence)_
