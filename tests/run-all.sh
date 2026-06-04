@@ -56,6 +56,12 @@ run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
 run_suite "test-resolve-effective-worktree-root.sh" "tests/test-resolve-effective-worktree-root.sh"
 run_suite "test-resolve-python.sh" "tests/test-resolve-python.sh"
 run_suite "test-python-resolver-drift.sh" "tests/test-python-resolver-drift.sh"
+# #1086 — END-TO-END guard for the MS-Store broken-python3 stub class: puts a
+# broken `python3` FIRST on PATH (real `python` behind it) and runs the actual
+# materialiser + a /briefing skill-body fence, asserting both resolve via
+# $PYTHON and nothing runs real work through the stub. (Catches the python-
+# resolution class only; NOT a full Windows qual — see the file header.)
+run_suite "test-broken-python3-stub-e2e.sh" "tests/test-broken-python3-stub-e2e.sh"
 run_suite "test-hooks-mirror-parity.sh" "tests/test-hooks-mirror-parity.sh"
 run_suite "test-skills-mirror-parity.sh" "tests/test-skills-mirror-parity.sh"
 run_suite "test-inject-bash-timeout.sh" "tests/test-inject-bash-timeout.sh"
