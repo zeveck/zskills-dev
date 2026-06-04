@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -43,13 +43,32 @@ PLUGIN="${CLAUDE_PLUGIN_ROOT:-}"
 [ -n "$PROJ" ] || exit 0
 [ -n "$PLUGIN" ] || exit 0
 
-# `|| true` guards the command substitution: under `set -euo pipefail`, if
-# BOTH python3 and python are absent the substitution exits nonzero and `set
-# -e` would abort BEFORE the intended fail-open guard below. The trailing
-# `|| true` keeps PYTHON empty so the `[ -n "$PYTHON" ] || exit 0` fail-open
-# fires as designed.
-PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python || true)}"
-[ -n "$PYTHON" ] || exit 0
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+
+# `|| true` guards the command substitution: under `set -euo pipefail`, a
+# resolver miss exits nonzero and `set -e` would abort BEFORE the intended
+# fail-open guard below. The trailing `|| true` keeps PYTHON empty so the
+# `[ -n "$PYTHON" ]` fail-open fires as designed. Probe-running each candidate
+# means a non-executable MS Store `python3` stub yields empty here, not a path.
+PYTHON="$(zskills_resolve_python || true)"
+if [ -z "$PYTHON" ]; then
+  echo "zskills: no working Python 3 found; materialisation skipped — set ZSKILLS_PYTHON" >&2
+  exit 0
+fi
 
 # ── W6.2 — switch-in-progress skip ────────────────────────────────────────
 # scripts/switch-install-path.sh --to-update-zskills writes

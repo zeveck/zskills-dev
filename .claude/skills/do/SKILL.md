@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.04+7a1cf0"
+  version: "2026.06.04+e9a157"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -403,6 +403,20 @@ fi
 # `git rev-parse --git-common-dir` parent, falling back to
 # ${CLAUDE_PROJECT_DIR:-$PWD}. This is correct from a worktree too (the
 # claims live under the MAIN repo's .zskills/).
+# Resolve a WORKING Python 3 (probe-RUN each candidate: on Windows
+# `command -v python3` finds a non-executable MS Store stub). Honors
+# ZSKILLS_PYTHON; empty if none works.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
 if [ "$NO_CLAIM" -ne 1 ]; then
   _DO_MAIN_ROOT=""
   if _DO_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) && [ -n "$_DO_COMMON_DIR" ]; then
@@ -411,7 +425,7 @@ if [ "$NO_CLAIM" -ne 1 ]; then
     fi
   fi
   [ -z "$_DO_MAIN_ROOT" ] && _DO_MAIN_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-  _DO_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  _DO_PYTHON="$(zskills_resolve_python || true)"
   # This run's pipeline_id, if already known (mode files set PIPELINE_ID as
   # `do.<task-slug>`). In the pre-flight it is typically unset; an empty
   # value can never equal a real stored pipeline_id, so every live claim on a

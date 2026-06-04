@@ -49,6 +49,26 @@
 
 set -u
 
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+# Best-effort: the monitor-state.json reads below are guarded with `|| …=""`,
+# so an absent interpreter degrades gracefully (no reconsider/skip overrides)
+# rather than failing the sprint. A non-working stub (Windows) yields empty.
+_FUC_PYTHON="$(zskills_resolve_python || true)"
+
 if [ -z "${ZSKILLS_ISSUES_DIR:-}" ]; then
   echo "ERROR: ZSKILLS_ISSUES_DIR not set" >&2
   exit 1
@@ -84,8 +104,8 @@ MAIN_ROOT="${ZSKILLS_MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/nu
 STATE_FILE="${MAIN_ROOT:+$MAIN_ROOT/.zskills/monitor-state.json}"
 RECONSIDER_NUMS=""
 declare -A MONITOR_SKIPPED_MAP=()
-if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
-  RECONSIDER_NUMS=$(python3 -c "
+if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -n "$_FUC_PYTHON" ]; then
+  RECONSIDER_NUMS=$("$_FUC_PYTHON" -c "
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -99,7 +119,7 @@ except Exception:
   # Read issues.skipped as `<num> <code>` pairs (newline-separated).
   while IFS=$'\t' read -r _n _c; do
     [ -n "$_n" ] && MONITOR_SKIPPED_MAP["$_n"]="$_c"
-  done < <(python3 -c "
+  done < <("$_FUC_PYTHON" -c "
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -254,9 +274,9 @@ printf 'SKIP_TAGGED="%s"\n' "${SKIP_TAGGED[*]}"
 # remove any matching entries from `issues.skipped` — reconsider and
 # skipped are duals (see #808: reconsidering an issue un-skips it so
 # Phase 2 re-triages it cleanly on this fire).
-if [ "${#RECONSIDERED_PROCESSED[@]}" -gt 0 ] && [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
+if [ "${#RECONSIDERED_PROCESSED[@]}" -gt 0 ] && [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ] && [ -n "$_FUC_PYTHON" ]; then
   REMOVE_LIST=$(printf '%s\n' "${RECONSIDERED_PROCESSED[@]}" | tr '\n' ' ' | sed 's/ $//')
-  python3 -c "
+  "$_FUC_PYTHON" -c "
 import json, sys, os, tempfile
 
 path = sys.argv[1]

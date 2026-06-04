@@ -62,16 +62,34 @@ hang in 5 minutes.
 
 zskills depends on Python 3 for JSON round-tripping in hooks and helper scripts where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
 
-The interpreter is resolved via this precedence:
+The interpreter is resolved by **probe-running** each candidate — existence on
+`PATH` is NOT enough. On Windows, `command -v python3` latches the Microsoft
+Store App-Execution-Alias stub (`python3.exe`), which only prints "Python was
+not found…" and exits non-zero when actually run; a plain `command -v` check
+would stop at that stub and never reach the user's real `python`. So each
+candidate is run with a trivial Python-3 probe and only accepted if it exits 0:
 
 ```
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+PYTHON="$(zskills_resolve_python || true)"
 [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
 ```
 
-- Default is `python3` (POSIX-standard zskills target).
-- Falls back to `python` for Windows / distros where only `python` exists (pointing at Python 3).
-- Set `ZSKILLS_PYTHON` to override both — useful when both binaries exist but you need a specific interpreter (e.g. a venv).
+- Candidates are tried in order: `$ZSKILLS_PYTHON` (if set) → `python3` → `python`.
+- Each is probe-RUN; a non-executable shim (e.g. the Windows MS Store stub) is skipped, not latched. A failed resolve yields empty (never a stub path), so the `[ -n "$PYTHON" ]` guard is honest.
+- Default is `python3` (POSIX-standard zskills target); falls back to `python` for Windows / distros where only `python` exists (pointing at Python 3).
+- `python2` is rejected (the probe asserts `sys.version_info[0]==3`).
+- Set `ZSKILLS_PYTHON` to override — useful when both binaries exist but you need a specific interpreter (e.g. a venv).
 
 Python 2 is unsupported. Scripts may assume Python 3 stdlib without a version check.
 

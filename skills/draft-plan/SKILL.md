@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.03+a45ec3"
+  version: "2026.06.04+53c471"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter

@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.31
+# zskills-hook-version: 2026.06.4
 # block-fix-issue-unclaimed.sh — PreToolUse hook on Bash.
 #
 # Backstops the /fix-issues inline-acquire prose discipline (plans/fix-issues-claims.md
@@ -72,11 +72,26 @@ fi
 # Python's json to decode safely (strings may contain escaped quotes,
 # embedded newlines, backslashes). Bash regex over the raw JSON envelope
 # loses to escape sequences — Python json.loads is the canonical parser.
-PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+# zskills_resolve_python — print path to a working Python 3 interpreter, or
+# empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
+# `command -v python3` finds the MS Store App-Execution-Alias stub, which exits
+# non-zero when run). Honors ZSKILLS_PYTHON. Rejects python2.
+zskills_resolve_python() {
+  local cand
+  for cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$cand" ] || continue
+    command -v "$cand" >/dev/null 2>&1 || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      command -v "$cand"; return 0
+    fi
+  done
+  return 1
+}
+PYTHON="$(zskills_resolve_python || true)"
 if [ -z "$PYTHON" ]; then
-  # No Python — fail-open. Print a stderr warning so the operator sees the
-  # gap rather than silently passing every invocation through.
-  echo "block-fix-issue-unclaimed.sh: WARN no Python available; hook is no-op" >&2
+  # No working Python — fail-open. Print a stderr warning so the operator sees
+  # the gap rather than silently passing every invocation through.
+  echo "block-fix-issue-unclaimed.sh: WARN no working Python 3 found; hook is no-op — set ZSKILLS_PYTHON" >&2
   exit 0
 fi
 

@@ -110,22 +110,25 @@ else
   fail "case 6: command with embedded quotes should be preserved" "got: $RESULT"
 fi
 
-# --- ZSKILLS_PYTHON env-override shim (PR #302, issue #321) ---
+# --- ZSKILLS_PYTHON env-override + probe-resolution (issue #1075) ---
 #
-# The shim is:
-#   PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
-#   [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+# The resolver is zskills_resolve_python (hooks/_lib/resolve-python.sh, inlined):
+# it PROBE-RUNS each candidate ($ZSKILLS_PYTHON → python3 → python), accepting
+# only one that exits 0 on a Python-3 probe. A non-executable / non-Python-3
+# candidate (the Windows MS Store `python3` stub) is SKIPPED, not latched.
+# Layer 0 fails OPEN: with NO working interpreter it emits a bare allow and
+# exits 0 (a PreToolUse hook that exits 1 could block the Bash call).
 #
-# Three behaviors to lock in:
-#   7. Default — unset ZSKILLS_PYTHON, python3 on PATH → normal injection works
-#      (proves the default branch of the shim still resolves a working interpreter).
-#   8. Env override honored — ZSKILLS_PYTHON=/nonexistent/python causes the python
-#      step to fail (binary not executable); the hook does NOT fall back to the
-#      default python3 — it hits the permissive fallback (allow with no
-#      updatedInput). If the override were ignored, the default python3 would
-#      succeed and we'd see updatedInput.
-#   9. Loud-error branch — unset ZSKILLS_PYTHON AND mask python3/python from
-#      PATH → hook prints "ERROR: install Python 3" to stderr and exits non-zero.
+# Behaviors locked in:
+#   7. Default — unset ZSKILLS_PYTHON, python3 on PATH → normal injection works.
+#   8. Bad ZSKILLS_PYTHON override (nonexistent path) → resolver SKIPS it and
+#      falls through to the real python3 on PATH → injection STILL works
+#      (graceful fall-through, the #1075 fix; the old shim latched the empty
+#      override and lost injection).
+#   9. No working Python anywhere (only a Windows-style stub `python3` on PATH,
+#      ZSKILLS_PYTHON unset) → fail OPEN: bare allow + exit 0, NOT exit 1.
+#  10. Stub python3 first on PATH but a real `python` later → resolver skips the
+#      stub and injects a valid envelope.
 
 # Case 7 — default behavior: unset ZSKILLS_PYTHON, normal PATH, injection works.
 INPUT_7='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
@@ -137,39 +140,74 @@ else
   fail "case 7: default branch should still inject timeout" "got: $RESULT"
 fi
 
-# Case 8 — env override is honored. Point ZSKILLS_PYTHON at a non-executable path.
-# The hook's [ -n "$PYTHON" ] guard passes (string is non-empty), then the python
-# invocation fails (no such binary), PY_OUT is empty, and the permissive fallback
-# returns a bare allow with no updatedInput. If the override were silently
-# ignored, the default python3 would succeed and we'd see updatedInput — so
-# "no updatedInput" is the positive signal that the override took effect.
+# Case 8 — bad ZSKILLS_PYTHON override falls through to a real interpreter.
+# The resolver's `command -v "$cand"` fails for the nonexistent path, so it
+# moves on to python3/python and injection still works. (Pre-#1075 the shim
+# latched the empty override and produced NO updatedInput.)
 INPUT_8='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
 RESULT=$(printf '%s' "$INPUT_8" | ZSKILLS_PYTHON=/nonexistent/python-binary-xyz bash "$HOOK" 2>/dev/null)
-if [[ "$RESULT" == *'"permissionDecision":"allow"'* ]] && [[ "$RESULT" != *'updatedInput'* ]]; then
-  pass "case 8: ZSKILLS_PYTHON=/nonexistent → override honored (permissive fallback, no updatedInput)"
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 8: bad ZSKILLS_PYTHON override → resolver falls through to real python3, injection works"
 else
-  fail "case 8: bad ZSKILLS_PYTHON override should NOT fall through to default python3" "got: $RESULT"
+  fail "case 8: bad override should fall through to a working interpreter" "got: $RESULT"
 fi
 
-# Case 9 — loud-error branch. Mask python3 AND python from PATH (point PATH at
-# an empty directory) and unset ZSKILLS_PYTHON. The shim's `command -v` lookups
-# both fail, $PYTHON ends up empty, the guard fires, hook prints to stderr and
-# exits non-zero. We resolve bash by absolute path because the wiped PATH won't
-# find `bash` either.
+# Build a fake-interpreter dir with a Windows-style MS Store `python3` stub:
+# prints the store message to stderr and exits 9009. Plus a TOOLS dir holding
+# symlinks to the few real binaries the hook itself shells out to (`bash` to
+# start the subshell, `cat` for the `INPUT=$(cat)` read) so the masked-PATH
+# subshell can run WITHOUT leaking the host's real python3 onto PATH.
 BASH_BIN=$(command -v bash)
-EMPTY_PATH_DIR=$(mktemp -d)
+CAT_BIN=$(command -v cat)
+TOOLS_DIR=$(mktemp -d)
+ln -s "$BASH_BIN" "$TOOLS_DIR/bash"
+ln -s "$CAT_BIN" "$TOOLS_DIR/cat"
+STUB_DIR=$(mktemp -d)
+cat > "$STUB_DIR/python3" <<'STUB'
+#!/bin/sh
+echo "Python was not found; run without arguments to install from the Microsoft Store." >&2
+exit 9009
+STUB
+chmod +x "$STUB_DIR/python3"
+
+# Case 9 — no WORKING python anywhere (only the stub) → fail OPEN, exit 0.
+# PATH = stub dir + tools (bash only); ZSKILLS_PYTHON unset. The resolver runs
+# the stub, sees it exit non-zero, finds no other candidate, returns empty →
+# the hook emits a bare allow and exits 0 (NOT 1).
 INPUT_9='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
-# Run hook in a subshell with sanitized env. Capture stderr; redirect stdout
-# away so it doesn't pollute the captured string. Exit code of the rightmost
-# command of the pipe is propagated out of `$(...)`.
-STDERR_OUT=$(printf '%s' "$INPUT_9" | (unset ZSKILLS_PYTHON; PATH="$EMPTY_PATH_DIR" "$BASH_BIN" "$HOOK") 2>&1 >/dev/null)
+RESULT=$(printf '%s' "$INPUT_9" | (unset ZSKILLS_PYTHON; PATH="$STUB_DIR:$TOOLS_DIR" "$BASH_BIN" "$HOOK") 2>/dev/null)
 EXIT_CODE=$?
-rmdir "$EMPTY_PATH_DIR"
-if [[ "$STDERR_OUT" == *"ERROR: install Python 3"* ]] && [[ "$EXIT_CODE" -ne 0 ]]; then
-  pass "case 9: no python3/python on PATH + no ZSKILLS_PYTHON → loud error + non-zero exit"
+if [[ "$RESULT" == *'"permissionDecision":"allow"'* ]] \
+  && [[ "$RESULT" != *'updatedInput'* ]] \
+  && [[ "$EXIT_CODE" -eq 0 ]]; then
+  pass "case 9: only a Windows-style stub python3 → fail OPEN (bare allow, exit 0)"
 else
-  fail "case 9: missing python should produce loud error" "exit=$EXIT_CODE stderr=$STDERR_OUT"
+  fail "case 9: missing working python should fail OPEN, not exit 1" "exit=$EXIT_CODE result=$RESULT"
 fi
+
+# Case 10 — stub python3 first on PATH, real `python` later → resolver skips the
+# stub and produces a valid injected envelope. Back the real `python` with the
+# host interpreter via a /bin/sh wrapper (absolute interpreter path, PATH-safe).
+REAL_PY=$(command -v python3 || command -v python)
+REAL_DIR=$(mktemp -d)
+cat > "$REAL_DIR/python" <<REALPY
+#!/bin/sh
+exec "$REAL_PY" "\$@"
+REALPY
+chmod +x "$REAL_DIR/python"
+INPUT_10='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(printf '%s' "$INPUT_10" | (unset ZSKILLS_PYTHON; PATH="$STUB_DIR:$REAL_DIR:$TOOLS_DIR" "$BASH_BIN" "$HOOK") 2>/dev/null)
+EXIT_CODE=$?
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]] \
+  && [[ "$EXIT_CODE" -eq 0 ]]; then
+  pass "case 10: stub python3 first, real python later → stub skipped, valid injection"
+else
+  fail "case 10: should skip stub python3 and inject via real python" "exit=$EXIT_CODE result=$RESULT"
+fi
+
+rm -rf "$TOOLS_DIR" "$STUB_DIR" "$REAL_DIR"
 
 echo ""
 echo "---"
