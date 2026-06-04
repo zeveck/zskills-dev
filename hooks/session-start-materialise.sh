@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.5
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -128,12 +128,20 @@ resolve_src() {
 # ── Sentinel + overwrite-guard helpers (D20(a)) ──────────────────────────
 SENTINEL_TAG="zskills-materialised:"
 
-# safe_to_write <dest> — true (0) when dest is absent OR carries a zskills
-# materialiser sentinel in its first 3 lines. A sentinel-less existing file
-# is consumer-authored → do NOT overwrite (return 1).
+# safe_to_write <dest> — true (0) when dest is absent, EMPTY (0-byte), OR
+# carries a zskills materialiser sentinel in its first 3 lines. A sentinel-less
+# NON-empty existing file is consumer-authored → do NOT overwrite (return 1).
+#
+# The 0-byte case (self-heal, #1079): a prior materialise that aborted
+# mid-write could leave a 0-byte artifact. An empty file is never a real
+# legacy/consumer artifact, so a fresh materialise must be allowed to heal the
+# partial leftover — otherwise the empty file wedges the consumer permanently
+# (the materialiser refuses to overwrite, and the lane detector reads it as
+# legacy evidence).
 safe_to_write() {
   local dest="$1"
   [ -f "$dest" ] || return 0
+  [ ! -s "$dest" ] && return 0
   if head -n 3 "$dest" 2>/dev/null | grep -Eq "^(#|<!--)[[:space:]]+${SENTINEL_TAG}[[:space:]]"; then
     return 0
   fi
@@ -150,10 +158,15 @@ safe_to_write() {
 # path as argv so the Python program (a heredoc, which itself consumes the
 # process stdin) can read the content separately.
 inject_sentinel() {
-  local kind="$1" version="$2" content_tmp
+  local kind="$1" version="$2" content_tmp inj_rc
   content_tmp="$(mktemp)"
   cat > "$content_tmp"
-  KIND="$kind" VERSION="$version" SENTINEL_TAG="$SENTINEL_TAG" "$PYTHON" - "$content_tmp" <<'PY'
+  # Capture the injector's exit status BEFORE the cleanup `rm` (#1079). Without
+  # this, a Python abort was masked by the trailing `rm` (which exits 0), so
+  # the function returned success and the caller wrote a truncated/partial
+  # artifact. We now propagate the Python rc so the caller can leave $dest
+  # untouched on failure.
+  if KIND="$kind" VERSION="$version" SENTINEL_TAG="$SENTINEL_TAG" "$PYTHON" - "$content_tmp" <<'PY'
 import os, sys
 kind = os.environ["KIND"]
 version = os.environ["VERSION"]
@@ -182,7 +195,13 @@ else:
     out = lines
 sys.stdout.write("\n".join(out))
 PY
+  then
+    inj_rc=0
+  else
+    inj_rc=$?
+  fi
   rm -f "$content_tmp"
+  return "$inj_rc"
 }
 
 # Strip a leading sentinel line (any kind) so two artifacts can be compared
@@ -239,13 +258,43 @@ materialise_static() {
   mv "$tmp" "$dest"
 }
 
+# materialise_artifact <kind> <src> <dest> — atomic, abort-safe materialise.
+#
+# #1079 — the sentinel injection is run to COMPLETION into a temp file and its
+# exit status is checked BEFORE any write to (or read by) materialise_static.
+# Previously `inject_sentinel ... | materialise_static` ran the injector and
+# the writer concurrently: an injector crash mid-output left a partial/empty
+# value in materialise_static's `$(cat)`, which it then mv'd into place — a
+# truncated artifact. Capturing the injector output into a temp first means a
+# non-zero injector exit (Python abort, etc.) leaves `$dest` UNTOUCHED (the
+# prior file, or absent, is preserved) instead of being clobbered with a
+# 0-byte/partial file.
+materialise_artifact() {
+  local kind="$1" src="$2" dest="$3" inj_tmp inj_rc
+  inj_tmp="$(mktemp)"
+  # Do not let an injector failure abort the script via pipefail/set -e;
+  # capture the rc and decide explicitly.
+  if inject_sentinel "$kind" "$PLUGIN_VERSION" < "$src" > "$inj_tmp"; then
+    inj_rc=0
+  else
+    inj_rc=$?
+  fi
+  if [ "$inj_rc" -ne 0 ]; then
+    # Injection failed — leave $dest untouched (no truncation, no partial).
+    rm -f "$inj_tmp"
+    echo "zskills: sentinel injection failed for $dest (rc=$inj_rc) — left untouched" >&2
+    return 1
+  fi
+  materialise_static "$kind" "$dest" < "$inj_tmp"
+  rm -f "$inj_tmp"
+}
+
 # ── Materialise the 4 static artifacts ────────────────────────────────────
 # Agents (frontmatter .md).
 for agent in verifier implementer; do
   if src="$(resolve_src "agents/$agent.md" ".claude/agents/$agent.md")"; then
     dest="$PROJ/.claude/agents/$agent.md"
-    inject_sentinel frontmatter-md "$PLUGIN_VERSION" < "$src" \
-      | materialise_static frontmatter-md "$dest"
+    materialise_artifact frontmatter-md "$src" "$dest" || true
   fi
 done
 
@@ -255,9 +304,8 @@ done
 for hook in inject-bash-timeout verify-response-validate; do
   if src="$(resolve_src "hooks/$hook.sh" "hooks/$hook.sh")"; then
     dest="$PROJ/.claude/hooks/$hook.sh"
-    inject_sentinel sh "$PLUGIN_VERSION" < "$src" \
-      | materialise_static sh "$dest"
-    [ -f "$dest" ] && chmod +x "$dest" 2>/dev/null || true
+    materialise_artifact sh "$src" "$dest" || true
+    [ -f "$dest" ] && [ -s "$dest" ] && chmod +x "$dest" 2>/dev/null || true
   fi
 done
 

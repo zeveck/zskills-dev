@@ -125,6 +125,9 @@ detect_install_state() {
     local hk
     for hk in "$claude"/hooks/*.sh; do
       [ -f "$hk" ] || continue
+      # #1079 — a 0-byte hook is a partial-materialise leftover, never a
+      # legacy install. Require non-empty before counting it as evidence.
+      [ -s "$hk" ] || continue
       if ! _dis_has_sentinel "$hk"; then
         uz_hit=1
         break
@@ -140,7 +143,9 @@ detect_install_state() {
       "$claude/agents/verifier.md" \
       "$claude/agents/implementer.md" \
       "$claude/rules/zskills/managed.md"; do
-      if [ -f "$art" ] && ! _dis_has_sentinel "$art"; then
+      # #1079 — a 0-byte artifact is a partial-materialise leftover, never a
+      # legacy install. Require non-empty before counting it as evidence.
+      if [ -f "$art" ] && [ -s "$art" ] && ! _dis_has_sentinel "$art"; then
         uz_hit=1
         break
       fi
