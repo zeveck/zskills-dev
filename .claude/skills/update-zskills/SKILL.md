@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.03+16b79a"
+  version: "2026.06.03+807992"
 ---
 
 # Update Z Skills Infrastructure
@@ -124,7 +124,7 @@ Behavior by invocation:
 - `--with-block-diagram-addons` — install/update core skills + block-diagram
   add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
 
-Without an add-on flag, only the 25 core skills are installed/updated.
+Without an add-on flag, only the 24 core skills are installed/updated.
 If core is already installed, adding an add-on flag just copies the
 add-on skills (the audit detects core is satisfied and skips it).
 
