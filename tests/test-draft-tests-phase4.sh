@@ -266,17 +266,17 @@ else
   fail "AC-4.1: loop summary line missing converged=1"
 fi
 # Per-round artifact existence check.
-if [ -f "/tmp/draft-tests-candidate-round-1-$SLUG_C.md" ]; then
+if [ -f "${TMPDIR:-/tmp}/draft-tests-candidate-round-1-$SLUG_C.md" ]; then
   pass "AC-4.1: candidate file written for round 1"
 else
   fail "AC-4.1: candidate file MISSING for round 1"
 fi
-if [ -f "/tmp/draft-tests-review-round-1-$SLUG_C.md" ]; then
+if [ -f "${TMPDIR:-/tmp}/draft-tests-review-round-1-$SLUG_C.md" ]; then
   pass "AC-4.1: review artifact written for round 1"
 else
   fail "AC-4.1: review artifact MISSING for round 1"
 fi
-if [ -f "/tmp/draft-tests-refined-round-1-$SLUG_C.md" ]; then
+if [ -f "${TMPDIR:-/tmp}/draft-tests-refined-round-1-$SLUG_C.md" ]; then
   pass "AC-4.1: refined artifact written for round 1"
 else
   fail "AC-4.1: refined artifact MISSING for round 1"
@@ -342,8 +342,8 @@ else
   fail "AC-4.2: loop missing NOT CONVERGED -- stdout: $(cat "$DIR_F/loop.stdout")"
 fi
 # Remaining concerns note must be written.
-if [ -f "/tmp/draft-tests-remaining-concerns-$SLUG_F.md" ] && \
-   [ -s "/tmp/draft-tests-remaining-concerns-$SLUG_F.md" ]; then
+if [ -f "${TMPDIR:-/tmp}/draft-tests-remaining-concerns-$SLUG_F.md" ] && \
+   [ -s "${TMPDIR:-/tmp}/draft-tests-remaining-concerns-$SLUG_F.md" ]; then
   pass "AC-4.2: 'Remaining concerns' note written (per AC-4.6)"
 else
   fail "AC-4.2: 'Remaining concerns' note missing or empty"
@@ -497,7 +497,7 @@ echo "=== AC-4.5 -- stubbed loop, no live LLM ==="
 # We already ran the loop in AC-4.1 with stubs. Verify the round-1
 # review artifact contains the reviewer's text AND the DA's text AND
 # the synthesised-floor-findings section.
-RA1="/tmp/draft-tests-review-round-1-$SLUG_C.md"
+RA1="${TMPDIR:-/tmp}/draft-tests-review-round-1-$SLUG_C.md"
 if [ -f "$RA1" ]; then
   if grep -F -q "Reviewer" "$RA1"; then
     pass "AC-4.5: round-1 review artifact contains 'Reviewer' header"
@@ -524,7 +524,7 @@ else
 fi
 
 # Refined artifact must literally be the canned refiner stub content.
-RFND="/tmp/draft-tests-refined-round-1-$SLUG_C.md"
+RFND="${TMPDIR:-/tmp}/draft-tests-refined-round-1-$SLUG_C.md"
 if [ -f "$RFND" ] && diff -q "$RFND" "$P4/refiner-empty-disposition.md" >/dev/null 2>&1; then
   pass "AC-4.5: round-1 refined artifact is byte-equal to the canned refiner stub"
 else
@@ -559,7 +559,7 @@ if [ -f "$DIR_F/plan.md" ] && [ -s "$DIR_F/plan.md" ]; then
 else
   fail "AC-4.6: plan file MISSING after max-rounds run"
 fi
-RC_NOTE="/tmp/draft-tests-remaining-concerns-$SLUG_F.md"
+RC_NOTE="${TMPDIR:-/tmp}/draft-tests-remaining-concerns-$SLUG_F.md"
 if [ -f "$RC_NOTE" ] && grep -F -q "Remaining concerns" "$RC_NOTE"; then
   pass "AC-4.6: Remaining concerns note literally contains 'Remaining concerns'"
 else
