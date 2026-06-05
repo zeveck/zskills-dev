@@ -2302,6 +2302,56 @@ fi
 rm -rf "$BR_TMP"
 
 # ---------------------------------------------------------------------------
+# _load_briefing dual-lane resolution (plugin-root vs main_root) — #1093 twin.
+# On a mirror-less plugin install briefing.py lives under
+# ${CLAUDE_PLUGIN_ROOT}/skills/..., NOT under the consumer's project dir.
+# ---------------------------------------------------------------------------
+echo "=== _load_briefing: plugin-root vs main_root dual-lane ==="
+
+LB_TMP=$(mktemp -d)
+LB_PLUGIN="$LB_TMP/plugin"
+LB_MAIN="$LB_TMP/main"
+# Both lanes carry a briefing.py, each printing a distinct sentinel so we
+# can prove WHICH copy got loaded.
+mkdir -p "$LB_PLUGIN/skills/briefing/scripts" "$LB_MAIN/skills/briefing/scripts"
+printf 'SENTINEL = "plugin"\n' > "$LB_PLUGIN/skills/briefing/scripts/briefing.py"
+printf 'SENTINEL = "main"\n'   > "$LB_MAIN/skills/briefing/scripts/briefing.py"
+
+# Case 1: CLAUDE_PLUGIN_ROOT set + plugin copy exists → plugin copy wins.
+LB_CASE1=$(CLAUDE_PLUGIN_ROOT="$LB_PLUGIN" PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._BRIEFING_MODULE = None  # reset module-level cache so the test is honest
+mod = c._load_briefing(pathlib.Path("'"$LB_MAIN"'"))
+print("sentinel=" + getattr(mod, "SENTINEL", "<none>"))
+' 2>&1)
+if printf '%s\n' "$LB_CASE1" | grep -q "sentinel=plugin"; then
+  pass "_load_briefing: CLAUDE_PLUGIN_ROOT set resolves the plugin-lane briefing.py"
+else
+  fail "_load_briefing plugin lane: expected sentinel=plugin, got '$LB_CASE1'"
+fi
+
+# Case 2: CLAUDE_PLUGIN_ROOT unset → main_root copy resolves (no regression).
+LB_CASE2=$(env -u CLAUDE_PLUGIN_ROOT PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._BRIEFING_MODULE = None  # reset cache between cases
+mod = c._load_briefing(pathlib.Path("'"$LB_MAIN"'"))
+print("sentinel=" + getattr(mod, "SENTINEL", "<none>"))
+' 2>&1)
+if printf '%s\n' "$LB_CASE2" | grep -q "sentinel=main"; then
+  pass "_load_briefing: CLAUDE_PLUGIN_ROOT unset still resolves the main_root briefing.py"
+else
+  fail "_load_briefing main lane: expected sentinel=main, got '$LB_CASE2'"
+fi
+
+rm -rf "$LB_TMP"
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

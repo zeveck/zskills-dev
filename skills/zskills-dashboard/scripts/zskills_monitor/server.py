@@ -146,11 +146,25 @@ def _read_default_port_from_config(main_root: pathlib.Path) -> Optional[int]:
 
 
 def _invoke_port_sh(main_root: pathlib.Path) -> Tuple[Optional[int], str]:
-    """Run port.sh and return (port, error_message). Search both
-    `.claude/skills/update-zskills/scripts/port.sh` (installed layout)
-    and `skills/update-zskills/scripts/port.sh` (source-tree).
+    """Run port.sh and return (port, error_message). Search, in order,
+    `${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh`
+    (mirror-less plugin install — the shipped helper is NOT under the
+    consumer's project dir), then
+    `.claude/skills/update-zskills/scripts/port.sh` (installed mirror
+    layout), then `skills/update-zskills/scripts/port.sh` (source-tree).
+    Mirrors the SKILL's dual-lane PORT_SCRIPT resolution.
     """
-    candidates = [
+    candidates = []
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin_root:
+        candidates.append(
+            pathlib.Path(plugin_root)
+            / "skills"
+            / "update-zskills"
+            / "scripts"
+            / "port.sh"
+        )
+    candidates += [
         main_root / ".claude" / "skills" / "update-zskills" / "scripts" / "port.sh",
         main_root / "skills" / "update-zskills" / "scripts" / "port.sh",
     ]
