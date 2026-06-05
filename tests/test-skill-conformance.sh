@@ -3527,6 +3527,9 @@ echo "=== test-hooks.sh property-matrix axes preserved (issues #564 / #556 / #56
 # Counts are minimums (>=) rather than literal equality so a future PR
 # can legitimately ADD a third matrix section without churning this gate.
 HOOKS_TEST="$REPO_ROOT/tests/test-hooks.sh"
+# Phase 1a relocated the make_branch_repo helper out of tests/test-hooks.sh
+# into the shared tests/lib/hooks-harness.sh; assertion D greps this file.
+HARNESS_LIB="$REPO_ROOT/tests/lib/hooks-harness.sh"
 
 check_min_count() {
   local pattern="$1" expected_min="$2" label="$3" use_extended="$4"
@@ -3564,8 +3567,15 @@ check_min_count "for target in main master feat/test" 2 "primary target axis pre
 # Assertion D — make_branch_repo helper function is defined. The #565
 # HEAD-axis generic-hook loop depends on this helper to create a temp
 # repo on each branch context. If the helper is deleted, the HEAD-axis
-# loop silently errors out before any expect_*_from_repo runs.
-check_min_count "^make_branch_repo\(\)" 1 "make_branch_repo helper defined" E
+# loop silently errors out before any expect_*_from_repo runs. Phase 1a
+# relocated this helper into tests/lib/hooks-harness.sh, so the check
+# greps $HARNESS_LIB rather than $HOOKS_TEST (relocation, not weakening).
+d_actual=$(grep -cE "^make_branch_repo\(\)" "$HARNESS_LIB" 2>/dev/null || echo 0)
+if [ "$d_actual" -ge 1 ]; then
+  pass "make_branch_repo helper defined: $d_actual matches (>= 1)"
+else
+  fail "make_branch_repo helper defined: found $d_actual matches, expected >= 1" "^make_branch_repo\(\) in tests/lib/hooks-harness.sh"
+fi
 
 # Assertion E (issue #594) — synthetic-fixture paths in tests/test-hooks.sh
 # MUST be PID-scoped so parallel worktrees running tests/run-all.sh
