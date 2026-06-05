@@ -16,9 +16,53 @@ TOTAL_PASS=0
 TOTAL_FAIL=0
 OVERALL_EXIT=0
 
+# ──────────────────────────────────────────────────────────────────────────
+# TEST_SUITE_PARALLELIZATION Phase 4 — bounded-worker PARALLEL fan-out behind
+# the additive ZSKILLS_PARALLEL flag (default serial; byte-identical behavior
+# when unset). DESIGN CHOICE: the fan-out lives IN run-all.sh (NOT a separate
+# run-all-parallel.sh), per the plan + Critical Invariants — this keeps the
+# literal `run_suite "<name>" "<path>"` registry (the 23-suite self-assert
+# greps + the suite-registry lib's static parse) anchored in ONE file. The
+# registry lines below are UNCHANGED; only the dispatch behavior of run_suite
+# is mode-aware:
+#
+#   • Serial (default, ZSKILLS_PARALLEL unset/0): run_suite runs each suite
+#     inline, accumulating immediately — the original behavior, verbatim.
+#   • Parallel (ZSKILLS_PARALLEL=1): run_suite COLLECTS each (name, script)
+#     into ordered arrays instead of running it. After all the literal
+#     registration lines have executed (collecting the full set, including
+#     the conditional RUN_RACE_TESTS / RUN_E2E `if` blocks and the attended
+#     gate's branch), a driver at the bottom: (a) subtracts the Phase-3
+#     serial bucket, (b) dedupes the live-load double-registration, (c) fans
+#     the remaining POOL out at min(configured, nproc) workers, (d) runs the
+#     serial bucket OUTSIDE the pool, and (e) reports in REGISTERED order.
+#
+# The pool / serial-bucket split + serial-bucket execution reuse the Phase 0
+# + Phase 3 registry helpers (is_serial_suite / serial_run_attended_live_load)
+# from tests/lib/suite-registry.sh — sourced only on the parallel path.
+ZSKILLS_PARALLEL="${ZSKILLS_PARALLEL:-0}"
+
+# Ordered collection arrays (parallel mode). Index-aligned: REG_NAMES[i] is
+# the display name, REG_SCRIPTS[i] the script path, REG_ATTENDED[i] is 1 iff
+# the attended-gate-pass branch registered it with ZSKILLS_LIVE_ATTENDED=1.
+REG_NAMES=()
+REG_SCRIPTS=()
+REG_ATTENDED=()
+
 run_suite() {
   local name="$1"
   local script="$2"
+
+  if [[ "$ZSKILLS_PARALLEL" == "1" ]]; then
+    # Parallel mode: COLLECT, don't run. ZSKILLS_LIVE_ATTENDED is only set in
+    # the attended-gate-pass arm's `ZSKILLS_LIVE_ATTENDED=1 run_suite ...`
+    # prefix; capture it so the parallel driver can drop the live-load
+    # registration entirely (it is dispatched ONCE via the serial bucket).
+    REG_NAMES+=("$name")
+    REG_SCRIPTS+=("$script")
+    REG_ATTENDED+=("${ZSKILLS_LIVE_ATTENDED:-0}")
+    return 0
+  fi
 
   echo ""
   printf '\033[1mTests: %s\033[0m\n' "$name"
@@ -47,7 +91,19 @@ run_suite() {
   fi
 }
 
-run_suite "test-hooks.sh" "tests/test-hooks.sh"
+# Phase 1b: the former tests/test-hooks.sh monolith is split into 8 independent
+# sub-suites, each sourcing tests/lib/hooks-harness.sh. The literal registry
+# stays here (the Phase 4 parallel runner READS it). Σ of the 8 sub-suite pass
+# counts == the monolith's 2384 (no self-registration → net-zero whole-suite
+# change). The monolith is removed (no shim) to avoid double-counting.
+run_suite "test-hooks-block-unsafe.sh" "tests/test-hooks-block-unsafe.sh"
+run_suite "test-hooks-bypass-generic.sh" "tests/test-hooks-bypass-generic.sh"
+run_suite "test-hooks-bypass-project.sh" "tests/test-hooks-bypass-project.sh"
+run_suite "test-hooks-main-protected.sh" "tests/test-hooks-main-protected.sh"
+run_suite "test-hooks-worktree-cd.sh" "tests/test-hooks-worktree-cd.sh"
+run_suite "test-hooks-agent.sh" "tests/test-hooks-agent.sh"
+run_suite "test-hooks-warn-drift.sh" "tests/test-hooks-warn-drift.sh"
+run_suite "test-hooks-misc.sh" "tests/test-hooks-misc.sh"
 run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
 run_suite "test-normalize-tool-path.sh" "tests/test-normalize-tool-path.sh"
@@ -270,17 +326,30 @@ run_suite "test-attended-gate.sh" "tests/test-attended-gate.sh"
 # pollutes `git status`, survives worktree removal, and applies globally. When
 # the gate fails (CI, or throttled) we leave ZSKILLS_LIVE_ATTENDED unset → §B
 # SKIPs exactly as before, so CI behavior is byte-for-byte unchanged.
-. "$REPO_ROOT/tests/lib/attended-gate.sh"
-ATTENDED_MARKER="${HOME:-/tmp}/.zskills/last-attended-plugin-run"
-ATTENDED_THROTTLE_SECONDS="${ZSKILLS_ATTENDED_THROTTLE_SECONDS:-14400}"  # ~4h
-ATTENDED_NOW="$(date +%s)"
-if attended_gate_should_run "$ATTENDED_MARKER" "$ATTENDED_NOW" "$ATTENDED_THROTTLE_SECONDS"; then
-  echo ""
-  echo "[#991] attended gate PASSED (claude + creds present, throttle window elapsed) — running §B live."
-  ZSKILLS_LIVE_ATTENDED=1 run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
-  attended_gate_refresh_marker "$ATTENDED_MARKER" "$ATTENDED_NOW"
-else
+if [[ "$ZSKILLS_PARALLEL" == "1" ]]; then
+  # Parallel mode: the attended gate (capability + throttle + marker refresh)
+  # and the single live-load dispatch are owned by the serial-bucket driver
+  # (serial_run_attended_live_load) at the bottom — live-load is in the
+  # Phase-3 serial bucket (global throttle marker + live `claude`, both
+  # un-parallelizable). We DO collect a single live-load registration here so
+  # list_registered_suites parity holds, but WITHOUT evaluating the gate or
+  # refreshing the marker (that would double-refresh against the serial
+  # driver). The collected entry is later SUBTRACTED from the pool by
+  # is_serial_suite, so it never enters the parallel fan-out.
   run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+else
+  . "$REPO_ROOT/tests/lib/attended-gate.sh"
+  ATTENDED_MARKER="${HOME:-/tmp}/.zskills/last-attended-plugin-run"
+  ATTENDED_THROTTLE_SECONDS="${ZSKILLS_ATTENDED_THROTTLE_SECONDS:-14400}"  # ~4h
+  ATTENDED_NOW="$(date +%s)"
+  if attended_gate_should_run "$ATTENDED_MARKER" "$ATTENDED_NOW" "$ATTENDED_THROTTLE_SECONDS"; then
+    echo ""
+    echo "[#991] attended gate PASSED (claude + creds present, throttle window elapsed) — running §B live."
+    ZSKILLS_LIVE_ATTENDED=1 run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+    attended_gate_refresh_marker "$ATTENDED_MARKER" "$ATTENDED_NOW"
+  else
+    run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+  fi
 fi
 run_suite "test-plugin-mirrorless-resolution.sh" "tests/test-plugin-mirrorless-resolution.sh"
 run_suite "test-plugin-d4-hook-siblings.sh" "tests/test-plugin-d4-hook-siblings.sh"
@@ -319,6 +388,169 @@ run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
 if [ -n "${RUN_E2E:-}" ]; then
   run_suite "e2e-parallel-pipelines.sh" "tests/e2e-parallel-pipelines.sh"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+# TEST_SUITE_PARALLELIZATION Phase 4 — parallel driver. Runs ONLY when
+# ZSKILLS_PARALLEL=1; in serial mode this whole block is skipped and the
+# inline run_suite accumulation above is authoritative (byte-identical legacy
+# behavior). At this point the registration arrays (REG_NAMES / REG_SCRIPTS /
+# REG_ATTENDED) hold every suite the serial run would have run, in registered
+# order, with the conditional `if` blocks and the attended branch already
+# resolved by their own gates.
+if [[ "$ZSKILLS_PARALLEL" == "1" ]]; then
+  # Phase 0 + Phase 3 registry helpers: is_serial_suite (pool/serial split)
+  # and serial_run_attended_live_load (the verbatim attended-gate live-load).
+  . "$SCRIPT_DIR/lib/suite-registry.sh"
+
+  # Worker cap = literal min(configured, nproc) — a CEILING at nproc so the
+  # 4-core CI runner is never oversubscribed. Resolves to `configured` on the
+  # 32-core dev box, to 4 on ubuntu-latest. ZSKILLS_PARALLEL_JOBS overrides
+  # `configured` (lets the perf AC force a 4-worker CI estimate locally).
+  CONFIGURED_WORKERS="${ZSKILLS_PARALLEL_JOBS:-12}"
+  NPROC="$( (command -v nproc >/dev/null 2>&1 && nproc) || echo 1)"
+  WORKERS="$CONFIGURED_WORKERS"
+  if [[ "$NPROC" -lt "$WORKERS" ]]; then
+    WORKERS="$NPROC"
+  fi
+  [[ "$WORKERS" -lt 1 ]] && WORKERS=1
+
+  # Per-suite output/rc capture dir (out of tree → never in `git status`).
+  PARALLEL_DIR="$(mktemp -d -t zskills-runall-parallel-XXXXXX)"
+  parallel_cleanup() {
+    [ -n "${PARALLEL_DIR:-}" ] && [ -d "$PARALLEL_DIR" ] && \
+      { find "$PARALLEL_DIR" -mindepth 1 -delete 2>/dev/null; rmdir "$PARALLEL_DIR" 2>/dev/null; }
+  }
+  trap parallel_cleanup EXIT INT TERM
+
+  # The worker subshell function: run ONE suite with its own TMPDIR (Phase 2
+  # WI3 isolation) under a per-suite `timeout 600` (SIGTERMs its own child;
+  # NO kill/pkill), capturing stdout+stderr to <slug>.out and the rc to
+  # <slug>.rc. parse_results runs in the MAIN process after wait (the worker
+  # only persists raw output + rc), so an empty/unparseable .out still flips
+  # OVERALL_EXIT via its nonzero .rc.
+  #
+  # REPO_ROOT and the capture dir are passed as ARGUMENTS, NOT exported into
+  # the suite env. This is load-bearing for parity: the serial run_suite runs
+  # each suite with only CLAUDE_PROJECT_DIR exported (run-all.sh:7) — REPO_ROOT
+  # is a plain local there. Several suites invoke hooks (block-main-edits.sh,
+  # tokenize-then-walk, block-unsafe-*) that PREFER an inherited `REPO_ROOT`
+  # over their own test-set CLAUDE_PROJECT_DIR sandbox; exporting REPO_ROOT to
+  # the workers would point those hooks at the real worktree (a linked git
+  # worktree → the hook no-ops), silently turning real DENY assertions into
+  # empty-envelope FAILs. So the worker sets neither — it inherits the SAME env
+  # the serial path gives a suite (CLAUDE_PROJECT_DIR only), plus its private
+  # TMPDIR.
+  run_suite_worker() {
+    local repo_root="$1" pdir="$2" script="$3" slug="$4"
+    local suite_tmp
+    suite_tmp="$(mktemp -d)"
+    TMPDIR="$suite_tmp" timeout 600 bash "$repo_root/$script" \
+      > "$pdir/$slug.out" 2>&1
+    echo "$?" > "$pdir/$slug.rc"
+    find "$suite_tmp" -mindepth 1 -delete 2>/dev/null
+    rmdir "$suite_tmp" 2>/dev/null
+  }
+  export -f run_suite_worker
+  # Only CLAUDE_PROJECT_DIR is exported (already exported at run-all.sh:7) —
+  # matching the serial suite env exactly. REPO_ROOT / PARALLEL_DIR travel as
+  # worker arguments, never as exported env (see worker comment above).
+
+  # Build the PARALLEL POOL = registered set MINUS the Phase-3 serial bucket,
+  # de-duped (the live-load double-registration collapses to one entry, which
+  # is_serial_suite then removes — it is dispatched once via the serial
+  # bucket). POOL_NAMES / POOL_SCRIPTS / POOL_SLUGS stay index-aligned and in
+  # REGISTERED order so results print deterministically (human parity with
+  # serial). The slug is a filesystem-safe, collision-free key.
+  POOL_NAMES=()
+  POOL_SCRIPTS=()
+  POOL_SLUGS=()
+  declare -A _pool_seen=()
+  for i in "${!REG_SCRIPTS[@]}"; do
+    s="${REG_SCRIPTS[$i]}"
+    is_serial_suite "$s" && continue          # serial bucket → outside pool
+    [[ -n "${_pool_seen[$s]:-}" ]] && continue  # dedupe (e.g. live-load arms)
+    _pool_seen[$s]=1
+    POOL_NAMES+=("${REG_NAMES[$i]}")
+    POOL_SCRIPTS+=("$s")
+    POOL_SLUGS+=("$(printf '%05d_%s' "${#POOL_SLUGS[@]}" "$(echo "$s" | tr '/.' '__')")")
+  done
+
+  echo ""
+  echo "== TEST_SUITE_PARALLELIZATION Phase 4 — PARALLEL fan-out =="
+  echo "   pool suites: ${#POOL_SCRIPTS[@]}   workers: $WORKERS (min(configured=$CONFIGURED_WORKERS, nproc=$NPROC))   capture: $PARALLEL_DIR"
+
+  # Bounded fan-out: launch up to $WORKERS suites at a time, reaping with
+  # `wait -n` (NO kill/pkill). Each suite is its own backgrounded
+  # run_suite_worker.
+  running=0
+  for i in "${!POOL_SCRIPTS[@]}"; do
+    run_suite_worker "$REPO_ROOT" "$PARALLEL_DIR" "${POOL_SCRIPTS[$i]}" "${POOL_SLUGS[$i]}" &
+    running=$((running + 1))
+    if [[ "$running" -ge "$WORKERS" ]]; then
+      wait -n
+      running=$((running - 1))
+    fi
+  done
+  wait   # reap the remaining in-flight workers
+
+  # Accumulate POOL results in REGISTERED order via parse_results (one parsing
+  # contract, shared with serial). An empty/no-Results .out yields "0 0" but
+  # its nonzero .rc still flips OVERALL_EXIT — the unparseable-but-nonzero
+  # signal is preserved.
+  for i in "${!POOL_SCRIPTS[@]}"; do
+    slug="${POOL_SLUGS[$i]}"
+    out="$PARALLEL_DIR/$slug.out"
+    rc_file="$PARALLEL_DIR/$slug.rc"
+    suite_out=""
+    [ -f "$out" ] && suite_out="$(cat "$out")"
+    suite_rc=1
+    [ -f "$rc_file" ] && suite_rc="$(cat "$rc_file")"
+
+    echo ""
+    printf '\033[1mTests: %s\033[0m\n' "${POOL_NAMES[$i]}"
+    echo "$suite_out"
+
+    read -r passed failed < <(parse_results "$suite_out")
+    TOTAL_PASS=$((TOTAL_PASS + ${passed:-0}))
+    TOTAL_FAIL=$((TOTAL_FAIL + ${failed:-0}))
+    if [[ "${suite_rc:-1}" -ne 0 ]]; then
+      OVERALL_EXIT=1
+    fi
+  done
+
+  # ── Serial bucket — run OUTSIDE the pool (Phase 3 + Phase 4) ────────────
+  # These suites are genuinely un-parallelizable (the LIVE-SERVER class: a
+  # real HTTP server on a $$-derived or fixed port; plus the attended
+  # live-load's global throttle marker + live `claude`). They run serially
+  # via the SAME inline run_suite (serial accumulation path), since
+  # ZSKILLS_PARALLEL toggling is what gated collection vs run. We temporarily
+  # flip to serial so run_suite executes inline for the bucket.
+  #
+  # GENERIC DISPATCH over list_serial_suites (Phase 4): the bucket is no
+  # longer a hardcoded two-suite list. We iterate EVERY entry the registry
+  # pins serial so a newly-pinned suite (e.g. the dashboard live-server suite)
+  # actually executes here, OUTSIDE the pool — otherwise is_serial_suite would
+  # subtract it from the parallel set but it would never run, dropping its
+  # passes and breaking parity. The attended live-load is the ONE entry that
+  # carries a gate (capability + throttle + marker refresh), so it is
+  # dispatched via serial_run_attended_live_load; every other entry is a
+  # plain inline run_suite. We match the live-load entry by PATH (order-
+  # independent).
+  echo ""
+  echo "== Phase 3/4 serial bucket — run OUTSIDE the parallel pool =="
+  ZSKILLS_PARALLEL=0
+  while IFS=$'\t' read -r _serial_gate _serial_path; do
+    if [[ "$_serial_path" == "tests/test-plugin-live-load.sh" ]]; then
+      # attended live-load: verbatim attended gate, dispatched once via helper.
+      serial_run_attended_live_load run_suite
+    else
+      # plain live-server suite (monitor_server, csrf, dashboard_ui,
+      # dashboard_skill, state-queue, pid-file-self-heal): inline run_suite.
+      run_suite "$(basename "$_serial_path")" "$_serial_path"
+    fi
+  done < <(list_serial_suites)
+  ZSKILLS_PARALLEL=1
 fi
 
 echo ""

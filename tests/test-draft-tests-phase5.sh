@@ -404,9 +404,9 @@ bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
 git_isolate_dir "$DIR"
 ( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 # Save original Drift Log + Plan Review + Plan Quality bodies.
-awk '/^## Drift Log/,/^## Plan Review/{print > "/tmp/draft-tests-p5-drift.txt"; next}
-     /^## Plan Review/,/^## Plan Quality/{print > "/tmp/draft-tests-p5-review.txt"; next}
-     /^## Plan Quality/,EOF{print > "/tmp/draft-tests-p5-quality.txt"; next}
+awk -v d="$DIR" '/^## Drift Log/,/^## Plan Review/{print > (d "/draft-tests-p5-drift.txt"); next}
+     /^## Plan Review/,/^## Plan Quality/{print > (d "/draft-tests-p5-review.txt"); next}
+     /^## Plan Quality/,EOF{print > (d "/draft-tests-p5-quality.txt"); next}
      {next}' "$DIR/plan.md" 2>/dev/null || true
 extract_section() {
   local plan="$1" name="$2"

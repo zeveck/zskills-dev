@@ -394,35 +394,62 @@ git -C "$MAIN_ROOT" branch -D "$BR_7" 2>/dev/null || true
 # is under MAIN_ROOT/<rel>. Case 17 exhaustively tests CWD-invariance
 # across three CWDs; this case is the 8-form path-template row for
 # the "relative --root" variant.
+#
+# SANDBOXED (Phase 3): the script computes MAIN_ROOT from
+# `git rev-parse --git-common-dir` at the INVOCATION cwd, then anchors a
+# relative --root on MAIN_ROOT. If we invoke against the real repo, the
+# relative root (and the worktree it parents) land in the REAL repo root
+# and register in the real repo's worktree list — a leak. We therefore
+# run this case against a THROWAWAY sandbox repo (git init + 1 commit +
+# a NON-main branch): the non-main branch is mandatory because
+# create-worktree.sh's own collision guard (create-worktree.sh:230,
+# exit 5) refuses a NEW branch literally named `main`, and its BASE
+# resolution under --no-preflight (create-worktree.sh:248-254) takes
+# MAIN_ROOT's CURRENT branch. cd-ing INTO the sandbox makes
+# --git-common-dir resolve there, so MAIN_ROOT == sandbox and the
+# relative root resolves inside the sandbox, never the real repo.
+# $SCRIPT stays the REAL script (peer scripts resolve via $SCRIPT_DIR).
 # ────────────────────────────────────────────────────────────────────
+SANDBOX_8="$TEST_TMPDIR/sandbox-c8"
+mkdir -p "$SANDBOX_8/scripts"
+git init --quiet -b main "$SANDBOX_8"
+git -C "$SANDBOX_8" config user.email "t@t"
+git -C "$SANDBOX_8" config user.name "t"
+echo "init" > "$SANDBOX_8/README.md"
+git -C "$SANDBOX_8" add README.md
+git -C "$SANDBOX_8" commit --quiet -m "init"
+# NON-main current branch (collision guard + BASE-resolution require it).
+git -C "$SANDBOX_8" checkout --quiet -b sandbox-base
+
 SLUG_8="${SLUG_BASE}-c8"
-# Relative root, unlikely to collide with project content.
+# Relative root, unlikely to collide with sandbox content.
 REL_ROOT_8="rel-root-cw-${SLUG_BASE}"
-ABS_ROOT_8="$MAIN_ROOT/$REL_ROOT_8"
-# Compute via realpath -m to match the script's canonicalization.
-EXPECTED_WT_8="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_8/$SLUG_8")"
+# Compute via realpath -m to match the script's canonicalization — anchored
+# on the SANDBOX (== MAIN_ROOT for invocations cd'd into the sandbox).
+EXPECTED_WT_8="$(cd "$SANDBOX_8" && realpath -m "$REL_ROOT_8/$SLUG_8")"
 BR_8="wt-${SLUG_8}"
-register_wt "$EXPECTED_WT_8"; register_branch "$BR_8"
 
 ERR_8=$(mktemp)
-# Invoke from a subdirectory of MAIN_ROOT (a different CWD than
-# MAIN_ROOT itself) to prove the script anchors relative --root on
-# MAIN_ROOT, not the caller's CWD.
-SUBDIR_8="$MAIN_ROOT/scripts"
-[ -d "$SUBDIR_8" ] || SUBDIR_8="$MAIN_ROOT/tests"
+# Invoke from a subdirectory of the SANDBOX (a different CWD than the
+# sandbox root itself) to prove the script anchors relative --root on
+# MAIN_ROOT (resolved via --git-common-dir at cwd), not the caller's CWD.
+SUBDIR_8="$SANDBOX_8/scripts"
 STDOUT_8=$( cd "$SUBDIR_8" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_8" "$SLUG_8" 2>"$ERR_8")
 RC_8=$?
 
 if [ "$RC_8" -eq 0 ] && [ "$STDOUT_8" = "$EXPECTED_WT_8" ] && [ -d "$EXPECTED_WT_8" ]; then
-  pass "8  --root relative: CWD-invariant; resolves against MAIN_ROOT"
+  pass "8  --root relative: CWD-invariant; resolves against MAIN_ROOT (sandboxed)"
 else
   fail "8  --root relative: rc=$RC_8, stdout='$STDOUT_8' (expected '$EXPECTED_WT_8')"
   echo "  --- stderr ---"; cat "$ERR_8"
 fi
 rm -f -- "$ERR_8"
-git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_8" 2>/dev/null || true
-git -C "$MAIN_ROOT" branch -D "$BR_8" 2>/dev/null || true
-rm -rf -- "$ABS_ROOT_8" 2>/dev/null || true
+# Cleanup against the SANDBOX, not the real repo. The whole sandbox lives
+# under $TEST_TMPDIR (removed wholesale by the EXIT trap), so this is
+# belt-and-braces.
+git -C "$SANDBOX_8" worktree remove --force "$EXPECTED_WT_8" 2>/dev/null || true
+git -C "$SANDBOX_8" branch -D "$BR_8" 2>/dev/null || true
+rm -rf -- "$SANDBOX_8" 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
 # Case 9 — Invalid slug with metachar (rc 5).
@@ -650,50 +677,80 @@ git -C "$MAIN_ROOT" branch -D "$BRANCH_16" 2>/dev/null || true
 # SAME absolute path regardless of invocation CWD (MAIN_ROOT anchor)
 # — by using a relative --root that points at a writable sibling of
 # MAIN_ROOT's parent structure via realpath canonicalisation: we pick
-# `../$PROJECT_NAME/<sub>/` so MAIN_ROOT/../zskills/<sub>/ collapses
-# back to MAIN_ROOT/<sub>/. Same CWD-invariance claim; same relative
+# `../$SANDBOX_NAME/<sub>/` so SANDBOX/../<sandbox-name>/<sub>/ collapses
+# back to SANDBOX/<sub>/. Same CWD-invariance claim; same relative
 # spelling; writable target.
+#
+# SANDBOXED (Phase 3): all three cwd anchors are recreated INSIDE a
+# THROWAWAY sandbox repo (git init + 1 commit + a NON-main branch — the
+# non-main branch is required by create-worktree.sh's OWN collision guard
+# at :230 [refuses a new branch named `main`] and its BASE resolution
+# under --no-preflight at :248-254 [takes MAIN_ROOT's current branch]).
+# Because the script derives MAIN_ROOT from `git rev-parse
+# --git-common-dir` at the INVOCATION cwd, every invocation cd's into the
+# sandbox first, so all three cwds resolve --git-common-dir to the SAME
+# sandbox and the relative `../<name>/...` root + its worktree land in the
+# sandbox — never the real repo. The three distinct cwds exercised are:
+#   (17a) sandbox root, (17b) a sandbox subdir, (17c) a nested worktree
+#   created via the script against the sandbox.
+# $SCRIPT stays the REAL script (peer scripts resolve via $SCRIPT_DIR).
 # ────────────────────────────────────────────────────────────────────
+SANDBOX_17="$TEST_TMPDIR/sandbox-c17"
+mkdir -p "$SANDBOX_17/scripts"
+git init --quiet -b main "$SANDBOX_17"
+git -C "$SANDBOX_17" config user.email "t@t"
+git -C "$SANDBOX_17" config user.name "t"
+echo "init" > "$SANDBOX_17/README.md"
+git -C "$SANDBOX_17" add README.md
+git -C "$SANDBOX_17" commit --quiet -m "init"
+# NON-main current branch (collision guard + BASE-resolution require it).
+git -C "$SANDBOX_17" checkout --quiet -b sandbox-base
+# Canonicalise the sandbox root once (realpath, so /tmp symlinks collapse to
+# match the script's --git-common-dir canonicalisation) and derive its
+# basename for the `../<name>/...` collapse trick.
+SANDBOX_17_REAL="$(cd "$SANDBOX_17" && pwd -P)"
+SANDBOX_17_NAME="$(basename "$SANDBOX_17_REAL")"
+
 SLUG_17="cwdinv-${SLUG_BASE}-c17"
 PREFIX_17="do"
-REL_ROOT_17="../${PROJECT_NAME}/cwdinv-root-${SLUG_BASE}"
-# The synthetic root-parent canonicalises back into MAIN_ROOT. Compute and
+REL_ROOT_17="../${SANDBOX_17_NAME}/cwdinv-root-${SLUG_BASE}"
+# The synthetic root-parent canonicalises back into the SANDBOX. Compute and
 # trap-register it BEFORE the worktree-create below, so an interrupted run
 # (killed between create and the straight-line cleanup at the end of this
-# case) still removes the leaked cwdinv-root-* dir from the repo root (#1036).
-SYNTH_ROOT_PARENT_17="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_17")"
+# case) still removes the leaked cwdinv-root-* dir (#1036). It lives under
+# $TEST_TMPDIR, so the EXIT trap's wholesale rm also covers it.
+SYNTH_ROOT_PARENT_17="$(cd "$SANDBOX_17_REAL" && realpath -m "$REL_ROOT_17")"
 register_synth_dir "$SYNTH_ROOT_PARENT_17"
-# Expected = realpath-m of REL_ROOT_17/PREFIX_17-SLUG_17 resolved against MAIN_ROOT.
-EXPECTED_WT_17="$(cd "$MAIN_ROOT" && realpath -m "$REL_ROOT_17/${PREFIX_17}-${SLUG_17}")"
+# Expected = realpath-m of REL_ROOT_17/PREFIX_17-SLUG_17 resolved against the SANDBOX.
+EXPECTED_WT_17="$(cd "$SANDBOX_17_REAL" && realpath -m "$REL_ROOT_17/${PREFIX_17}-${SLUG_17}")"
 BR_17="${PREFIX_17}-${SLUG_17}"
-register_wt "$EXPECTED_WT_17"; register_branch "$BR_17"
 
-# Helper worktree for the "nested worktree" invocation.
+# Helper worktree for the "nested worktree" invocation (17c), parked under
+# $TEST_TMPDIR so it never touches the real repo.
 NESTED_SLUG_17="cwdinv-nested-${SLUG_BASE}-c17"
-NESTED_WT_17="/tmp/${PROJECT_NAME}-${NESTED_SLUG_17}"
+NESTED_WT_17="$TEST_TMPDIR/${SANDBOX_17_NAME}-${NESTED_SLUG_17}"
 NESTED_BR_17="wt-${NESTED_SLUG_17}"
-register_wt "$NESTED_WT_17"; register_branch "$NESTED_BR_17"
 
-# (17a) Invoke from MAIN_ROOT.
+# (17a) Invoke from the SANDBOX ROOT.
 ERR_17A=$(mktemp)
-STDOUT_17A=$( cd "$MAIN_ROOT" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17A")
+STDOUT_17A=$( cd "$SANDBOX_17_REAL" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17A")
 RC_17A=$?
 # Tear down immediately so the subsequent invocations' path is free.
-git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
-git -C "$MAIN_ROOT" branch -D "$BR_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" branch -D "$BR_17" 2>/dev/null || true
 
-# (17b) Invoke from a subdirectory of MAIN_ROOT.
-SUBDIR_17="$MAIN_ROOT/scripts"
-[ -d "$SUBDIR_17" ] || SUBDIR_17="$MAIN_ROOT/tests"
+# (17b) Invoke from a SUBDIRECTORY of the sandbox.
+SUBDIR_17="$SANDBOX_17_REAL/scripts"
 ERR_17B=$(mktemp)
 STDOUT_17B=$( cd "$SUBDIR_17" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17B")
 RC_17B=$?
-git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
-git -C "$MAIN_ROOT" branch -D "$BR_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" branch -D "$BR_17" 2>/dev/null || true
 
-# (17c) Invoke from inside a nested worktree.
+# (17c) Invoke from inside a NESTED WORKTREE of the sandbox (created via the
+# script, with --root pinned under $TEST_TMPDIR so it lands off the real repo).
 ERR_17C_SETUP=$(mktemp)
-SETUP_STDOUT_17C=$( cd "$MAIN_ROOT" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$NESTED_SLUG_17" 2>"$ERR_17C_SETUP")
+SETUP_STDOUT_17C=$( cd "$SANDBOX_17_REAL" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$TEST_TMPDIR" "$NESTED_SLUG_17" 2>"$ERR_17C_SETUP")
 SETUP_RC_17C=$?
 rm -f -- "$ERR_17C_SETUP"
 
@@ -704,17 +761,18 @@ if [ "$SETUP_RC_17C" -eq 0 ] && [ -d "$SETUP_STDOUT_17C" ]; then
   STDOUT_17C=$( cd "$SETUP_STDOUT_17C" &&     bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17C")
   RC_17C=$?
 fi
-git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
-git -C "$MAIN_ROOT" branch -D "$BR_17" 2>/dev/null || true
-git -C "$MAIN_ROOT" worktree remove --force "$NESTED_WT_17" 2>/dev/null || true
-git -C "$MAIN_ROOT" branch -D "$NESTED_BR_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" branch -D "$BR_17" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" worktree remove --force "$SETUP_STDOUT_17C" 2>/dev/null || true
+git -C "$SANDBOX_17_REAL" branch -D "$NESTED_BR_17" 2>/dev/null || true
 
-# Remove the synthetic root-parent dir so it doesn't leak into main repo.
+# Remove the synthetic root-parent dir so it doesn't leak.
 # (SYNTH_ROOT_PARENT_17 was computed + trap-registered above; this is the
 # straight-line success-path cleanup, kept idempotent alongside the trap.)
 case "$SYNTH_ROOT_PARENT_17" in
-  /tmp/*|"$MAIN_ROOT"/*) rm -rf -- "$SYNTH_ROOT_PARENT_17" 2>/dev/null || true ;;
+  /tmp/*|"$SANDBOX_17_REAL"/*) rm -rf -- "$SYNTH_ROOT_PARENT_17" 2>/dev/null || true ;;
 esac
+rm -rf -- "$SANDBOX_17" "$SANDBOX_17_REAL" 2>/dev/null || true
 
 if [ "$RC_17A" -eq 0 ] && [ "$RC_17B" -eq 0 ] && [ "$RC_17C" = "0" ] \
    && [ "$STDOUT_17A" = "$EXPECTED_WT_17" ] \

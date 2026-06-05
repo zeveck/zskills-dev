@@ -1,7 +1,8 @@
 ---
 title: Test Suite Parallelization & Isolation
 created: 2026-06-04
-status: active
+status: "complete"
+completed: "2026-06-05T08:03:04Z"
 ---
 
 # Plan: Test Suite Parallelization & Isolation
@@ -71,11 +72,11 @@ additive term and the attended gate pinned OFF.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 0 — Baseline capture + shared infra: result-parser + registry reader | ✅ Done | 62475b4 | baseline: 7546 existing / 2384 test-hooks / 713 conformance; +23 new ⇒ 7569 |
-| 1a — Extract hooks-harness lib (incl. test-hooks-helpers); verify monolith still 2384 | ⬚ | | |
-| 1b — Relocate test-hooks sections into sub-suites | ⬚ | | |
-| 2 — Targeted isolation (apply-preset, paths-migration) | ⬚ | | |
-| 3 — create-worktree sandbox + serial-pin heavy/global | ⬚ | | |
-| 4 — Parallel runner + CI switch | ⬚ | | |
+| 1a — Extract hooks-harness lib (incl. test-hooks-helpers); verify monolith still 2384 | ✅ Done | 88e83cf | hooks-harness.sh (228L); monolith sources it; PROJECT_HOOK absolutized; test-hooks 2384/0; run-all 7569/0; conformance row-D (make_branch_repo) repointed to harness — pulled fwd from 1b since helper moves in 1a (see 1b note) |
+| 1b — Relocate test-hooks sections into sub-suites | ✅ Done | 08d1f16 | 8 sub-suites (block-unsafe 294, bypass-generic 700, bypass-project 1109, main-protected 48, worktree-cd 25, agent 21, warn-drift 10, misc 177 = Σ2384); monolith removed; MOVE-not-rewrite (377 calls / 44 markers conserved); conformance A/B/C/E1/E2 repointed (row D done in 1a); run-all Overall 7576/0 = 7569 + 7 (test-suite-registry now asserts 8 sub-suite registrations vs 1) |
+| 2 — Targeted isolation (apply-preset, paths-migration) | ✅ Done | 3a2de15 | apply-preset (18/0) + paths-migration (74/0) → per-suite $(mktemp -d) scratch + EXIT-trap; counts unchanged; concurrency AC: 2 concurrent copies each, 0 failed; run-all 7576/0. Per-suite TMPDIR injection deferred to Phase 4 (confirm-only) |
+| 3 — create-worktree sandbox + serial-pin heavy/global | ✅ Done | 2753b7c | test-create-worktree cases 8&17 → throwaway sandbox repo (non-main branch, cd-per-invocation); leak-watcher 0 root/worktree-list entries; 26/0; #1036 preserved. Serial bucket defined in suite-registry.sh (list_serial_suites/is_serial_suite/serial_run_attended_live_load — attended-gate verbatim); run-all 7585/0 = 7576 + 9 (serial-bucket assertions) |
+| 4 — Parallel runner + CI switch | ✅ Done | 4207333 | run-all.sh ZSKILLS_PARALLEL=1 fan-out (pool=registry−serial-bucket, cap min(12,nproc); per-suite TMPDIR+timeout 600; parse_results; registered-order; OVERALL_EXIT preserved). Wall-clock ~19min→**3m40s** (32-core), ~4m20 (4-core). 2 latent flakes fixed w/o softening: git-clone shared-object-store race → `git bundle` snapshot (6 suites); live-server port collisions → serial-pin the class (7 suites). CI flipped to parallel, one gating job. Parity: parallel 7596/7596=serial, 0 failed, 3 re-verify runs deterministic. 7585→7596 (+11 registry serial-bucket coverage) |
 
 ## Phase 0 — Baseline capture + shared infra: result-parser + registry reader
 ### Goal

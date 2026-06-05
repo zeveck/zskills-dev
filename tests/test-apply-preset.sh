@@ -6,6 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPT="$REPO_ROOT/skills/update-zskills/scripts/apply-preset.sh"
 
+# Per-worker-unique scratch root. Honors any injected $TMPDIR (bare mktemp -d),
+# so two concurrent copies of this suite never collide on a fixed /tmp path.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf -- "$SCRATCH"' EXIT
+
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -78,9 +83,10 @@ get_main_protected() {
   grep -m1 '"main_protected"' "$1" | sed 's/.*"main_protected"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/'
 }
 
-# Each test uses a unique literal /tmp/zskills-apply-test-<N>/ directory so
-# the generic hook's "rm -r requires literal /tmp/<name>" rule lets us clean
-# up without variable expansion.
+# Each test uses a numbered subdir under the per-suite $SCRATCH root
+# ($SCRATCH/zskills-apply-test-<N>/). $SCRATCH is a unique mktemp -d per
+# invocation, so concurrent copies of this suite never collide; cleanup is
+# the EXIT trap's `rm -rf -- "$SCRATCH"` (variable-holding, in-script rm).
 
 # ────────────────────────────────────────────────────────────────────
 echo "=== Happy path: each preset writes ONLY config (no hook edits) ==="
@@ -88,30 +94,30 @@ echo "=== Happy path: each preset writes ONLY config (no hook edits) ==="
 # Canonical state is cherry-pick/false. Applying a DIFFERENT preset must
 # flip the config fields; the generic hook must be left byte-identical
 # (config-only behavior — the hook reads main_protected at runtime now).
-rm -rf /tmp/zskills-apply-test-1
-make_project /tmp/zskills-apply-test-1 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-hook_before_1=$(cat /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
-result=$(run_preset /tmp/zskills-apply-test-1 locked-main-pr)
+rm -rf $SCRATCH/zskills-apply-test-1
+make_project $SCRATCH/zskills-apply-test-1 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+hook_before_1=$(cat $SCRATCH/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
+result=$(run_preset $SCRATCH/zskills-apply-test-1 locked-main-pr)
 rc="${result%%$'\n'*}"
-hook_after_1=$(cat /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
+hook_after_1=$(cat $SCRATCH/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "pr" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "true" ] && \
+   [ "$(get_landing $SCRATCH/zskills-apply-test-1/.claude/zskills-config.json)" = "pr" ] && \
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-1/.claude/zskills-config.json)" = "true" ] && \
    [ "$hook_before_1" = "$hook_after_1" ]; then
   pass "locked-main-pr: config landing=pr/main_protected=true; hook left byte-identical"
 else
-  fail "locked-main-pr: rc=$rc, landing=$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json), main_protected=$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json), hook-changed=$([ "$hook_before_1" = "$hook_after_1" ] && echo no || echo YES)"
+  fail "locked-main-pr: rc=$rc, landing=$(get_landing $SCRATCH/zskills-apply-test-1/.claude/zskills-config.json), main_protected=$(get_main_protected $SCRATCH/zskills-apply-test-1/.claude/zskills-config.json), hook-changed=$([ "$hook_before_1" = "$hook_after_1" ] && echo no || echo YES)"
 fi
 
-rm -rf /tmp/zskills-apply-test-2
-make_project /tmp/zskills-apply-test-2 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-hook_before_2=$(cat /tmp/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
-result=$(run_preset /tmp/zskills-apply-test-2 direct)
+rm -rf $SCRATCH/zskills-apply-test-2
+make_project $SCRATCH/zskills-apply-test-2 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+hook_before_2=$(cat $SCRATCH/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
+result=$(run_preset $SCRATCH/zskills-apply-test-2 direct)
 rc="${result%%$'\n'*}"
-hook_after_2=$(cat /tmp/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
+hook_after_2=$(cat $SCRATCH/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "direct" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "false" ] && \
+   [ "$(get_landing $SCRATCH/zskills-apply-test-2/.claude/zskills-config.json)" = "direct" ] && \
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-2/.claude/zskills-config.json)" = "false" ] && \
    [ "$hook_before_2" = "$hook_after_2" ]; then
   pass "direct: config landing=direct/main_protected=false; hook left byte-identical"
 else
@@ -120,9 +126,9 @@ fi
 
 # Applying the SAME preset the config already carries → no-op rc=1 (config
 # already matches; no hook splice exists to force a change anymore).
-rm -rf /tmp/zskills-apply-test-3
-make_project /tmp/zskills-apply-test-3 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-3 cherry-pick)
+rm -rf $SCRATCH/zskills-apply-test-3
+make_project $SCRATCH/zskills-apply-test-3 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+result=$(run_preset $SCRATCH/zskills-apply-test-3 cherry-pick)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "1" ] && echo "${result#*$'\n'}" | grep -q "already applied"; then
   pass "cherry-pick on already-cherry-pick config: rc=1 'already applied' (config-only, no hook to flip)"
@@ -132,13 +138,13 @@ fi
 
 # apply-preset must succeed even when NO generic hook exists at all (the
 # config-only contract — it no longer requires the hook file).
-rm -rf /tmp/zskills-apply-test-3b
-make_project /tmp/zskills-apply-test-3b "$CANONICAL_CONFIG"   # no hook arg
-result=$(run_preset /tmp/zskills-apply-test-3b locked-main-pr)
+rm -rf $SCRATCH/zskills-apply-test-3b
+make_project $SCRATCH/zskills-apply-test-3b "$CANONICAL_CONFIG"   # no hook arg
+result=$(run_preset $SCRATCH/zskills-apply-test-3b locked-main-pr)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-3b/.claude/zskills-config.json)" = "true" ] && \
-   [ ! -e /tmp/zskills-apply-test-3b/.claude/hooks/block-unsafe-generic.sh ]; then
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-3b/.claude/zskills-config.json)" = "true" ] && \
+   [ ! -e $SCRATCH/zskills-apply-test-3b/.claude/hooks/block-unsafe-generic.sh ]; then
   pass "no hook present: apply still succeeds (config-only), no hook created"
 else
   fail "no-hook config-only: rc=$rc, out=${result#*$'\n'}"
@@ -147,20 +153,20 @@ fi
 echo ""
 echo "=== Idempotency ==="
 
-rm -rf /tmp/zskills-apply-test-4
-make_project /tmp/zskills-apply-test-4 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+rm -rf $SCRATCH/zskills-apply-test-4
+make_project $SCRATCH/zskills-apply-test-4 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
 # First apply of a DIFFERENT preset — should change config fields.
-PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+PROJECT_ROOT=$SCRATCH/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
 # Second apply of the SAME preset — should report "already applied" and exit 1.
-PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >/tmp/zskills-apply-test-4-out 2>&1
+PROJECT_ROOT=$SCRATCH/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >$SCRATCH/zskills-apply-test-4-out 2>&1
 rc=$?
-if [ "$rc" = "1" ] && grep -q "already applied" /tmp/zskills-apply-test-4-out; then
+if [ "$rc" = "1" ] && grep -q "already applied" $SCRATCH/zskills-apply-test-4-out; then
   pass "second apply of same preset exits rc=1 with 'already applied' message"
 else
-  pass_result=$(cat /tmp/zskills-apply-test-4-out)
+  pass_result=$(cat $SCRATCH/zskills-apply-test-4-out)
   fail "idempotency: rc=$rc, out=$pass_result"
 fi
-rm -f /tmp/zskills-apply-test-4-out
+rm -f $SCRATCH/zskills-apply-test-4-out
 
 echo ""
 echo "=== Missing execution key insert ==="
@@ -170,22 +176,22 @@ NO_EXEC_CONFIG='{
   "testing": { "unit_cmd": "npm test" }
 }'
 
-rm -rf /tmp/zskills-apply-test-7
-make_project /tmp/zskills-apply-test-7 "$NO_EXEC_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-7 locked-main-pr)
+rm -rf $SCRATCH/zskills-apply-test-7
+make_project $SCRATCH/zskills-apply-test-7 "$NO_EXEC_CONFIG" "$CURRENT_HOOK"
+result=$(run_preset $SCRATCH/zskills-apply-test-7 locked-main-pr)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-7/.claude/zskills-config.json)" = "pr" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-7/.claude/zskills-config.json)" = "true" ]; then
+   [ "$(get_landing $SCRATCH/zskills-apply-test-7/.claude/zskills-config.json)" = "pr" ] && \
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-7/.claude/zskills-config.json)" = "true" ]; then
   pass "missing 'execution' key: block inserted with preset values"
 else
   fail "missing execution insert: rc=$rc, config:
-$(cat /tmp/zskills-apply-test-7/.claude/zskills-config.json)"
+$(cat $SCRATCH/zskills-apply-test-7/.claude/zskills-config.json)"
 fi
 
 # Verify unrelated keys preserved
-if grep -q '"project_name": "noex"' /tmp/zskills-apply-test-7/.claude/zskills-config.json && \
-   grep -q '"unit_cmd": "npm test"' /tmp/zskills-apply-test-7/.claude/zskills-config.json; then
+if grep -q '"project_name": "noex"' $SCRATCH/zskills-apply-test-7/.claude/zskills-config.json && \
+   grep -q '"unit_cmd": "npm test"' $SCRATCH/zskills-apply-test-7/.claude/zskills-config.json; then
   pass "missing execution insert: project_name and testing.unit_cmd preserved"
 else
   fail "missing execution insert: unrelated keys NOT preserved"
@@ -207,11 +213,11 @@ RICH_CONFIG='{
   "ci": { "auto_fix": false, "max_fix_attempts": 3 }
 }'
 
-rm -rf /tmp/zskills-apply-test-8
-make_project /tmp/zskills-apply-test-8 "$RICH_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-8 locked-main-pr)
+rm -rf $SCRATCH/zskills-apply-test-8
+make_project $SCRATCH/zskills-apply-test-8 "$RICH_CONFIG" "$CURRENT_HOOK"
+result=$(run_preset $SCRATCH/zskills-apply-test-8 locked-main-pr)
 rc="${result%%$'\n'*}"
-after=/tmp/zskills-apply-test-8/.claude/zskills-config.json
+after=$SCRATCH/zskills-apply-test-8/.claude/zskills-config.json
 if [ "$rc" = "0" ] && \
    grep -q '"timezone": "Europe/London"' "$after" && \
    grep -q '"branch_prefix": "custom/"' "$after" && \
@@ -227,9 +233,9 @@ fi
 echo ""
 echo "=== Error paths ==="
 
-rm -rf /tmp/zskills-apply-test-9
-mkdir -p /tmp/zskills-apply-test-9
-result=$(run_preset /tmp/zskills-apply-test-9 cherry-pick)
+rm -rf $SCRATCH/zskills-apply-test-9
+mkdir -p $SCRATCH/zskills-apply-test-9
+result=$(run_preset $SCRATCH/zskills-apply-test-9 cherry-pick)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "3" ]; then
   pass "missing config file: rc=3"
@@ -237,25 +243,25 @@ else
   fail "missing config file: expected rc=3, got rc=$rc"
 fi
 
-rm -rf /tmp/zskills-apply-test-10
-mkdir -p /tmp/zskills-apply-test-10/.claude
-printf '%s' "$CANONICAL_CONFIG" > /tmp/zskills-apply-test-10/.claude/zskills-config.json
+rm -rf $SCRATCH/zskills-apply-test-10
+mkdir -p $SCRATCH/zskills-apply-test-10/.claude
+printf '%s' "$CANONICAL_CONFIG" > $SCRATCH/zskills-apply-test-10/.claude/zskills-config.json
 # Hook file missing (no .claude/hooks/ dir). Config-only contract: apply must
 # NOT error on a missing hook (rc=3 is now reserved for a MISSING CONFIG).
 # Applying a different preset succeeds (rc=0) and writes only config.
-result=$(run_preset /tmp/zskills-apply-test-10 locked-main-pr)
+result=$(run_preset $SCRATCH/zskills-apply-test-10 locked-main-pr)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-10/.claude/zskills-config.json)" = "true" ] && \
-   [ ! -d /tmp/zskills-apply-test-10/.claude/hooks ]; then
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-10/.claude/zskills-config.json)" = "true" ] && \
+   [ ! -d $SCRATCH/zskills-apply-test-10/.claude/hooks ]; then
   pass "missing hook file no longer errors: rc=0, config updated, no hook dir created"
 else
   fail "missing hook file (config-only): expected rc=0 + config flip + no hook dir, got rc=$rc, out=${result#*$'\n'}"
 fi
 
-rm -rf /tmp/zskills-apply-test-11
-make_project /tmp/zskills-apply-test-11 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-11 bogus-preset)
+rm -rf $SCRATCH/zskills-apply-test-11
+make_project $SCRATCH/zskills-apply-test-11 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+result=$(run_preset $SCRATCH/zskills-apply-test-11 bogus-preset)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "2" ]; then
   pass "unknown preset: rc=2"
@@ -263,9 +269,9 @@ else
   fail "unknown preset: expected rc=2, got rc=$rc"
 fi
 
-rm -rf /tmp/zskills-apply-test-12
-make_project /tmp/zskills-apply-test-12 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-out=$(PROJECT_ROOT=/tmp/zskills-apply-test-12 bash "$SCRIPT" 2>&1)
+rm -rf $SCRATCH/zskills-apply-test-12
+make_project $SCRATCH/zskills-apply-test-12 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
+out=$(PROJECT_ROOT=$SCRATCH/zskills-apply-test-12 bash "$SCRIPT" 2>&1)
 rc=$?
 if [ "$rc" = "2" ] && echo "$out" | grep -q "usage:"; then
   pass "no preset arg: rc=2 and usage message"
@@ -273,9 +279,9 @@ else
   fail "no preset arg: rc=$rc, out=$out"
 fi
 
-rm -rf /tmp/zskills-apply-test-13
-make_project /tmp/zskills-apply-test-13 '{"$schema": "./zskills-config.schema.json", "broken"' "$CURRENT_HOOK"
-out=$(PROJECT_ROOT=/tmp/zskills-apply-test-13 bash "$SCRIPT" cherry-pick 2>&1)
+rm -rf $SCRATCH/zskills-apply-test-13
+make_project $SCRATCH/zskills-apply-test-13 '{"$schema": "./zskills-config.schema.json", "broken"' "$CURRENT_HOOK"
+out=$(PROJECT_ROOT=$SCRATCH/zskills-apply-test-13 bash "$SCRIPT" cherry-pick 2>&1)
 rc=$?
 if [ "$rc" = "4" ]; then
   pass "malformed JSON config: rc=4"
@@ -288,13 +294,13 @@ echo "=== Compact JSON formatting (no spaces, single-line) ==="
 
 COMPACT_CONFIG='{"execution":{"landing":"cherry-pick","main_protected":false,"branch_prefix":"feat/"},"testing":{"unit_cmd":"npm test"}}'
 
-rm -rf /tmp/zskills-apply-test-14
-make_project /tmp/zskills-apply-test-14 "$COMPACT_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-14 locked-main-pr)
+rm -rf $SCRATCH/zskills-apply-test-14
+make_project $SCRATCH/zskills-apply-test-14 "$COMPACT_CONFIG" "$CURRENT_HOOK"
+result=$(run_preset $SCRATCH/zskills-apply-test-14 locked-main-pr)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-14/.claude/zskills-config.json)" = "pr" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-14/.claude/zskills-config.json)" = "true" ]; then
+   [ "$(get_landing $SCRATCH/zskills-apply-test-14/.claude/zskills-config.json)" = "pr" ] && \
+   [ "$(get_main_protected $SCRATCH/zskills-apply-test-14/.claude/zskills-config.json)" = "true" ]; then
   pass "compact JSON input: permissive sed regex handles it; fields rewrite correctly"
 else
   fail "compact JSON: rc=$rc"
@@ -331,9 +337,9 @@ SIBLING_CONFIG='{
 # were unscoped it would see extra.landing="WRONG" and
 # extra.main_protected=true and report spurious execution field changes
 # (rc=0).
-rm -rf /tmp/zskills-apply-test-15
-make_project /tmp/zskills-apply-test-15 "$SIBLING_CONFIG" "$CURRENT_HOOK"
-out=$(PROJECT_ROOT=/tmp/zskills-apply-test-15 bash "$SCRIPT" cherry-pick 2>&1)
+rm -rf $SCRATCH/zskills-apply-test-15
+make_project $SCRATCH/zskills-apply-test-15 "$SIBLING_CONFIG" "$CURRENT_HOOK"
+out=$(PROJECT_ROOT=$SCRATCH/zskills-apply-test-15 bash "$SCRIPT" cherry-pick 2>&1)
 rc=$?
 # Expectation: rc=1 (no change — config already matches cherry-pick), and
 # no execution.* changes reported.
@@ -353,10 +359,10 @@ fi
 # write would clobber it to whatever the new value was, including in
 # this case leaving the right value via coincidence; the landing test is
 # the clean disambiguator).
-rm -rf /tmp/zskills-apply-test-16
-make_project /tmp/zskills-apply-test-16 "$SIBLING_CONFIG" "$CURRENT_HOOK"
-PROJECT_ROOT=/tmp/zskills-apply-test-16 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
-after=/tmp/zskills-apply-test-16/.claude/zskills-config.json
+rm -rf $SCRATCH/zskills-apply-test-16
+make_project $SCRATCH/zskills-apply-test-16 "$SIBLING_CONFIG" "$CURRENT_HOOK"
+PROJECT_ROOT=$SCRATCH/zskills-apply-test-16 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+after=$SCRATCH/zskills-apply-test-16/.claude/zskills-config.json
 # Use python to read both scopes unambiguously (zskills allows Python).
 PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
 read_exec_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['landing'])" "$after")
@@ -392,10 +398,10 @@ SIBLING_OPPOSITE_CONFIG='{
     "branch_prefix": "feat/"
   }
 }'
-rm -rf /tmp/zskills-apply-test-17
-make_project /tmp/zskills-apply-test-17 "$SIBLING_OPPOSITE_CONFIG" "$CURRENT_HOOK"
-PROJECT_ROOT=/tmp/zskills-apply-test-17 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
-after=/tmp/zskills-apply-test-17/.claude/zskills-config.json
+rm -rf $SCRATCH/zskills-apply-test-17
+make_project $SCRATCH/zskills-apply-test-17 "$SIBLING_OPPOSITE_CONFIG" "$CURRENT_HOOK"
+PROJECT_ROOT=$SCRATCH/zskills-apply-test-17 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+after=$SCRATCH/zskills-apply-test-17/.claude/zskills-config.json
 read_exec_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['landing'])" "$after")
 read_extra_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['extra']['landing'])" "$after")
 read_exec_protected=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['main_protected'])" "$after")
@@ -414,7 +420,7 @@ fi
 echo ""
 echo "=== Cleanup ==="
 for n in 1 2 3 3b 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
-  rm -rf "/tmp/zskills-apply-test-$n"
+  rm -rf "$SCRATCH/zskills-apply-test-$n"
 done
 pass "temp dirs cleaned"
 
