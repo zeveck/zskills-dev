@@ -209,12 +209,32 @@ def _load_briefing(main_root: pathlib.Path) -> Any:
     global _BRIEFING_MODULE
     if _BRIEFING_MODULE is not None:
         return _BRIEFING_MODULE
-    briefing_path = (
+    # Dual-lane resolution (mirrors the SKILL's PKG_PARENT idiom, #1093):
+    # on a mirror-less plugin install the shipped briefing.py lives under
+    # ${CLAUDE_PLUGIN_ROOT}/skills/..., NOT under the consumer's project
+    # dir. Prefer the plugin lane when CLAUDE_PLUGIN_ROOT is set AND the
+    # file exists there; otherwise resolve under main_root. Fall back to
+    # the last candidate so the RuntimeError below still names a sensible
+    # path when neither exists.
+    candidates: List[pathlib.Path] = []
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if plugin_root:
+        candidates.append(
+            pathlib.Path(plugin_root)
+            / "skills"
+            / "briefing"
+            / "scripts"
+            / "briefing.py"
+        )
+    candidates.append(
         pathlib.Path(main_root)
         / "skills"
         / "briefing"
         / "scripts"
         / "briefing.py"
+    )
+    briefing_path = next(
+        (c for c in candidates if c.exists()), candidates[-1]
     )
     spec = importlib.util.spec_from_file_location(
         "_zskills_monitor_briefing", str(briefing_path)

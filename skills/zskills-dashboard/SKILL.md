@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.04+1b3132"
+  version: "2026.06.04+160eac"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -319,20 +319,37 @@ if [ "$SUB" = "start" ]; then
   # Launch detached. cd into MAIN_ROOT so the server's resolve_main_root
   # cwd-walk lands here. PYTHONPATH prepend keeps the package importable
   # without an install. nohup + disown survives parent-shell exit.
-  # Note: PYTHONPATH="$PKG_PARENT:..." resolves at runtime to either
-  # PYTHONPATH=${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts:... (plugin lane)
-  # or PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts:... (source/legacy) —
-  # see PKG_PARENT dual-lane resolution above (per DA-5).
+  # Note: PYTHONPATH resolves at runtime to either
+  # PYTHONPATH=${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts (plugin lane)
+  # or PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts (source/legacy) —
+  # see PKG_PARENT dual-lane resolution above (per DA-5). The path-list
+  # separator is interpreter-derived (os.pathsep), NOT a hardcoded ':' —
+  # native Windows Python reports ';' even under Git Bash, so a hardcoded
+  # ':' (plus the trailing-empty colon from "$PKG_PARENT:${PYTHONPATH:-}")
+  # would yield one invalid entry and a ModuleNotFoundError: zskills_monitor.
+  DASH_PYSEP=$("$PYTHON" -c 'import os,sys; sys.stdout.write(os.pathsep)')
+  if [ -n "${PYTHONPATH:-}" ]; then
+    DASH_PYTHONPATH="$PKG_PARENT$DASH_PYSEP$PYTHONPATH"
+  else
+    DASH_PYTHONPATH="$PKG_PARENT"
+  fi
   # When ZSKILLS_DASHBOARD_ROOT is set, pass --main-root so the server's
   # collector reads state from the override path (worktree verification).
   MAIN_ROOT_FLAG=""
   if [ -n "${ZSKILLS_DASHBOARD_ROOT:-}" ]; then
     MAIN_ROOT_FLAG="--main-root $MAIN_ROOT"
   fi
+  # Pass --port "$PORT" explicitly so the server binds the SAME port the
+  # health-check below probes. Without it the server self-resolves and can
+  # land on a different port (e.g. fallback 8080) than $PORT from port.sh,
+  # making a healthy server look broken. Export CLAUDE_PLUGIN_ROOT so the
+  # server's shipped-helper resolution (briefing.py, port.sh) can find the
+  # plugin lane on a mirror-less plugin install.
   ( cd "$MAIN_ROOT" && \
-    PYTHONPATH="$PKG_PARENT:${PYTHONPATH:-}" \
+    PYTHONPATH="$DASH_PYTHONPATH" \
+    CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}" \
     ZSKILLS_DASHBOARD_ROOT="${ZSKILLS_DASHBOARD_ROOT:-}" \
-    nohup "$PYTHON" -m zskills_monitor.server $MAIN_ROOT_FLAG \
+    nohup "$PYTHON" -m zskills_monitor.server --port "$PORT" $MAIN_ROOT_FLAG \
       > "$LOG_FILE" 2>&1 < /dev/null & disown )
 
   # Health-check loop — up to ~10s for bind + first response. Python
@@ -646,7 +663,10 @@ The dashboard reads `.claude/zskills-config.json` for one field:
   `${CLAUDE_PLUGIN_ROOT}/skills/zskills-dashboard/scripts` (plugin lane)
   or `$MAIN_ROOT/skills/zskills-dashboard/scripts` (source/legacy) — so
   `python3 -m zskills_monitor.server` resolves the package without an
-  install step (per DA-5).
+  install step (per DA-5). The path-list separator is interpreter-derived
+  (`$("$PYTHON" -c '...os.pathsep')`), not a hardcoded `:` — native Windows
+  Python reports `;` even under Git Bash, and the prepend avoids a
+  trailing-empty separator so no invalid entry is produced.
 - **Verify after every state change.** `start` curls
   `/api/health`; `stop` polls `kill -0` then verifies the port is
   freed via `lsof`.
