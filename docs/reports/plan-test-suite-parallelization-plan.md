@@ -1,5 +1,37 @@
 # Plan Report — Test Suite Parallelization & Isolation
 
+## Phase — 4 Parallel runner + CI switch
+
+**Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md
+**Status:** Completed (verified — re-verified after 2 fix rounds)
+**Worktree:** /tmp/zskills-pr-test-suite-parallelization-plan (branch feat/test-suite-parallelization-plan)
+**Commits:** 4207333 (runner + bundle fix + serial-pin sweep), + tracker/report
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `ZSKILLS_PARALLEL=1` fan-out in run-all.sh (additive, default serial) | Done | 4207333 |
+| 2 | Worker cap `min(configured=12, nproc)`; per-suite .out/.rc + OVERALL_EXIT | Done | 4207333 |
+| 3 | Per-suite `timeout 600` + `TMPDIR=$(mktemp -d)` | Done | 4207333 |
+| 4 | Conditional gates honored; live-load deduped to serial bucket | Done | 4207333 |
+| 5 | CI flip to parallel invocation (one gating job, no matrix) | Done | 4207333 |
+
+### Verification (independent re-verifier: VERDICT PASS, after 2 fix rounds)
+- **Parity:** parallel `Overall == serial Overall == 7596/7596, 0 failed`, **3 independent re-verify runs deterministic** (attended gate OFF). No suite dropped (214 `Tests:` headers, conformance 713, all 7 serial-bucket suites present once).
+- **Wall-clock:** **~19 min → 3m40s** on 32-core (12 workers); **~4m20s** at 4-worker CI estimate. Floor dominated by the ~50s migration suite, not the plan's predicted conformance/bypass-project shard.
+- **No softened assertions** (the cardinal risk): bundle suites changed clone-setup only; registry 31→42 is *added* serial-bucket coverage; serial dispatch is a generic loop running every pinned suite. `OVERALL_EXIT` integrity verified (empty `.out` + non-zero `.rc`/timeout 124 still flips it). `REPO_ROOT` not exported to workers (passed as arg).
+
+### Two latent concurrency hazards the parallel path exposed (fixed; surfaced not patched where out-of-scope)
+1. **git-clone shared-object-store race** — `git clone "$REPO_ROOT"` on this *linked* worktree raced (~17%, caught by the first verifier running 6× where the implementer's 3 lucky runs missed it). Fixed: 6 clone suites snapshot via `git bundle create` (immune to both the object-copy race and the `--no-local` live-ref-advertisement race). Verified flake-free 10+ runs.
+2. **live-server port collisions** — `test_zskills_dashboard_skill.sh` + siblings bind narrow `$$`-derived port windows + launch detached servers. Fixed: serial-pin the whole live-server class (monitor_server, csrf, dashboard_ui, dashboard_skill, state-queue, pid-file-self-heal) — the plan's designated escape hatch; runner's serial dispatch made generic so all pinned suites run outside the pool.
+
+### Out-of-scope signals surfaced (NOT patched — for follow-up issues)
+- `test-create-worktree.sh` shares `/workspaces/zskills/.git/worktrees/` across all instances → false-flake if two `run-all`s run concurrently in the same clone. **Cannot occur in a single CI run-all** (the suite runs once, in the pool); only reproduced by the dogfooding dual-loop measurement artifact. Worth a follow-up issue (overlapping CI jobs sharing a checkout).
+- `PLAN-TEXT-DRIFT`: plan narrative says ~2-3 min / 7585; actual ~3m40 / 7596 (registry coverage). Documented, not blocking.
+
+### Scope
+10 files: `run-all.sh`, `lib/suite-registry.sh`, `test-suite-registry.sh`, `.github/workflows/test.yml`, + 6 bundle-fixed clone suites.
+
 ## Phase — 3 create-worktree sandbox + serial-pin heavy/global
 
 **Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md
