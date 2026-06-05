@@ -26,6 +26,7 @@ import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -102,13 +103,41 @@ def find_repo_root(start_dir=None):
 
 
 def run(cmd, cwd=None, timeout=60):
-    """Run a shell command and return stripped stdout, or '' on error."""
+    """Run a shell command and return stripped stdout, or '' on error.
+
+    The child is started in its OWN process group (start_new_session=True →
+    setsid) so a network-bound command stuck in a read (the 0-CPU-for-9-min
+    hang class) can be torn down by process-GROUP kill on timeout — plain
+    subprocess.run only kills the immediate child, which can leave helper
+    processes alive and the call hung past the bound. On TimeoutExpired (or
+    any other error) we return '' exactly as before; callers see no
+    behavioral change beyond the bounded teardown.
+    """
     try:
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            cwd=cwd, timeout=timeout
+        proc = subprocess.Popen(
+            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, cwd=cwd, start_new_session=True,
         )
-        return result.stdout.strip()
+        try:
+            stdout, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+                try:
+                    proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            return ''
+        return stdout.strip()
     except Exception:
         return ''
 

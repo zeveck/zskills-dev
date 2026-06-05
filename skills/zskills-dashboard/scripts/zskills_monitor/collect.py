@@ -21,6 +21,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -1170,7 +1171,7 @@ def _maybe_fetch_remote(
     last = _BRANCH_FETCH_TS.get(key)
     if last is not None and ttl > 0 and (now - last) < ttl:
         return
-    runner = _runner or subprocess.run
+    runner = _runner or _run_gh_hardened
     try:
         result = runner(
             ["git", "fetch", "--prune"],
@@ -1300,6 +1301,63 @@ def _list_branches(
 
 
 # ---------------------------------------------------------------------------
+# Hardened subprocess runner for `gh` (process-group kill on timeout)
+# ---------------------------------------------------------------------------
+
+
+def _run_gh_hardened(cmd, *, capture_output=True, text=True, timeout=60, cwd=None):
+    """`subprocess.run`-compatible runner that reliably kills a hung child.
+
+    Python's `subprocess.run(..., timeout=N)` sends a kill to the immediate
+    child on `TimeoutExpired`, but a network-bound process (the observed
+    0-CPU-for-9-min hang on `gh issue list` / `git fetch`) can leave its own
+    child/helper processes alive, so the call never returns within the bound.
+    We start the child in its OWN process group (`start_new_session=True` →
+    `setsid`) and, on timeout, `os.killpg` the whole group (SIGTERM, then
+    SIGKILL) before re-raising `subprocess.TimeoutExpired`. Return / raise
+    semantics are otherwise identical to `subprocess.run`: success yields a
+    `CompletedProcess`; timeout raises `TimeoutExpired`; the callers'
+    existing `except (... TimeoutExpired ...)` / generic handlers stay
+    unchanged.
+
+    Only the real-subprocess default path uses this; the test-injected
+    `_runner`/`issue_runner` seam bypasses it entirely.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE if capture_output else None,
+        stderr=subprocess.PIPE if capture_output else None,
+        text=text,
+        cwd=cwd,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill the entire process group so a network-stuck `gh` (and any
+        # helper it spawned) is actually torn down, not just the parent.
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        raise
+    return subprocess.CompletedProcess(
+        cmd, proc.returncode, stdout=stdout, stderr=stderr
+    )
+
+
+# ---------------------------------------------------------------------------
 # gh issue list (cached, 60s)
 # ---------------------------------------------------------------------------
 
@@ -1332,7 +1390,7 @@ def list_issues(
         return list(_ISSUE_CACHE["issues"]), True
 
     try:
-        runner = _runner or subprocess.run
+        runner = _runner or _run_gh_hardened
         result = runner(
             [
                 "gh",
@@ -1454,7 +1512,7 @@ def list_closed_issues_in_window(
         return list(bucket["issues"]) if (bucket and bucket.get("had_value")) else []
 
     try:
-        runner = _runner or subprocess.run
+        runner = _runner or _run_gh_hardened
         result = runner(
             [
                 "gh",
