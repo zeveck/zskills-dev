@@ -167,6 +167,14 @@ the pre-flight write-probe, which makes a single reversible push-then-delete
 of a throwaway ref to prod (pointing at prod's existing `main` SHA, no
 content change) to confirm write access. Nothing else is pushed.
 
+**Mandatory before the next real ship:** any edit to
+`.github/workflows/ship-to-prod.yml` MUST be validated by a `Dry run`-checked
+workflow run before you ship for real. The prod auth path is secret-gated
+(`PROD_PUSH_TOKEN`) and cannot be exercised by ordinary repo CI, so a dry-run
+— which still runs the pre-flight write-probe against prod — is the ONLY
+pre-ship validation of that path. Skipping it has shipped broken auth twice
+(a 403, then a 400 duplicate-header) caught only at ship time.
+
 ## Adding new transforms
 
 Extend `scripts/build-prod.sh`. Common candidates:

@@ -61,15 +61,15 @@ jobs:
           echo "::add-mask::$AUTH"
           PROD_URL="https://github.com/zeveck/zskills.git"
           PROBE="refs/heads/__ship-preflight-probe-${{ github.run_id }}"
-          if ! git -c "http.https://github.com/.extraheader=$AUTH" fetch "$PROD_URL" main 2>fetch-err.log; then
+          if ! git -c "http.https://github.com/.extraheader=" -c "http.https://github.com/.extraheader=$AUTH" fetch "$PROD_URL" main 2>fetch-err.log; then
             echo "::error::Could not reach zeveck/zskills with PROD_PUSH_TOKEN:"; cat fetch-err.log; exit 1
           fi
           PROD_MAIN=$(git rev-parse FETCH_HEAD)
-          if ! git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "$PROD_MAIN:$PROBE" 2>probe-err.log; then
+          if ! git -c "http.https://github.com/.extraheader=" -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "$PROD_MAIN:$PROBE" 2>probe-err.log; then
             echo "::error::PROD_PUSH_TOKEN cannot WRITE to zeveck/zskills (the real push would fail the same way). Rotate/repair the PAT — RELEASING.md 'One-time setup' — and re-run."
             cat probe-err.log; exit 1
           fi
-          if ! git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" ":$PROBE" 2>cleanup-err.log; then
+          if ! git -c "http.https://github.com/.extraheader=" -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" ":$PROBE" 2>cleanup-err.log; then
             echo "::warning::Probe ref cleanup failed; delete $PROBE on zeveck/zskills manually."; cat cleanup-err.log
           fi
           echo "::notice::PAT write-access to prod confirmed."
@@ -123,16 +123,21 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
-          # actions/checkout installs a global http.https://github.com/.extraheader
-          # carrying the GITHUB_TOKEN (github-actions[bot]). Left in place it OVERRIDES
-          # the PAT and the push authenticates as the bot, which has no write access to
-          # the separate prod repo -> 403. Force the correct identity by setting the
-          # extraheader to the PAT (the same mechanism checkout uses, with our token).
+          # actions/checkout installs a repo-local http.https://github.com/.extraheader
+          # carrying the GITHUB_TOKEN (github-actions[bot]). Left in place it authenticates
+          # the push as the bot, which has no write access to the separate prod repo -> 403.
+          # http.extraHeader is MULTI-VALUED, so a plain `-c extraheader=$AUTH` is ADDED on
+          # top of checkout's value -> TWO Authorization headers -> GitHub 400 Duplicate
+          # header. The fix: prepend an empty-value `-c extraheader=` that RESETS the
+          # accumulated list (read after checkout's local value since command-line `-c` is
+          # last in precedence), then the PAT value -> exactly ONE Authorization header
+          # carrying the PAT. Scoped per-invocation, so the dev-side `git push origin` below
+          # still uses checkout's stored extraheader unchanged.
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PROD_PUSH_TOKEN" | base64 -w0)"
           echo "::add-mask::$AUTH"
           PROD_URL="https://github.com/zeveck/zskills.git"
-          git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/heads/main"
-          git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/tags/${TAG}"
+          git -c "http.https://github.com/.extraheader=" -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/heads/main"
+          git -c "http.https://github.com/.extraheader=" -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/tags/${TAG}"
 
       - name: Tag dev + create Release (only after prod succeeded)
         if: ${{ inputs.dry-run == false }}
