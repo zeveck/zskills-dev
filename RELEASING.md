@@ -125,9 +125,16 @@ creating the release — no extra setup needed for that side.
 On dispatch, it:
 
 1. Checks out the current dev HEAD (full history, so it can enumerate tags).
-2. **Pre-flight:** `git ls-remote`s the prod repo with `PROD_PUSH_TOKEN`
-   to validate the PAT. Fails the workflow in seconds if the token is
-   missing or expired — **zero state change required**, just rotate and
+2. **Pre-flight write-probe:** pushes a throwaway ref to the prod repo with
+   `PROD_PUSH_TOKEN` (via the same explicit auth header the real push uses),
+   then deletes it. This genuinely validates **write** access — a plain
+   `git ls-remote` read would pass for ANY identity on a public repo (even
+   `github-actions[bot]`, which can't write to prod), so it went green while
+   the real push later 403'd. The probe pushes its ref at prod's existing
+   `main` SHA (no content change) and deletes it again, so the only state
+   change is reversible and self-cleaning. Runs on dry-run too, so you can
+   catch a dead/under-permissioned token before shipping. Fails the workflow
+   in seconds if the token is missing, expired, or read-only — rotate and
    re-run.
 3. Runs `bash tests/run-all.sh` as a gate. Any red test aborts.
 4. Computes the next tag as `YYYY.MM.N` where `N` is the count of existing
@@ -155,7 +162,10 @@ workflow.
 If you changed `scripts/build-prod.sh` and want to verify the transforms
 without actually shipping: click Run workflow, check **Dry run**, run. The
 workflow will build the prod tree and show the file diff in the run
-summary, but will not push anything or tag anything.
+summary. It publishes no release commit and no tag — the ONE exception is
+the pre-flight write-probe, which makes a single reversible push-then-delete
+of a throwaway ref to prod (pointing at prod's existing `main` SHA, no
+content change) to confirm write access. Nothing else is pushed.
 
 ## Adding new transforms
 
