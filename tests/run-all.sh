@@ -6,6 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export CLAUDE_PROJECT_DIR="$REPO_ROOT"
 
+# Shared "Results:" line parser (#587-hardened anchored regex), factored out
+# so serial + parallel runners share one parsing contract. parse_results
+# echoes "PASS FAIL"; this caller retains exit-code capture, accumulation,
+# the 0/0 fall-through, and the OVERALL_EXIT flip on any non-zero suite rc.
+. "$SCRIPT_DIR/lib/parse-results.sh"
+
 TOTAL_PASS=0
 TOTAL_FAIL=0
 OVERALL_EXIT=0
@@ -23,24 +29,15 @@ run_suite() {
   echo "$output"
 
   # Extract counts from the canonical "Results: <N> passed, <N> failed"
-  # line. Anchor to that exact line shape so any inner-test diagnostics
-  # (e.g., test-hooks.sh's fixture-extension synthetic-fixture run that
-  # nests a `tests/test-skill-conformance.sh` invocation — see #587) can't
-  # leak a count into the outer parser. Strip ANSI color codes first
-  # (some suites colorize Results in red/green). If no canonical line is
-  # found in the output, fall through with 0/0 — the suite's own exit
-  # code still flips OVERALL_EXIT below, so an unparseable suite is not
-  # silently dropped.
-  local passed failed results_line stripped
-  stripped=$(echo "$output" | sed -E $'s/\x1b\\[[0-9;]*m//g')
-  results_line=$(echo "$stripped" | grep -E '^Results: [0-9]+ passed,( [0-9]+ failed|.* [0-9]+ failed)' | tail -1)
-  if [[ -n "$results_line" ]]; then
-    passed=$(echo "$results_line" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+')
-    failed=$(echo "$results_line" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+')
-  else
-    passed=0
-    failed=0
-  fi
+  # line via the shared parser (tests/lib/parse-results.sh). It strips ANSI
+  # color codes and anchors to that exact line shape so any inner-test
+  # diagnostics (e.g., test-hooks.sh's fixture-extension synthetic-fixture
+  # run that nests a `tests/test-skill-conformance.sh` invocation — see #587)
+  # can't leak a count into the outer parser. If no canonical line is found,
+  # parse_results returns "0 0"; the suite's own exit code still flips
+  # OVERALL_EXIT below, so an unparseable suite is not silently dropped.
+  local passed failed
+  read -r passed failed < <(parse_results "$output")
 
   TOTAL_PASS=$((TOTAL_PASS + ${passed:-0}))
   TOTAL_FAIL=$((TOTAL_FAIL + ${failed:-0}))
@@ -166,6 +163,12 @@ run_suite "test-land-pr-rebase-rc14-parser.sh" "tests/test-land-pr-rebase-rc14-p
 # exercises (tests/lib/extract-fence.sh, tests/lib/landpr-harness.sh) are
 # sourceable libraries, NOT suites, so they are intentionally NOT registered.
 run_suite "test-extract-fence-lib.sh" "tests/test-extract-fence-lib.sh"
+# TEST_SUITE_PARALLELIZATION Phase 0 — self-tests for the shared infra libs.
+# tests/lib/parse-results.sh (Results-line parser) + tests/lib/suite-registry.sh
+# (registered-suite enumerator) are sourceable libraries, NOT suites, so they
+# are intentionally NOT registered; these two ARE the registered self-tests.
+run_suite "test-parse-results.sh" "tests/test-parse-results.sh"
+run_suite "test-suite-registry.sh" "tests/test-suite-registry.sh"
 run_suite "test-land-pr-tracking-copy.sh" "tests/test-land-pr-tracking-copy.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-landed-status-vocabulary.sh" "tests/test-landed-status-vocabulary.sh"
