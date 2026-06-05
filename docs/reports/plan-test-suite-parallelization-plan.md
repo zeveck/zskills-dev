@@ -1,5 +1,32 @@
 # Plan Report — Test Suite Parallelization & Isolation
 
+## Phase — 3 create-worktree sandbox + serial-pin heavy/global
+
+**Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-test-suite-parallelization-plan (branch feat/test-suite-parallelization-plan)
+**Commits:** 2753b7c (sandbox + serial bucket), + tracker/report
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `test-create-worktree.sh` cases 8 & 17 → throwaway sandbox repo | Done | 2753b7c |
+| 2 | Case 17 3-cwd invariance recreated inside the sandbox | Done | 2753b7c |
+| 3 | Preserve #1036 `register_synth_dir`/trap + `.gitignore` anchors | Done | 2753b7c |
+| 4 | Define serial-only bucket (monitor_server + attended live-load) | Done | 2753b7c |
+| 5 | Carry attended-gate logic verbatim into the serial bucket | Done | 2753b7c |
+
+### Verification (independent verifier agent: VERDICT PASS)
+- **Leak watcher (core AC):** before/after `ls -a` of the real repo root AND `git worktree list` both diff to **empty** during a full `test-create-worktree.sh` run. Zero leaked entries.
+- **`test-create-worktree.sh`:** 26/0 (unchanged; cases 8/17 changes are sandbox-setup only — STDOUT==EXPECTED assertions intact, 3 distinct cwds preserved).
+- **Serial bucket:** `list_serial_suites` / `is_serial_suite` / `serial_run_attended_live_load` added to `suite-registry.sh`; attended-gate body diffed **byte-identical** against run-all.sh's gate block (only the run-suite fn parameterized); runs once. Both serial suites remain in `list_registered_suites` (parallel runner subtracts the bucket).
+- **`test-suite-registry.sh`:** 31/0 (= 22 + 9 real serial-bucket assertions).
+- **#1036 preserved;** `run-all.sh` and `.gitignore` byte-unchanged (parallel runner deferred to Phase 4).
+- **Gate B — `bash tests/run-all.sh`:** **Overall 7585/7585, 0 failed** = 7576 + 9 (documented).
+
+### Scope
+3 files: `tests/test-create-worktree.sh`, `tests/lib/suite-registry.sh`, `tests/test-suite-registry.sh`.
+
 ## Phase — 2 Targeted isolation
 
 **Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md

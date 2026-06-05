@@ -74,7 +74,7 @@ additive term and the attended gate pinned OFF.
 | 1a — Extract hooks-harness lib (incl. test-hooks-helpers); verify monolith still 2384 | ✅ Done | 88e83cf | hooks-harness.sh (228L); monolith sources it; PROJECT_HOOK absolutized; test-hooks 2384/0; run-all 7569/0; conformance row-D (make_branch_repo) repointed to harness — pulled fwd from 1b since helper moves in 1a (see 1b note) |
 | 1b — Relocate test-hooks sections into sub-suites | ✅ Done | 08d1f16 | 8 sub-suites (block-unsafe 294, bypass-generic 700, bypass-project 1109, main-protected 48, worktree-cd 25, agent 21, warn-drift 10, misc 177 = Σ2384); monolith removed; MOVE-not-rewrite (377 calls / 44 markers conserved); conformance A/B/C/E1/E2 repointed (row D done in 1a); run-all Overall 7576/0 = 7569 + 7 (test-suite-registry now asserts 8 sub-suite registrations vs 1) |
 | 2 — Targeted isolation (apply-preset, paths-migration) | ✅ Done | 3a2de15 | apply-preset (18/0) + paths-migration (74/0) → per-suite $(mktemp -d) scratch + EXIT-trap; counts unchanged; concurrency AC: 2 concurrent copies each, 0 failed; run-all 7576/0. Per-suite TMPDIR injection deferred to Phase 4 (confirm-only) |
-| 3 — create-worktree sandbox + serial-pin heavy/global | ⬚ | | |
+| 3 — create-worktree sandbox + serial-pin heavy/global | ✅ Done | 2753b7c | test-create-worktree cases 8&17 → throwaway sandbox repo (non-main branch, cd-per-invocation); leak-watcher 0 root/worktree-list entries; 26/0; #1036 preserved. Serial bucket defined in suite-registry.sh (list_serial_suites/is_serial_suite/serial_run_attended_live_load — attended-gate verbatim); run-all 7585/0 = 7576 + 9 (serial-bucket assertions) |
 | 4 — Parallel runner + CI switch | ⬚ | | |
 
 ## Phase 0 — Baseline capture + shared infra: result-parser + registry reader
