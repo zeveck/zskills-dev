@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.05+f90549"
+  version: "2026.06.05+2d9c2f"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -310,6 +310,8 @@ esac
 ```
 
 ## start — launch detached server
+
+> **Run `start` as a single Bash invocation.** Resolving `$PYTHON`, the pre-flight check, and the detached launch share one shell — execute the steps below inline as one command; do NOT compile them into a helper script (e.g. `.zskills/dashboard-run.sh`).
 
 1. **Inspect existing PID file.** If present, parse `pid` and `port`
    via `BASH_REMATCH`, run liveness + identity check. On match,
