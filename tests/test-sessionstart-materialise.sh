@@ -148,9 +148,10 @@ echo ""
 echo "=== Config seeding: fresh project with NO config ==="
 
 # A truly fresh plugin install has NO .claude/zskills-config.json. The
-# materialiser must seed a default (locked-main-pr) config, then the render
-# gate passes and all 5 artifacts materialise. Previously this case left the
-# consumer with no config and no managed.md, silently.
+# materialiser must seed a default (landing=direct, main_protected=false —
+# the casual plugin default, #1119) config, then the render gate passes and
+# all 5 artifacts materialise. Previously this case left the consumer with no
+# config and no managed.md, silently.
 SEED="$TMP/seedproj"
 mkdir -p "$SEED"
 # Provide the template at the project root so the renderer has something to
@@ -170,13 +171,15 @@ else
   fail "12. fresh project: config NOT seeded"
 fi
 
-# 13. Seeded preset is locked-main-pr (landing=pr, main_protected=true).
+# 13. Seeded default is the casual plugin default (landing=direct,
+# main_protected=false) — #1119. A concurrency-1 plugin consumer gets the
+# lowest-friction defaults; sophisticated forks opt into locked-main-pr.
 if [ -f "$SEED_CFG" ]; then
   seed_landing=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["execution"]["landing"])' "$SEED_CFG" 2>/dev/null)
   seed_prot=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["execution"]["main_protected"])' "$SEED_CFG" 2>/dev/null)
   seed_name=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["project_name"])' "$SEED_CFG" 2>/dev/null)
-  if [ "$seed_landing" = "pr" ] && [ "$seed_prot" = "True" ] && [ "$seed_name" = "seedproj" ]; then
-    pass "13. seeded config is locked-main-pr (landing=pr, main_protected=true, project_name=seedproj)"
+  if [ "$seed_landing" = "direct" ] && [ "$seed_prot" = "False" ] && [ "$seed_name" = "seedproj" ]; then
+    pass "13. seeded config is the casual default (landing=direct, main_protected=false, project_name=seedproj)"
   else
     fail "13. seeded config wrong: landing=$seed_landing main_protected=$seed_prot project_name=$seed_name"
   fi
