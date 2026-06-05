@@ -7,7 +7,7 @@ description: >-
   worktrees), not conversation memory — items may have been completed in
   another session.
 metadata:
-  version: "2026.06.03+7c2826"
+  version: "2026.06.05+9613e1"
 ---
 
 # /session-report — Session Intent vs. Actual State

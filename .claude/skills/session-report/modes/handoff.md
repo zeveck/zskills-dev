@@ -56,6 +56,37 @@ section pattern:
    similar). Put the full forward capture (Part 2) plus a one-line summary
    of the retrospective status buckets (Part 1) in it. Keep it skimmable —
    headers and bullets, not prose walls.
+
+   The memory file MUST end with a dedicated `## Resume protocol` section
+   in the following exact shape:
+
+   ```markdown
+   ## Resume protocol
+
+   **Next step:** <one sentence — the next thing the resuming agent should do, framed as a step, not a committed goal>
+
+   **Rule:** If the next step above is an action (anything that changes state — push, rebase, file, run, delete, edit, merge, cherry-pick, etc., as opposed to reads or asks), confirm with me in a brief plain message before executing — do not use the Ask tool (per user preference; plain conversational confirm matches the discussion-handoff posture).
+
+   **Resume context:**
+   - <branch / worktree path>
+   - <PR # / plan file path / issue #>
+   - <key file(s) or command(s) the next session needs>
+   - <gotcha(s) — anything subtle that would trip a fresh agent>
+   ```
+
+   The `**Next step:**` framing (NOT `Goal:` / `Immediate goal:`) is
+   deliberate — `Next step` is descriptive of what comes next, while
+   `Goal` reads as a committed-to-do tone that biases a fresh agent
+   toward executing without confirmation. An unanswered question of the
+   current agent (e.g. "Want me to file the issue?") goes in **Open
+   questions** in Part 2, NOT in `Next step` — promoting a question to
+   `Next step` is the exact failure mode this redesign closes.
+
+   The `**Rule:**` is principle-first: the gate is *anything that
+   changes state*; the enumeration is illustrative, not exhaustive. The
+   Ask-tool prohibition is intentional — confirmation here is a brief
+   plain conversational message, not a tool invocation.
+
 2. **Add a one-line `MEMORY.md` index pointer** linking the new file
    (`[<topic> hand-off](project_<topic>_handoff.md) — <one-line gist>`).
    Keep the index entry under ~200 chars (MEMORY.md has a size limit;
@@ -66,33 +97,59 @@ Persisting to memory — not just printing — is what makes the hand-off
 
 ## Part 4 — Ready-message
 
-Emit a single message with three parts:
+Emit a single message with two parts:
 
 1. **Work summary** — the Part-1 status buckets, terse (one bullet per
    intent item, anomalies first — same brevity discipline as the default
    report).
 
-2. **`/clear` vs. `/compact` recommendation** — apply the heuristic:
-   - Recommend **`/clear`** when everything important is *durably captured*
-     — in git, PRs, GitHub issues, or the memory file you just wrote.
-     Nothing load-bearing is context-only. `/clear` is the clean reset.
-   - Recommend **`/compact`** when something important still lives only in
-     conversation context and could not be fully externalized (e.g. a
-     subtle in-progress debugging thread, an un-externalizable judgment).
-   State which one and why in one line.
+2. **Copy-paste kickoff prompt** — a literal-`―――`-bracketed block the
+   user can paste into a fresh post-`/clear` session. It points at the
+   memory file by path and previews the next step in one line — nothing
+   else. The memory file's `## Resume protocol` section carries the
+   binding rule and resume context; the prompt MUST NOT duplicate them.
 
-3. **Copy-paste kickoff prompt** — a fenced block the user can paste into a
-   fresh post-`/clear` session. It MUST: point at the memory file by path,
-   state the immediate next goal in one sentence, and name the key
-   resume-context (branch/PR/plan/files). Keep it self-contained — assume
-   the reader has zero conversation context.
+   **Block delimitation.** The kickoff block is bracketed by literal
+   Unicode horizontal bars (`―――`, three U+2015 characters) above and
+   below — NOT markdown thematic-break syntax (`---`, `***`, `___`).
+   All three thematic-break markers render as the same `<hr>` element, a
+   block-level divider that does not provide tight visual bracketing.
+   Literal `―――` is plain text, never parsed, and hugs the content the
+   way the spec requires. **No code fence around the prompt** — the bars
+   ARE the delimiter; nesting a triple-backtick fence is redundant and
+   styles the prompt as monospace, which isn't wanted.
 
-   ````markdown
+   The bars are tight against the content inside (the label
+   `Paste below into a fresh session after /clear:` hugs the opening
+   bar with no blank line between them; the last prompt line hugs the
+   closing bar). The only blank lines are OUTSIDE the bars — one above
+   the opening bar (separating it from any closing prose above), one
+   below the closing bar (separating it from any continuing agent
+   message below), and one inside between the label and the prompt
+   content.
+
+   Concretely the emitted block looks like:
+
    ```
-   Read <memory-file-path> for the hand-off. Immediate goal: <one sentence>.
-   Resume context: branch <X>, PR #<N>, plan <path>. Start by <first step>.
+   [closing agent prose, if any]
+
+   ―――
+   Paste below into a fresh session after /clear:
+
+   Read <memory-file-path> for the hand-off. The `## Resume protocol`
+   section is binding instructions, not background.
+
+   Next step: <one-line preview matching the memory file's Next step>.
+   ―――
+
+   [agent's continuing message, if any]
    ```
-   ````
+
+   The `binding instructions, not background` sentence is load-bearing
+   — without it a fresh agent might treat the protocol section as
+   backstory rather than enforceable rules. The blank line + `Next
+   step:` on its own line is so the user can verify the goal at a
+   glance before pasting.
 
 ## Rules for handoff mode
 

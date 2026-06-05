@@ -348,6 +348,26 @@ if [ -d ".claude/skills/cleanup-merged" ]; then
     "diff -q 'skills/cleanup-merged/SKILL.md' '.claude/skills/cleanup-merged/SKILL.md' >/dev/null"
 fi
 
+# Issue #1114: /session-report handoff redesign — the 3 load-bearing prose
+# anchors that keep fresh-agent sessions from promoting unanswered
+# questions into committed actions. Each anchor closes a specific drift:
+# the binding-instructions sentence stops kickoffs from reading the
+# protocol section as backstory; the `## Resume protocol` header keeps
+# the memory file template from regressing to inline Goal: framing; and
+# the principle-first Rule substring keeps the state-changing gate from
+# being narrowed back to a fixed enumeration.
+SR_HANDOFF="skills/session-report/modes/handoff.md"
+check "session-report #1114: binding-instructions sentence (Part 4 kickoff)" \
+  "grep -q 'binding instructions, not background' '$SR_HANDOFF'"
+check "session-report #1114: '## Resume protocol' header in memory template (Part 3)" \
+  "grep -q '## Resume protocol' '$SR_HANDOFF'"
+check "session-report #1114: principle-first Rule wording (state-changing gate)" \
+  "grep -q 'anything that changes state' '$SR_HANDOFF'"
+if [ -d ".claude/skills/session-report" ]; then
+  check "mirror sync: session-report/modes/handoff.md" \
+    "diff -q 'skills/session-report/modes/handoff.md' '.claude/skills/session-report/modes/handoff.md' >/dev/null"
+fi
+
 # Tier-1 drift invariant (Phase E of 2026-05-01 recovery): every Tier-1
 # script's CURRENT blob hash must be in
 # `skills/update-zskills/references/tier1-shipped-hashes.txt`. Trivial
