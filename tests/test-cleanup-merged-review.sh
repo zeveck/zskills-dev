@@ -110,11 +110,15 @@ else
   fail "mirror directory .claude/skills/cleanup-merged absent"
 fi
 
-# 10. Preview/apply output strings preserved
-if grep -q 'WOULD-DELETE' "$SKILL" && grep -q 'WOULD-REMOVE-WORKTREE' "$SKILL"; then
-  pass "preview output strings preserved (WOULD-DELETE, WOULD-REMOVE-WORKTREE)"
+# 10. Preview output (#1113 redesign): grouped headers + suffix tokens
+# replace the legacy per-line WOULD-DELETE / WOULD-REMOVE-WORKTREE prints.
+# Verify the new shape is present (header pattern + at least one suffix).
+if grep -q ' to delete (PR merged):' "$SKILL" \
+   && grep -q 'and worktree' "$SKILL" \
+   && grep -q 'has worktree' "$SKILL"; then
+  pass "preview output: #1113 grouped headers + worktree suffix tokens present"
 else
-  fail "preview output strings regressed"
+  fail "preview output: #1113 grouped output regressed"
 fi
 
 # 11. Schema: cleanup.protected_branches field
@@ -155,11 +159,13 @@ else
   fail "apply command hint missing in preview summary"
 fi
 
-# 16. WOULD-DELETE-REMOTE for remote preview
-if grep -q 'WOULD-DELETE-REMOTE' "$SKILL"; then
-  pass "WOULD-DELETE-REMOTE output string present"
+# 16. Remote preview (#1113 redesign): grouped "Remote — N to delete
+# (PR merged):" header replaces the legacy per-line WOULD-DELETE-REMOTE.
+if grep -q 'Remote — ' "$SKILL" \
+   && grep -q ' to delete (PR merged):' "$SKILL"; then
+  pass "remote preview: #1113 grouped header present"
 else
-  fail "WOULD-DELETE-REMOTE output string missing"
+  fail "remote preview: #1113 grouped header missing"
 fi
 
 # 17. DELETED-REMOTE for remote apply

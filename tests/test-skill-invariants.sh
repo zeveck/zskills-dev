@@ -319,6 +319,29 @@ check "cleanup-merged: MAIN_ROOT comparison guard" \
   "grep -q 'MAIN_ROOT' '$CM_SRC'"
 check "cleanup-merged: #816 -d → -D escalation block" \
   "grep -q 'escalated -d → -D after upstream-divergence refusal' '$CM_SRC'"
+
+# Issue #1113: /cleanup-merged preview output redesign — grouped output
+# replaces per-line WOULD-DELETE. Pin (1) the grouped-section headers,
+# (2) the plain-English suffix tokens, (3) the new Summary block.
+# These are presentation-layer assertions; the per-branch classification
+# logic is covered by test-cleanup-merged-namelist.sh + test-cleanup-merged-
+# ahead-gate.sh.
+check "cleanup-merged #1113: 'Local — N to delete (PR merged):' header" \
+  "grep -q ' to delete (PR merged):' '$CM_SRC'"
+check "cleanup-merged #1113: 'preserved (not merged):' header" \
+  "grep -q ' preserved (not merged):' '$CM_SRC'"
+check "cleanup-merged #1113: suffix token 'and worktree'" \
+  "grep -q 'and worktree' '$CM_SRC'"
+check "cleanup-merged #1113: suffix token 'has worktree'" \
+  "grep -q 'has worktree' '$CM_SRC'"
+check "cleanup-merged #1113: suffix token 'closed PR'" \
+  "grep -q 'closed PR' '$CM_SRC'"
+check "cleanup-merged #1113: suffix token 'no PR'" \
+  "grep -q '\"no PR\"' '$CM_SRC'"
+check "cleanup-merged #1113: 'Summary:' block header" \
+  "grep -q '^  echo \"Summary:\"' '$CM_SRC'"
+check "cleanup-merged #1113: '(N with worktrees)' parenthetical" \
+  "grep -q 'with worktrees' '$CM_SRC'"
 # Mirror the source too, so drift is caught immediately.
 if [ -d ".claude/skills/cleanup-merged" ]; then
   check "mirror sync: cleanup-merged" \
