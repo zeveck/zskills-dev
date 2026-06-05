@@ -421,7 +421,10 @@ Six skills take `every SCHEDULE` — `/briefing`, `/do`, `/fix-issues`,
 - The schedule is **session-scoped** — it ends when the session does.
 - `<skill> stop` cancels the cron; `<skill> next` shows its next fire time.
 - For unattended runs, set `logging.dir` so you have a transcript to review
-  afterward — see [Inspecting & monitoring](inspecting-and-monitoring.md).
+  afterward — see [Inspecting & monitoring](inspecting-and-monitoring.md). On a
+  shared mount written by several developers, also set `include_user: true` (and
+  relax `file_mode`, POSIX-only) so each developer's logs separate cleanly into
+  `<base>/<repo>/<user>/` — see [Configuring zskills](zskills-config.md#shared-mount-recipe).
 
 ---
 

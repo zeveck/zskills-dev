@@ -299,17 +299,38 @@ sessions" into something you can read after the fact. Two config keys control it
 
 - `logging.enabled` (**default `false`** — opt-in) — the master switch; set it
   `true` to turn session logging on. When off or absent, both hooks no-op.
-- `logging.dir` — where logs land. Left empty they go to a per-OS cache directory
-  keyed by project name (e.g. `~/.cache/zskills-session-logs/<project>` on Linux),
-  and the hook records that path in the **main checkout's**
-  `.zskills/session-log-dirs` (newest last — one registry shared by all the
-  repo's worktrees) so you can always find where it logged. Point it at a stable
-  **absolute** path to keep a durable trail you can `cat` later.
+- `logging.dir` — the **base** directory. Left empty it goes to a per-OS cache
+  base (e.g. `~/.cache/zskills-session-logs` on Linux). The base is then composed
+  with the optional `<repo>`/`<user>` segments, and the hook records the final
+  path in the **main checkout's** `.zskills/session-log-dirs` (newest last — one
+  registry shared by all the repo's worktrees) so you can always find where it
+  logged. Point it at a stable **absolute** path to keep a durable trail you can
+  `cat` later.
+- `logging.include_repo` (default `true`) / `logging.include_user` (default
+  `false`) — compose the final path as
+  `<base>/[<repo>]/[<user>]/<session>.md`. `<repo>` is the project basename;
+  `<user>` is resolved at runtime (`ZSKILLS_LOG_USER` > `git config user.email`
+  > OS login > `unknown`). With the defaults the path is byte-identical to a
+  single per-project directory.
+- `logging.file_mode` (default `"0600"`, POSIX-only) — the octal mode for log
+  files + sidecars (dir mode is derived: `0660→0770`, `0640→0750`, `0600→0700`).
 
 Because it captures the permission requests too, this is a useful monitoring and
 audit record for unattended (`auto` / scheduled) runs — turn it on
 (`logging.enabled: true`) and point `logging.dir` somewhere persistent before you
 walk away.
+
+**Shared mount (NFS/SMB).** To collect logs from multiple developers + repos
+into one mount, set `logging.dir` to the share, `include_repo: true`,
+`include_user: true`, and relax `file_mode` (e.g. `"0660"`) so an authorized
+group can read/write:
+
+- **POSIX**: zskills sets mode bits only — the admin owns group ownership +
+  inheritance: `chgrp -R <group> <dir> && chmod -R g+rws <dir>` (the setgid `s`
+  makes new files inherit the group). Relaxing `file_mode` exposes logs (which
+  may contain `cat`-ed credentials) to the group, so opt in deliberately.
+- **Windows/SMB**: `file_mode` is a no-op; access is governed by the share's
+  NTFS/SMB ACLs the admin sets. The `<repo>`/`<user>` composition still applies.
 
 ---
 

@@ -46,9 +46,13 @@ trap cleanup EXIT
 PROJ="$WORK/proj"
 mkdir -p "$PROJ/.claude"
 # Session logging is OFF by default (absent logging.enabled => off), so the
-# renderer-positive cases (1, 3, 5, 6) MUST opt in explicitly. The
-# absent-field default is asserted separately in Case 4b/4c.
-echo '{"logging":{"enabled":true}}' > "$PROJ/.claude/zskills-config.json"
+# renderer-positive cases (1, 3, 5, 6) MUST opt in explicitly. They also pin
+# include_repo:false so ZSKILLS_LOG_DIR stays FLAT (no <repo> segment), which
+# keeps these orthogonal rendering/passivity/mode cases independent of the
+# path-composition feature (exercised separately in Cases 13-15). The
+# composition defaults (include_repo:true) are exercised by Cases 7/12/13.
+# The absent-field default is asserted separately in Case 4b/4c.
+echo '{"logging":{"enabled":true,"include_repo":false}}' > "$PROJ/.claude/zskills-config.json"
 
 # Synthetic transcript: user @00, assistant+tool @05, tool_result @08,
 # assistant @10. A permission event at @07 (between @05 and @08) is used in
@@ -273,32 +277,34 @@ fi
 
 # ──────────────────────────────────────────────────────────────────────────
 echo ""
-echo "=== Case 6 — log files are written mode 0o600 (not world-readable) ==="
+echo "=== Case 6 — log files honor file_mode (default 0o600; configurable) ==="
 # Security (issue #1055): session transcripts capture verbatim user prompts
 # and Bash tool I/O (incl. any cat-ed credential); on a shared /tmp a 0o644
-# file leaks them to every local user. The hooks set os.umask(0o077) at the
-# top of main() so the .tmp + final markdown + sidecar all land 0o600. We
-# run the hooks under a DELIBERATELY relaxed umask (022) so that WITHOUT the
-# fix the resulting files would be 0o644 — these assertions fail against the
-# pre-fix behavior.
+# file leaks them to every local user. The hooks derive the umask from
+# file_mode (umask = 0o777 & ~dir_mode) so the .tmp + final markdown + sidecar
+# all land at exactly file_mode, and created dirs land at the derived dir mode.
+# DEFAULT file_mode is "0600" (secure-by-default preserved). We run the hooks
+# under a DELIBERATELY relaxed umask (022) so that WITHOUT the fix the files
+# would be 0o644 — these assertions fail against the pre-fix behavior. A
+# configured file_mode (e.g. 0640) is exercised in Case 6d/6e.
 mode_of() { stat -c '%a' "$1" 2>/dev/null; }
 
 LOGD6="$WORK/logs6"
 SID6="sec00mode"
-# Stop hook -> final markdown.
+# Stop hook -> final markdown (default file_mode 0600 via $PROJ config).
 ( umask 022
   echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SID6\",\"transcript_path\":\"$TR\"}" | \
     ZSKILLS_LOG_DIR="$LOGD6" CLAUDE_PROJECT_DIR="$PROJ" TZ=UTC bash "$STOP_HOOK" )
 MD6="$LOGD6/2026-06-03-1200-${SID6:0:8}.md"
 if [ -f "$MD6" ]; then
   m="$(mode_of "$MD6")"
-  [ "$m" = "600" ] && pass "6a. Stop markdown is mode 0o600 ($m)" \
+  [ "$m" = "600" ] && pass "6a. Stop markdown defaults to mode 0o600 ($m)" \
     || fail "6a. Stop markdown mode 0o600" "got $m (world/group-readable leak)"
 else
   fail "6a. Stop markdown mode 0o600" "no markdown at $MD6"
 fi
 
-# Permission hook -> sidecar.
+# Permission hook -> sidecar (default file_mode 0600).
 LOGD6P="$WORK/logs6p"
 SID6P="sec00perm"
 ( umask 022
@@ -307,38 +313,78 @@ SID6P="sec00perm"
 SIDECAR6="$LOGD6P/permissions-$SID6P.jsonl"
 if [ -f "$SIDECAR6" ]; then
   m="$(mode_of "$SIDECAR6")"
-  [ "$m" = "600" ] && pass "6b. permission sidecar is mode 0o600 ($m)" \
+  [ "$m" = "600" ] && pass "6b. permission sidecar defaults to mode 0o600 ($m)" \
     || fail "6b. permission sidecar mode 0o600" "got $m (world/group-readable leak)"
 else
   fail "6b. permission sidecar mode 0o600" "no sidecar at $SIDECAR6"
 fi
 
-# Tmp-window race: the .tmp is created with the same umask as the final
-# file, so its in-flight mode is also 0o600. We can't reliably catch it
-# mid-write from a shell, but we CAN confirm no 0o644 .tmp residue would be
-# left behind on a write failure. Force a failure by pointing at a transcript
-# whose log dir is read-only AFTER creation is not portable; instead assert
-# the invariant directly: with the umask fix, a freshly created file in the
-# same dir under umask 022 is 0o600 (the same code path the .tmp uses).
+# Tmp-window race: the .tmp is created with the same umask as the final file,
+# so its in-flight mode is also file_mode. We can't reliably catch it
+# mid-write from a shell, but we CAN assert the invariant directly: with the
+# default file_mode the derived dir mode is 0o700 and umask = 0o777 & ~0o700
+# = 0o077, so a freshly created file under umask 022 lands 0o600 (the same
+# code path the .tmp uses).
 LOGD6T="$WORK/logs6t"
 mkdir -p "$LOGD6T"
 probe="$LOGD6T/.umask-probe"
 ( umask 022
   ZSKILLS_PROJECT_DIR="$PROJ" "$PYTHON" - "$probe" <<'PYPROBE'
 import os, sys
-# Mirror the hooks' first action: umask(0o077) before any creation, then
-# create a file the same way the .tmp write does (plain open for write).
-os.umask(0o077)
+# Mirror the hooks: derive umask from the default file_mode 0o600 (dir mode
+# 0o700 -> umask 0o077) before any creation, then create a file the same way
+# the .tmp write does (plain open for write).
+os.umask(0o777 & ~0o700)
 with open(sys.argv[1], "w") as f:
     f.write("x")
 PYPROBE
 )
 if [ -f "$probe" ]; then
   m="$(mode_of "$probe")"
-  [ "$m" = "600" ] && pass "6c. tmp-window write path yields 0o600 under umask(0o077) ($m)" \
+  [ "$m" = "600" ] && pass "6c. tmp-window write path yields 0o600 under default file_mode ($m)" \
     || fail "6c. tmp-window mode 0o600" "got $m"
 else
   fail "6c. tmp-window mode 0o600" "probe not created"
+fi
+
+# Configured file_mode 0640 -> markdown/sidecar 0o640, created dir 0o750
+# (derived: read/write triads gain the exec/search bit). include_repo:false
+# keeps the path flat so we assert the exact log-dir mode.
+PROJ_MODE="$WORK/proj-mode"
+mkdir -p "$PROJ_MODE/.claude"
+echo '{"logging":{"enabled":true,"include_repo":false,"file_mode":"0640"}}' \
+  > "$PROJ_MODE/.claude/zskills-config.json"
+LOGD6M="$WORK/logs6m"
+SID6M="sec64mode"
+( umask 022
+  echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SID6M\",\"transcript_path\":\"$TR\"}" | \
+    ZSKILLS_LOG_DIR="$LOGD6M" CLAUDE_PROJECT_DIR="$PROJ_MODE" TZ=UTC bash "$STOP_HOOK" )
+MD6M="$LOGD6M/2026-06-03-1200-${SID6M:0:8}.md"
+if [ -f "$MD6M" ]; then
+  m="$(mode_of "$MD6M")"
+  dm="$(mode_of "$LOGD6M")"
+  [ "$m" = "640" ] && pass "6d. configured file_mode 0640 -> markdown 0o640 ($m)" \
+    || fail "6d. configured file_mode markdown" "got $m want 640"
+  [ "$dm" = "750" ] && pass "6e. derived dir mode is 0o750 for file_mode 0640 ($dm)" \
+    || fail "6e. derived dir mode 0750" "got $dm want 750"
+else
+  fail "6d. configured file_mode markdown" "no markdown at $MD6M"
+  fail "6e. derived dir mode 0750" "no markdown at $MD6M"
+fi
+
+# The registry stays 0o600 even when file_mode is relaxed (it lives on the
+# local checkout, never the shared mount).
+( cd "$PROJ_MODE" && git init -q . ) 2>/dev/null
+( umask 022
+  echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"sec64reg\",\"transcript_path\":\"$TR\"}" | \
+    ZSKILLS_LOG_DIR="$LOGD6M" CLAUDE_PROJECT_DIR="$PROJ_MODE" TZ=UTC bash "$STOP_HOOK" )
+REG6M="$PROJ_MODE/.zskills/session-log-dirs"
+if [ -f "$REG6M" ]; then
+  rm6="$(mode_of "$REG6M")"
+  [ "$rm6" = "600" ] && pass "6f. registry stays 0o600 even with relaxed file_mode ($rm6)" \
+    || fail "6f. registry mode 0600" "got $rm6 want 600"
+else
+  fail "6f. registry mode 0600" "no registry at $REG6M"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -530,19 +576,34 @@ echo "=== Case 11 — per-OS cache default (mocked platform + env) ==="
 # overriding platform.system() and the relevant env. We drive the exact
 # default_cache_dir() logic the hooks + helper share.
 osprobe() {
-  # $1 = platform.system() return; remaining env passed by caller.
+  # $1 = platform.system() return; remaining env passed by caller. Mirrors
+  # the refactored composition: default_cache_base() (NO <repo>) then the
+  # include_repo:true composition step that appends the <repo> segment, so
+  # the default-mode path is byte-identical to today.
   local sysname="$1"; shift
   "$PYTHON" - "$sysname" <<'PYOS'
 import os, platform, sys
 sysname = sys.argv[1]
 platform.system = lambda: sysname  # mock
 
+def sanitize_segment(seg):
+    if not seg:
+        return "unknown"
+    bad = set(os.sep) | {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+    out = []
+    for ch in seg:
+        if ch in bad or ch.isspace():
+            out.append("_")
+        else:
+            out.append(ch)
+    result = "".join(out).strip(". ")
+    return result or "unknown"
+
 def project_base(project_dir):
     base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    return base.replace(os.sep, "_").replace("/", "_")
+    return sanitize_segment(base)
 
-def default_cache_dir(project_dir):
-    base = project_base(project_dir)
+def default_cache_base(project_dir):
     system = platform.system()
     if system == "Windows":
         root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -551,21 +612,23 @@ def default_cache_dir(project_dir):
     else:
         root = (os.environ.get("XDG_CACHE_HOME")
                 or os.path.join(os.path.expanduser("~"), ".cache"))
-    return os.path.join(root, "zskills-session-logs", base)
+    return os.path.join(root, "zskills-session-logs")
 
-print(default_cache_dir("/some/where/myproj"))
+# include_repo:true (default) composition: base + <repo>.
+pd = "/some/where/myproj"
+print(os.path.join(default_cache_base(pd), project_base(pd)))
 PYOS
 }
-# Sanity: the mocked default_cache_dir() above must byte-match the one
+# Sanity: the mocked default_cache_base() above must byte-match the one
 # embedded in BOTH the source hook and the helper (guards against drift).
 for f in "$STOP_HOOK" "$PERM_HOOK" "$HELPER"; do
-  if grep -q 'def default_cache_dir(project_dir):' "$f" \
+  if grep -q 'def default_cache_base(project_dir):' "$f" \
      && grep -q 'Library", "Caches"' "$f" \
      && grep -q 'LOCALAPPDATA' "$f" \
      && grep -q 'XDG_CACHE_HOME' "$f"; then
-    pass "11-pre. $(basename "$f") embeds the shared default_cache_dir() branches"
+    pass "11-pre. $(basename "$f") embeds the shared default_cache_base() branches"
   else
-    fail "11-pre. shared default_cache_dir" "$(basename "$f") missing a branch"
+    fail "11-pre. shared default_cache_base" "$(basename "$f") missing a branch"
   fi
 done
 # Linux: XDG_CACHE_HOME honored. (Run each probe in a subshell so env
@@ -608,10 +671,145 @@ if [ "$na_dir" = "$WORK/na-xdg/zskills-session-logs/naproj" ]; then
 else
   fail "12a. registry-absent fallback" "got $na_dir"
 fi
-# Env override still wins even with no registry.
+# Env override still wins even with no registry. NA_PROJ config is {} so
+# include_repo defaults to true -> the env base is COMPOSED with the <repo>
+# segment (naproj), matching what the hooks would write.
 na_env="$(ZSKILLS_LOG_DIR="$WORK/na-env" CLAUDE_PROJECT_DIR="$NA_PROJ" bash "$HELPER")"
-[ "$na_env" = "$WORK/na-env" ] && pass "12b. ZSKILLS_LOG_DIR wins with no registry" \
-  || fail "12b. env override no-registry" "got $na_env"
+[ "$na_env" = "$WORK/na-env/naproj" ] && pass "12b. ZSKILLS_LOG_DIR (composed) wins with no registry" \
+  || fail "12b. env override no-registry" "got $na_env want $WORK/na-env/naproj"
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 13 — path composition: <base>/[<repo>]/[<user>] ==="
+# 13a. include_repo:true (default) appends the <repo> segment to the env
+# base, and the helper round-trips to the SAME composed dir the Stop hook
+# wrote to (writer<->reader agreement).
+COMP_PROJ="$WORK/comp-proj"
+mkdir -p "$COMP_PROJ/.claude"
+echo '{"logging":{"enabled":true}}' > "$COMP_PROJ/.claude/zskills-config.json"
+( cd "$COMP_PROJ" && git init -q . && git config user.email dev@example.com )
+COMP_BASE="$WORK/comp-base"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"comp0001\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$COMP_BASE" CLAUDE_PROJECT_DIR="$COMP_PROJ" TZ=UTC bash "$STOP_HOOK"
+if [ -f "$COMP_BASE/comp-proj/2026-06-03-1200-comp0001.md" ]; then
+  pass "13a. include_repo:true writes to <base>/<repo>/"
+else
+  fail "13a. include_repo:true <base>/<repo>" "ls: $(find "$COMP_BASE" -name '*.md' 2>/dev/null)"
+fi
+comp_read="$(ZSKILLS_LOG_DIR="$COMP_BASE" CLAUDE_PROJECT_DIR="$COMP_PROJ" bash "$HELPER")"
+[ "$comp_read" = "$COMP_BASE/comp-proj" ] \
+  && pass "13b. helper resolves the SAME composed <base>/<repo> dir (writer<->reader)" \
+  || fail "13b. helper composed dir" "got [$comp_read] want [$COMP_BASE/comp-proj]"
+
+# 13c. include_repo:false -> flat <base>/ (today's dir-mode behavior).
+FLAT_PROJ="$WORK/flat-proj"
+mkdir -p "$FLAT_PROJ/.claude"
+echo '{"logging":{"enabled":true,"include_repo":false}}' > "$FLAT_PROJ/.claude/zskills-config.json"
+FLAT_BASE="$WORK/flat-base"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"flat0001\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$FLAT_BASE" CLAUDE_PROJECT_DIR="$FLAT_PROJ" TZ=UTC bash "$STOP_HOOK"
+if [ -f "$FLAT_BASE/2026-06-03-1200-flat0001.md" ] \
+   && [ ! -d "$FLAT_BASE/flat-proj" ]; then
+  pass "13c. include_repo:false writes FLAT to <base>/ (no <repo> segment)"
+else
+  fail "13c. include_repo:false flat" "ls: $(find "$FLAT_BASE" -name '*.md' 2>/dev/null)"
+fi
+
+# 13d. include_user:true -> <base>/<repo>/<user>/. ZSKILLS_LOG_USER pins the
+# user segment deterministically.
+USR_PROJ="$WORK/usr-proj"
+mkdir -p "$USR_PROJ/.claude"
+echo '{"logging":{"enabled":true,"include_user":true}}' > "$USR_PROJ/.claude/zskills-config.json"
+USR_BASE="$WORK/usr-base"
+echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"usr00001\",\"transcript_path\":\"$TR\"}" | \
+  ZSKILLS_LOG_DIR="$USR_BASE" ZSKILLS_LOG_USER="alice" \
+  CLAUDE_PROJECT_DIR="$USR_PROJ" TZ=UTC bash "$STOP_HOOK"
+if [ -f "$USR_BASE/usr-proj/alice/2026-06-03-1200-usr00001.md" ]; then
+  pass "13d. include_user:true writes to <base>/<repo>/<user>/"
+else
+  fail "13d. include_user:true <base>/<repo>/<user>" "ls: $(find "$USR_BASE" -name '*.md' 2>/dev/null)"
+fi
+usr_read="$(ZSKILLS_LOG_DIR="$USR_BASE" ZSKILLS_LOG_USER="alice" \
+  CLAUDE_PROJECT_DIR="$USR_PROJ" bash "$HELPER")"
+[ "$usr_read" = "$USR_BASE/usr-proj/alice" ] \
+  && pass "13e. helper resolves <base>/<repo>/<user> with include_user:true" \
+  || fail "13e. helper user-composed dir" "got [$usr_read] want [$USR_BASE/usr-proj/alice]"
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Case 14 — resolve_user() precedence + sanitization ==="
+# Drive the shared resolve_user() exactly as the hooks/helper embed it, with
+# a mocked git config user.email, to assert precedence and sanitization.
+userprobe() {
+  # $1=ZSKILLS_LOG_USER (may be empty), $2=git-email-mock (may be empty).
+  "$PYTHON" - "$1" "$2" <<'PYUSER'
+import os, sys, subprocess
+env_user = sys.argv[1]
+git_email = sys.argv[2]
+if env_user:
+    os.environ["ZSKILLS_LOG_USER"] = env_user
+else:
+    os.environ.pop("ZSKILLS_LOG_USER", None)
+
+# Mock the git subprocess to return the supplied email (or fail).
+class _Res:
+    def __init__(self, rc, out):
+        self.returncode = rc
+        self.stdout = out
+def _fake_run(cmd, **kw):
+    if git_email:
+        return _Res(0, git_email + "\n")
+    return _Res(1, "")
+subprocess.run = _fake_run
+
+def sanitize_segment(seg):
+    if not seg:
+        return "unknown"
+    bad = set(os.sep) | {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+    out = []
+    for ch in seg:
+        if ch in bad or ch.isspace():
+            out.append("_")
+        else:
+            out.append(ch)
+    result = "".join(out).strip(". ")
+    return result or "unknown"
+
+def resolve_user():
+    user = os.environ.get("ZSKILLS_LOG_USER", "")
+    if not user:
+        try:
+            out = subprocess.run(
+                ["git", "config", "user.email"],
+                capture_output=True, text=True, timeout=5)
+            if out.returncode == 0:
+                user = out.stdout.strip()
+        except Exception:
+            user = ""
+    if not user:
+        try:
+            import getpass
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+    return sanitize_segment(user)
+
+print(resolve_user())
+PYUSER
+}
+# 14a. ZSKILLS_LOG_USER overrides git email.
+got="$(userprobe "envuser" "git@example.com")"
+[ "$got" = "envuser" ] && pass "14a. ZSKILLS_LOG_USER overrides git email ($got)" \
+  || fail "14a. env overrides git" "got $got"
+# 14b. git email used when no env override; sanitized (@ and . kept, but
+# the segment is a single safe token).
+got="$(userprobe "" "dev@example.com")"
+[ "$got" = "dev@example.com" ] && pass "14b. git email used when no env override ($got)" \
+  || fail "14b. git email fallback" "got $got"
+# 14c. sanitization replaces path separators / reserved chars with _.
+got="$(userprobe 'a/b c:d' '')"
+[ "$got" = "a_b_c_d" ] && pass "14c. unsafe chars sanitized to _ ($got)" \
+  || fail "14c. sanitization" "got $got"
 
 echo ""
 echo "---"

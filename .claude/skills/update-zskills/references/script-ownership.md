@@ -48,7 +48,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `re-invocation-detect.sh`    | 1      | `draft-tests`                |
 | `review-loop.sh`             | 1      | `draft-tests`                |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
-| `session-logs.sh`            | 1      | `update-zskills`             |
+| `session-logs.sh`            | 1      | `update-zskills` (reader half of the session-log resolver; the `<base>/[<repo>]/[<user>]` composition + `resolve_user()` + per-OS cache base are duplicated VERBATIM from `hooks/log-session-stop.sh` / `hooks/log-permission-request.sh` per issue #1059 and MUST stay in agreement) |
 | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
 | `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `.zskills/dev-server.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
 | `sync-pr-body-progress.sh`   | 1      | `run-plan`                   |
