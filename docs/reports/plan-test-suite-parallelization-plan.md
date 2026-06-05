@@ -1,5 +1,29 @@
 # Plan Report — Test Suite Parallelization & Isolation
 
+## Phase — 2 Targeted isolation
+
+**Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-test-suite-parallelization-plan (branch feat/test-suite-parallelization-plan)
+**Commits:** 3a2de15 (isolation), + tracker/report
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `test-apply-preset.sh` → per-suite `$(mktemp -d)` scratch + EXIT-trap | Done | 3a2de15 |
+| 2 | `test-update-zskills-paths-migration.sh` → `TEST_OUT=$(mktemp -d)` + EXIT-trap | Done | 3a2de15 |
+| 3 | Confirm per-suite TMPDIR injection is Phase-4's responsibility | Confirmed (not built) | — |
+
+### Verification (independent verifier agent: VERDICT PASS)
+- **Isolation-only:** assertion call-site counts byte-identical to HEAD per file (apply-preset pass 18/fail 17; migration pass 75/fail 103). No assertion added/removed/changed.
+- **Counts unchanged:** apply-preset 18/0; paths-migration 74/0.
+- **Concurrency AC:** two concurrent copies of EACH suite with distinct injected TMPDIR → all four runs 0-failed, no cross-collision (proves `mktemp -d` honors `$TMPDIR`).
+- **No leftover collision paths:** `/tmp/zskills-apply-test` and `/tmp/zskills-tests/` literals gone; no `$$`-based scheme introduced.
+- **Gate B — `bash tests/run-all.sh`:** **Overall 7576/7576, 0 failed** (unchanged from post-1b — isolation-only).
+
+### Scope
+2 files: `tests/test-apply-preset.sh`, `tests/test-update-zskills-paths-migration.sh`.
+
 ## Phase — 1b Relocate test-hooks sections into independent sub-suites
 
 **Plan:** docs/plans/TEST_SUITE_PARALLELIZATION_PLAN.md
