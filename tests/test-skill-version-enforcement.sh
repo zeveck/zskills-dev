@@ -357,6 +357,32 @@ else
   fail "case 12: expected WARN, got: $output"
 fi
 
+# Case 12b: $FILE_PATH fed as a WINDOWS-NATIVE backslash path → normalises
+# and warns. On a Windows (MSYS / Git-Bash) consumer the Edit/Write tool
+# passes a backslash path; pre-fix the Branch-2/3 anchor
+# `(^|/)(skills|block-diagram)/` and the realpath/prefix-strip staged-file
+# gate all silently miss it (a `\skills\` path doesn't match `/skills/`), so
+# the WARN never fires. The hook now normalises $FILE_PATH through
+# zskills_normalize_tool_path BEFORE Branch 1, so the staged-file gate fires.
+#
+# LINUX-REPRODUCIBILITY: a faithful drive-letter case (`D:\…`) is proven by
+# tests/test-normalize-tool-path.sh (cygpath absent on Linux → that suite
+# exercises the exact Windows fallback). HERE we use a backslash-separator
+# tail on the real POSIX sandbox root — the Git-Bash-under-MAIN_ROOT shape —
+# which faithfully drives the in-hook normalisation on Linux.
+case_no="12b"
+sandbox=$(make_sandbox "$case_no")
+echo "Edited body." >> "$sandbox/skills/foo/SKILL.md"
+(cd "$sandbox" && git add skills/foo/SKILL.md)
+# Backslash separators in the tail under the (POSIX) sandbox root.
+backslash_path="$sandbox/skills\\foo\\SKILL.md"
+output=$(run_hook "$sandbox" "$backslash_path")
+if [[ "$output" == *"WARN:"* ]] && [[ "$output" == *"content changed"* ]]; then
+  pass "case 12b: Windows backslash \$FILE_PATH normalises and warns (staged-gate fires)"
+else
+  fail "case 12b: expected WARN (Windows backslash path), got: $output"
+fi
+
 # ----------------------------------------------------------------------
 # STAGE-CHECK TESTS — scripts/skill-version-stage-check.sh.
 # ----------------------------------------------------------------------

@@ -246,6 +246,43 @@ else
   fail "C18a: STOP message recommends /do pr (issue #398)" "envelope=$HOOK_OUT"
 fi
 
+# ── Windows-native-path normalisation (MSYS / Git-Bash consumer) ──────────
+# On a Windows consumer the Edit/Write tool passes a backslash / drive-letter
+# path. The hook now normalises $FILE_PATH through zskills_normalize_tool_path
+# BEFORE the `case in /*)` classifier, so containment + the `.zskills/*`
+# carve-out match on a POSIX form.
+#
+# LINUX-REPRODUCIBILITY NOTE: a faithful drive-letter case (file_path =
+# `D:\proj\.zskills\x` with MAIN_ROOT = `D:\proj`) is NOT constructible on
+# Linux — the hook computes MAIN_ROOT via `cd "$MAIN_ROOT" && pwd -P`, and a
+# `D:\...` dir cannot be `cd`-ed into on a POSIX host. The drive-letter
+# transform itself is proven directly by tests/test-normalize-tool-path.sh
+# (cygpath is absent on Linux CI → that suite exercises the exact Windows
+# fallback logic). HERE we exercise the in-hook normalisation faithfully on
+# Linux by feeding a file_path whose RELATIVE TAIL uses backslash separators
+# (the form Git-Bash emits under MAIN_ROOT) — proving the hook converts the
+# separators so the carve-out / deny classification matches. Without the new
+# normalisation these would mis-classify: the backslash carve-out path would
+# FALSE-DENY (REL=`.zskills\audit\r.md` does not match `.zskills/*`).
+
+# ── C19: backslash relative tail under .zskills carve-out → ALLOW ─────────
+# Pre-fix this FALSE-DENIED (the exact issue: gitignored .zskills/ writes
+# blocked on Windows). normalize → `.zskills/audit/r.md` → carve-out matches.
+run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.zskills\\audit\\r.md")"
+assert_allow "C19: Write backslash .zskills\\audit\\r.md → ALLOW (Win carve-out, was false-deny)" "$HOOK_EXIT" "$HOOK_OUT"
+
+# ── C20: backslash worktree-state marker tail → ALLOW (run-dashboard repro) ─
+# Mirrors the issue's `D:\…\.zskills\run-dashboard-start.sh` shape via the
+# Linux-reproducible backslash-tail form.
+run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.zskills\\run-dashboard-start.sh")"
+assert_allow "C20: Write backslash .zskills\\run-dashboard-start.sh → ALLOW (issue repro)" "$HOOK_EXIT" "$HOOK_OUT"
+
+# ── C21: backslash tail to a tracked main file → still DENY ──────────────
+# Normalisation must NOT weaken the gate: a backslash path to a non-carve-out
+# main file (skills/foo/SKILL.md) normalises and is STILL denied.
+run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/skills\\foo\\SKILL.md")"
+assert_deny "C21: Edit backslash skills\\foo\\SKILL.md on main → DENY (gate not weakened)" "$HOOK_OUT"
+
 # ── Summary ──────────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed"

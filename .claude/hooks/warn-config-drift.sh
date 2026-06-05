@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.1
 # warn-config-drift.sh — PostToolUse hook, non-blocking warn.
 #
 # Two responsibilities:
@@ -29,6 +29,50 @@
 # executable line; the shim controls its own exit/return.
 [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
+# Inlined from hooks/_lib/normalize-tool-path.sh (source-of-truth). Drift gate:
+# tests/test-hook-helper-drift.sh. The legacy-mirror copy under .claude/hooks/
+# cannot reach _lib at runtime (.claude/hooks/_lib/ is not mirrored), so the
+# body is pasted in verbatim — mirroring the zskills_resolve_python convention.
+# zskills_normalize_tool_path — echo a POSIX form of "$1".
+#   - cygpath available  → `cygpath -u "$1"` (authoritative on MSYS/Cygwin).
+#   - else pure-bash fallback:
+#       * `^[A-Za-z]:[\\/]` (drive letter + sep) → `/<lowercased-drive>/<rest>`
+#         with every `\` turned into `/` (e.g. `D:\a\b` → `/d/a/b`;
+#         `C:/x` → `/c/x`).
+#       * any stray `\` in a backslash-relative path → `/` (`rel\path` →
+#         `rel/path`).
+#   - A pure-POSIX path (no drive letter, no backslash) passes through
+#     UNCHANGED — guaranteed no-op on Linux/Mac.
+#   - Empty input → empty output.
+# Side-effect free (no globals mutated); safe to call in a command
+# substitution.
+zskills_normalize_tool_path() {
+  local p="$1"
+  [ -n "$p" ] || { printf '%s' ""; return 0; }
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$p"
+    return 0
+  fi
+  # Pure-bash fallback (also the code path exercised on Linux/Mac, where
+  # cygpath is absent — so this is what the unit test verifies).
+  case "$p" in
+    [A-Za-z]:[\\/]*)
+      # Drive-letter absolute: `D:\a\b` or `C:/x`.
+      local drive="${p:0:1}"
+      local rest="${p:2}"
+      drive="$(printf '%s' "$drive" | tr '[:upper:]' '[:lower:]')"
+      rest="${rest//\\//}"
+      printf '%s' "/$drive$rest"
+      ;;
+    *)
+      # No drive letter: convert any stray backslash to forward slash. A
+      # pure-POSIX path (no backslash) is returned byte-for-byte unchanged.
+      printf '%s' "${p//\\//}"
+      ;;
+  esac
+  return 0
+}
+
 set -u
 
 INPUT=$(cat 2>/dev/null) || exit 0
@@ -50,6 +94,18 @@ FILE_PATH=""
 if [[ "$INPUT" =~ \"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
   FILE_PATH="${BASH_REMATCH[1]}"
 fi
+
+# ── Windows-native-path normalisation ─────────────────────────────────────
+# On a Windows (MSYS / Git-Bash) consumer the Edit/Write tool passes a
+# drive-letter / backslash path (e.g. `D:\proj\skills\foo\SKILL.md`). All
+# three branches below classify $FILE_PATH against POSIX `/`-rooted forms:
+# Branch 1 suffix-matches `.claude/zskills-config.json`, Branch 2 anchors on
+# `(^|/)(skills|block-diagram)/`, and Branch 3 derives a repo-relative path via
+# `realpath --relative-to` / prefix-strip — all of which silently fail on a
+# backslash path, so the staged-file gate never fires. Normalise to a POSIX
+# form FIRST so every branch matches on Windows. No-op on Linux/Mac (a
+# pure-POSIX path passes through unchanged).
+FILE_PATH="$(zskills_normalize_tool_path "$FILE_PATH")"
 
 # --- Branch 1: config-file drift ---------------------------------------------
 # Suffix-match: handles absolute, repo-relative, cwd-relative paths.
