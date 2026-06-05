@@ -17,30 +17,32 @@ TOTAL_FAIL=0
 OVERALL_EXIT=0
 
 # ──────────────────────────────────────────────────────────────────────────
-# TEST_SUITE_PARALLELIZATION Phase 4 — bounded-worker PARALLEL fan-out behind
-# the additive ZSKILLS_PARALLEL flag (default serial; byte-identical behavior
-# when unset). DESIGN CHOICE: the fan-out lives IN run-all.sh (NOT a separate
+# TEST_SUITE_PARALLELIZATION Phase 4 — bounded-worker PARALLEL fan-out is the
+# DEFAULT; ZSKILLS_PARALLEL=0 is the opt-OUT to the byte-identical serial
+# reference path. DESIGN CHOICE: the fan-out lives IN run-all.sh (NOT a separate
 # run-all-parallel.sh), per the plan + Critical Invariants — this keeps the
 # literal `run_suite "<name>" "<path>"` registry (the 23-suite self-assert
 # greps + the suite-registry lib's static parse) anchored in ONE file. The
 # registry lines below are UNCHANGED; only the dispatch behavior of run_suite
 # is mode-aware:
 #
-#   • Serial (default, ZSKILLS_PARALLEL unset/0): run_suite runs each suite
-#     inline, accumulating immediately — the original behavior, verbatim.
-#   • Parallel (ZSKILLS_PARALLEL=1): run_suite COLLECTS each (name, script)
-#     into ordered arrays instead of running it. After all the literal
-#     registration lines have executed (collecting the full set, including
-#     the conditional RUN_RACE_TESTS / RUN_E2E `if` blocks and the attended
-#     gate's branch), a driver at the bottom: (a) subtracts the Phase-3
-#     serial bucket, (b) dedupes the live-load double-registration, (c) fans
-#     the remaining POOL out at min(configured, nproc) workers, (d) runs the
-#     serial bucket OUTSIDE the pool, and (e) reports in REGISTERED order.
+#   • Parallel (default, ZSKILLS_PARALLEL unset/1): run_suite COLLECTS each
+#     (name, script) into ordered arrays instead of running it. After all the
+#     literal registration lines have executed (collecting the full set,
+#     including the conditional RUN_RACE_TESTS / RUN_E2E `if` blocks and the
+#     attended gate's branch), a driver at the bottom: (a) subtracts the
+#     Phase-3 serial bucket, (b) dedupes the live-load double-registration,
+#     (c) fans the remaining POOL out at min(configured, nproc) workers, (d)
+#     runs the serial bucket OUTSIDE the pool, and (e) reports in REGISTERED
+#     order.
+#   • Serial (opt-out, ZSKILLS_PARALLEL=0): run_suite runs each suite inline,
+#     accumulating immediately — the original behavior, verbatim. This is the
+#     escape hatch for debugging an interleaved failure.
 #
 # The pool / serial-bucket split + serial-bucket execution reuse the Phase 0
 # + Phase 3 registry helpers (is_serial_suite / serial_run_attended_live_load)
 # from tests/lib/suite-registry.sh — sourced only on the parallel path.
-ZSKILLS_PARALLEL="${ZSKILLS_PARALLEL:-0}"
+ZSKILLS_PARALLEL="${ZSKILLS_PARALLEL:-1}"
 
 # Ordered collection arrays (parallel mode). Index-aligned: REG_NAMES[i] is
 # the display name, REG_SCRIPTS[i] the script path, REG_ATTENDED[i] is 1 iff
