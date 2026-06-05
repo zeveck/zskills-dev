@@ -149,12 +149,55 @@ Consumed (and toggled) by the session-logging hooks.
 | Field | What it does | Default |
 |---|---|---|
 | `logging.enabled` | Master switch — **off by default**; set `true` to opt in. When `false` or absent, the session-logging hooks no-op. | `false` |
-| `logging.dir` | Where session logs are written — used as-is, so give an **absolute** path. Empty = a per-OS cache directory keyed by project name (e.g. `~/.cache/zskills-session-logs/<project>` on Linux), with the path recorded in the main checkout's `.zskills/session-log-dirs` registry (newest last) so you can always find where it logged; set this for a stable, predictable location. | `""` |
+| `logging.dir` | The **base** directory for session logs — give an **absolute** path. Empty = a per-OS cache base (e.g. `~/.cache/zskills-session-logs` on Linux, `~/Library/Caches/zskills-session-logs` on macOS, `%LOCALAPPDATA%\zskills-session-logs` on Windows). The resolved base is then composed with the optional `<repo>`/`<user>` segments below. The final path is recorded in the main checkout's `.zskills/session-log-dirs` registry (newest last) so you can always find where it logged. | `""` |
+| `logging.include_repo` | When `true` (default), append a sanitized `<repo>` segment (the project-dir basename) to the base, so each repo's logs land in their own subdirectory: `<base>/<repo>/...`. Set `false` to write flat to `<base>/...`. | `true` |
+| `logging.include_user` | When `true`, append a sanitized `<user>` segment after `<repo>`: `<base>/[<repo>]/<user>/...`. The user identity is resolved at **runtime** (never stored in the committed config): `ZSKILLS_LOG_USER` env > `git config user.email` > OS login > `unknown`. Useful on a shared mount written by multiple developers. | `false` |
+| `logging.file_mode` | POSIX octal mode for created log files + permission sidecars. Default `0600` is owner-only — logs can contain credentials a user `cat`-ed, so relaxing this is an explicit opt-in. The **directory mode is derived** by adding a search/exec bit to every read/write triad (`0660→0770`, `0640→0750`, `0600→0700`). **POSIX-only**: on Windows it is a no-op (NTFS/SMB use ACLs). The local registry always stays `0600`. | `"0600"` |
 
 With logging turned on (`logging.enabled: true`), pointing `logging.dir` at a
 persistent path gives you a readable per-session transcript and permission trail
 — a handy monitoring/audit record, especially for unattended runs (see
 [Inspecting & monitoring](inspecting-and-monitoring.md)).
+
+The composed log path is `<base>/[<repo>]/[<user>]/<YYYY-MM-DD-HHMM-session8>.md`.
+With the defaults (`include_repo: true`, `include_user: false`, default cache
+base) this is byte-identical to a single per-project cache directory.
+
+#### Shared-mount recipe
+
+To point `logging.dir` at a shared mount (NFS/SMB) written by multiple
+developers across multiple repos, compose `<repo>/<user>` and relax the mode so
+an authorized group can read/write:
+
+```jsonc
+"logging": {
+  "enabled": true,
+  "dir": "/nfs/team/zskills-logs",
+  "include_repo": true,
+  "include_user": true,
+  "file_mode": "0660"
+}
+```
+
+This yields `/nfs/team/zskills-logs/<repo>/<user>/<session>.md`.
+
+- **POSIX (Linux/macOS share).** zskills sets the file/dir **mode bits** but
+  never `chown`/`chgrp`. The admin owns group ownership + inheritance — run once
+  on the share root:
+
+  ```bash
+  chgrp -R <group> /nfs/team/zskills-logs && chmod -R g+rws /nfs/team/zskills-logs
+  ```
+
+  The setgid `s` makes new files/dirs inherit the group. **Caveat:** relaxing
+  `file_mode` from `0600` exposes logs (which may contain credentials a user
+  `cat`-ed) to the whole group — opt in deliberately.
+
+- **Windows / SMB share.** `file_mode` is a **no-op** on Windows (there are no
+  rwx owner/group/other bits; `os.umask` is effectively inert). Access is
+  governed by the share's NTFS/SMB **ACLs** the admin sets — the `include_repo`/
+  `include_user` path composition still applies, so the logs still separate
+  cleanly per repo and per user.
 
 ### `commit` — commit metadata
 
@@ -239,7 +282,7 @@ There is no single "env > config > default" rule — resolution differs by field
   falls back to UTC at the point of use). This is why an unset field is simply
   empty rather than guessed.
 - **A few settings honor an environment override** for one-off runs:
-  - `logging.dir` ← `ZSKILLS_LOG_DIR` env > config > temp dir.
+  - `logging.dir` (the composition base) ← `ZSKILLS_LOG_DIR` env > config > the per-OS cache base; then composed with the optional `<repo>`/`<user>` segments. `ZSKILLS_LOG_USER` similarly overrides the runtime-resolved `<user>` segment.
   - the dev port ← `DEV_PORT` env > a `scripts/dev-port.sh` stub > `dev_server.default_port` (main repo) > a per-worktree hash port.
 - **The enforced keys** (`main_protected`, `agents.min_model`,
   `logging.enabled`) are re-read from the config at runtime by their hooks, so

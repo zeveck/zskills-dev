@@ -73,14 +73,57 @@ import json, os, platform, subprocess, sys
 project_dir = os.environ.get("ZSKILLS_PROJECT_DIR", os.getcwd())
 
 
+# ── SHARED RESOLUTION (issue #1059) ──────────────────────────────────────
+# KEEP IDENTICAL to hooks/log-session-stop.sh + hooks/log-permission-request.sh.
+def sanitize_segment(seg):
+    """Make a string safe as a SINGLE cross-platform path segment. Replace
+    os.sep, /, \\, the Windows-reserved chars (: * ? " < > |) and whitespace
+    with _, strip leading/trailing dots/spaces; empty -> 'unknown'."""
+    if not seg:
+        return "unknown"
+    bad = set(os.sep) | {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+    out = []
+    for ch in seg:
+        if ch in bad or ch.isspace():
+            out.append("_")
+        else:
+            out.append(ch)
+    result = "".join(out).strip(". ")
+    return result or "unknown"
+
+
 def project_base(project_dir):
     base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    return base.replace(os.sep, "_").replace("/", "_")
+    return sanitize_segment(base)
 
 
-def default_cache_dir(project_dir):
-    """Per-OS stable cache root (replaces tempfile.gettempdir())."""
-    base = project_base(project_dir)
+def resolve_user():
+    """Precedence: ZSKILLS_LOG_USER env > git config user.email >
+    getpass.getuser() > 'unknown'. Resolved at RUNTIME, never stored in
+    config. KEEP IDENTICAL to the hooks."""
+    user = os.environ.get("ZSKILLS_LOG_USER", "")
+    if not user:
+        try:
+            out = subprocess.run(
+                ["git", "config", "user.email"],
+                capture_output=True, text=True, timeout=5)
+            if out.returncode == 0:
+                user = out.stdout.strip()
+        except Exception:
+            user = ""
+    if not user:
+        try:
+            import getpass
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+    return sanitize_segment(user)
+
+
+def default_cache_base(project_dir):
+    """Per-OS stable cache BASE (replaces tempfile.gettempdir()). The <repo>
+    segment is a composition step, not baked in here. KEEP IDENTICAL to the
+    hooks."""
     system = platform.system()
     if system == "Windows":
         root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -89,16 +132,16 @@ def default_cache_dir(project_dir):
     else:
         root = (os.environ.get("XDG_CACHE_HOME")
                 or os.path.join(os.path.expanduser("~"), ".cache"))
-    return os.path.join(root, "zskills-session-logs", base)
+    return os.path.join(root, "zskills-session-logs")
 
 
-def fallback_dir(project_dir):
-    """Precedence: ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache
-    default. KEEP IDENTICAL to the hooks."""
-    env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
-    if env_dir:
-        return env_dir
+def read_compose_cfg(project_dir):
+    """Return (cfg_dir, include_repo, include_user) from logging.*. Defaults:
+    "", True, False — preserve today's composed path byte-for-byte. KEEP
+    IDENTICAL defaults to the hooks' read_config."""
     cfg_dir = ""
+    include_repo = True
+    include_user = False
     try:
         cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
         with open(cfg_path) as f:
@@ -108,11 +151,38 @@ def fallback_dir(project_dir):
             d = logging.get("dir", "")
             if isinstance(d, str):
                 cfg_dir = d
+            if "include_repo" in logging:
+                include_repo = bool(logging.get("include_repo"))
+            if "include_user" in logging:
+                include_user = bool(logging.get("include_user"))
     except Exception:
         pass
-    if cfg_dir:
-        return cfg_dir
-    return default_cache_dir(project_dir)
+    return cfg_dir, include_repo, include_user
+
+
+def compose_log_dir(project_dir, base, include_repo, include_user):
+    """Compose <base>/[<repo>]/[<user>]. KEEP IDENTICAL to the hooks."""
+    path = base
+    if include_repo:
+        path = os.path.join(path, project_base(project_dir))
+    if include_user:
+        path = os.path.join(path, resolve_user())
+    return path
+
+
+def fallback_dir(project_dir):
+    """Precedence: ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache
+    base, then compose <base>/[<repo>]/[<user>]. KEEP IDENTICAL to the
+    hooks."""
+    cfg_dir, include_repo, include_user = read_compose_cfg(project_dir)
+    env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
+    if env_dir:
+        base = env_dir
+    elif cfg_dir:
+        base = cfg_dir
+    else:
+        base = default_cache_base(project_dir)
+    return compose_log_dir(project_dir, base, include_repo, include_user)
 
 
 def main_repo_root(project_dir):
@@ -164,27 +234,19 @@ def read_registry(project_dir):
 
 # Precedence: an explicit pin (ZSKILLS_LOG_DIR env / logging.dir config)
 # is deterministic and chosen by the user — writer and reader both resolve
-# to it identically, so there is no drift to solve and the pin wins over the
-# registry. The registry exists to fix the BLANK-default drift only. So:
+# to it identically (including the <repo>/<user> composition), so there is no
+# drift to solve and the pin wins over the registry. The registry exists to
+# fix the BLANK-default drift only. So:
 #   ZSKILLS_LOG_DIR > logging.dir > registry-union > per-OS default.
+# An explicit pin is still COMPOSED (<base>/[<repo>]/[<user>]) so the helper
+# resolves to the SAME composed dir the hooks wrote to.
 env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
-cfg_dir = ""
-try:
-    cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
-    with open(cfg_path) as f:
-        cfg = json.load(f)
-    logging = cfg.get("logging", {})
-    if isinstance(logging, dict):
-        d = logging.get("dir", "")
-        if isinstance(d, str):
-            cfg_dir = d
-except Exception:
-    pass
+cfg_dir, include_repo, include_user = read_compose_cfg(project_dir)
 
 if env_dir:
-    print(env_dir)
+    print(compose_log_dir(project_dir, env_dir, include_repo, include_user))
 elif cfg_dir:
-    print(cfg_dir)
+    print(compose_log_dir(project_dir, cfg_dir, include_repo, include_user))
 else:
     regdirs = read_registry(project_dir)
     existing = [d for d in regdirs if os.path.isdir(d)]

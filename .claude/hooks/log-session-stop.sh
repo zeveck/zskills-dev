@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.4
+# zskills-hook-version: 2026.06.5
 # log-session-stop.sh — Stop / SubagentStop hook. Session-logging.
 #
 # Re-renders the session transcript JSONL (the `transcript_path` field of
@@ -119,14 +119,20 @@ PERMISSION_SUMMARY_MAX = 200
 
 
 def read_config(project_dir):
-    """Return (enabled, dir) from .claude/zskills-config.json logging.*.
+    """Return (enabled, dir, include_repo, include_user, file_mode) from
+    .claude/zskills-config.json logging.*.
 
-    Defaults: enabled=False, dir="". Session logging is OFF by default — a
-    missing / unparseable config, or an absent logging.enabled field, means
-    logging stays off. The consumer opts in with logging.enabled:true."""
+    Defaults: enabled=False, dir="", include_repo=True, include_user=False,
+    file_mode="0600". Session logging is OFF by default — a missing /
+    unparseable config, or an absent logging.enabled field, means logging
+    stays off. The consumer opts in with logging.enabled:true. The path-
+    composition + mode defaults preserve today's exact output byte-for-byte."""
     cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
     enabled = False
     log_dir_cfg = ""
+    include_repo = True
+    include_user = False
+    file_mode = "0600"
     try:
         with open(cfg_path) as f:
             cfg = json.load(f)
@@ -137,35 +143,87 @@ def read_config(project_dir):
             d = logging.get("dir", "")
             if isinstance(d, str):
                 log_dir_cfg = d
+            if "include_repo" in logging:
+                include_repo = bool(logging.get("include_repo"))
+            if "include_user" in logging:
+                include_user = bool(logging.get("include_user"))
+            fm = logging.get("file_mode", "")
+            if isinstance(fm, str) and fm:
+                file_mode = fm
     except Exception:
         pass
-    return enabled, log_dir_cfg
+    return enabled, log_dir_cfg, include_repo, include_user, file_mode
 
 
 # ── SHARED RESOLUTION (issue #1059) ──────────────────────────────────────
 # KEEP IDENTICAL to skills/update-zskills/scripts/session-logs.sh. The
-# project_base derivation, per-OS cache default, and registry path/format
-# are duplicated verbatim across the hook and the helper so writer and
-# reader never diverge. tests/test-session-logging.sh asserts agreement.
+# project_base derivation, per-OS cache base, path composition, user
+# resolution, and registry path/format are duplicated verbatim across the
+# hook and the helper so writer and reader never diverge.
+# tests/test-session-logging.sh asserts agreement.
+
+def sanitize_segment(seg):
+    """Make a string safe as a SINGLE cross-platform path segment (clients
+    run on all OSes). Replace os.sep, /, \\, the Windows-reserved chars
+    (: * ? " < > |) and whitespace with _, strip leading/trailing dots and
+    spaces (illegal in Windows filenames); empty -> 'unknown'. KEEP
+    IDENTICAL across the hook + helper + permission hook."""
+    if not seg:
+        return "unknown"
+    bad = set(os.sep) | {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+    out = []
+    for ch in seg:
+        if ch in bad or ch.isspace():
+            out.append("_")
+        else:
+            out.append(ch)
+    result = "".join(out).strip(". ")
+    return result or "unknown"
+
 
 def project_base(project_dir):
-    """The <project> path segment: the project-dir basename,
-    path-separator-safe. Unified between hook and helper."""
+    """The <repo> path segment: the project-dir basename, sanitized for a
+    cross-platform-safe single segment. Unified between hook and helper."""
     base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    return base.replace(os.sep, "_").replace("/", "_")
+    return sanitize_segment(base)
 
 
-def default_cache_dir(project_dir):
-    """Per-OS stable cache root (replaces tempfile.gettempdir(), which
+def resolve_user():
+    """The <user> path segment, resolved at RUNTIME (never stored in the
+    committed config). Precedence: ZSKILLS_LOG_USER env > git config
+    user.email > getpass.getuser() > 'unknown'. Sanitized for a single
+    cross-platform-safe path segment. KEEP IDENTICAL to the helper."""
+    user = os.environ.get("ZSKILLS_LOG_USER", "")
+    if not user:
+        try:
+            out = subprocess.run(
+                ["git", "config", "user.email"],
+                capture_output=True, text=True, timeout=5)
+            if out.returncode == 0:
+                user = out.stdout.strip()
+        except Exception:
+            user = ""
+    if not user:
+        try:
+            import getpass
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+    return sanitize_segment(user)
+
+
+def default_cache_base(project_dir):
+    """Per-OS stable cache BASE (replaces tempfile.gettempdir(), which
     honored per-context $TMPDIR and caused writer/reader drift). Used when
-    logging.dir is blank AND as the registry-absent fallback.
+    logging.dir is blank AND as the registry-absent fallback. NOTE: the
+    <repo> segment is NOT baked in here — it is a composition step (see
+    compose_log_dir) so include_repo can be applied uniformly.
 
-      Linux/other : ${XDG_CACHE_HOME:-$HOME/.cache}/zskills-session-logs/<p>
-      macOS       : $HOME/Library/Caches/zskills-session-logs/<p>
-      Windows     : %LOCALAPPDATA%\\zskills-session-logs\\<p>
+      Linux/other : ${XDG_CACHE_HOME:-$HOME/.cache}/zskills-session-logs
+      macOS       : $HOME/Library/Caches/zskills-session-logs
+      Windows     : %LOCALAPPDATA%\\zskills-session-logs
                     (fallback: ~ when LOCALAPPDATA unset)
     """
-    base = project_base(project_dir)
     system = platform.system()
     if system == "Windows":
         root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -174,18 +232,56 @@ def default_cache_dir(project_dir):
     else:
         root = (os.environ.get("XDG_CACHE_HOME")
                 or os.path.join(os.path.expanduser("~"), ".cache"))
-    return os.path.join(root, "zskills-session-logs", base)
+    return os.path.join(root, "zskills-session-logs")
 
 
-def resolve_log_dir(project_dir, cfg_dir):
-    """Precedence: ZSKILLS_LOG_DIR env > logging.dir config > per-OS cache
-    default. KEEP IDENTICAL to the helper."""
+def resolve_base(project_dir, cfg_dir):
+    """The composition BASE: ZSKILLS_LOG_DIR env > logging.dir config >
+    per-OS cache base. The <repo>/<user> segments are appended by
+    compose_log_dir. KEEP IDENTICAL to the helper."""
     env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
     if env_dir:
         return env_dir
     if cfg_dir:
         return cfg_dir
-    return default_cache_dir(project_dir)
+    return default_cache_base(project_dir)
+
+
+def compose_log_dir(project_dir, cfg_dir, include_repo, include_user):
+    """Compose <base>/[<repo>]/[<user>]. With defaults (include_repo=True,
+    include_user=False) the default-cache path is byte-identical to today's
+    <cache>/zskills-session-logs/<repo>. KEEP IDENTICAL to the helper."""
+    path = resolve_base(project_dir, cfg_dir)
+    if include_repo:
+        path = os.path.join(path, project_base(project_dir))
+    if include_user:
+        path = os.path.join(path, resolve_user())
+    return path
+
+
+def parse_file_mode(file_mode):
+    """Parse the octal file_mode string (e.g. '0600') into an int; fall back
+    to 0o600 on any malformed value. KEEP IDENTICAL across consumers."""
+    try:
+        m = int(file_mode, 8)
+    except (ValueError, TypeError):
+        return 0o600
+    if m < 0 or m > 0o777:
+        return 0o600
+    return m
+
+
+def derive_dir_mode(file_mode_int):
+    """Derive the directory mode from a file mode by adding a search/exec
+    bit to every triad that has read or write (0o660->0o770, 0o640->0o750,
+    0o600->0o700). Dirs need the exec bit to be traversable. KEEP IDENTICAL
+    across consumers."""
+    dir_mode = file_mode_int
+    for shift in (6, 3, 0):
+        triad = (file_mode_int >> shift) & 0o7
+        if triad & 0o6:  # has read or write
+            dir_mode |= (0o1 << shift)
+    return dir_mode
 
 
 def main_repo_root(project_dir):
@@ -630,14 +726,6 @@ def load_permissions(log_dir, session_id):
 
 
 def main():
-    # Security: tighten the process umask BEFORE any file creation so the
-    # ".tmp" write and the os.replace final markdown both land at mode 0o600
-    # (owner read/write only). Session transcripts contain verbatim user
-    # prompts and Bash tool I/O — including any credential a user cat-ed —
-    # so they must never be world-readable on a shared /tmp. Setting it here
-    # (rather than chmod after os.replace) also closes the tmp-window race.
-    os.umask(0o077)
-
     raw = os.environ.get("ZSKILLS_HOOK_INPUT", "")
     try:
         hook_input = json.loads(raw) if raw else None
@@ -649,9 +737,26 @@ def main():
     project_dir = os.environ.get("ZSKILLS_PROJECT_DIR", os.getcwd())
 
     # Master toggle: logging.enabled=false => no-op.
-    enabled, cfg_dir = read_config(project_dir)
+    enabled, cfg_dir, include_repo, include_user, file_mode = \
+        read_config(project_dir)
     if not enabled:
         return
+
+    # Security: derive the file + directory modes and tighten the process
+    # umask BEFORE any file creation so the ".tmp" write and the os.replace
+    # final markdown both land at exactly file_mode (default 0o600, owner
+    # read/write only). Session transcripts contain verbatim user prompts and
+    # Bash tool I/O — including any credential a user cat-ed — so they must
+    # never be world-readable on a shared mount. Setting the umask here
+    # (rather than chmod after os.replace) also closes the tmp-window race.
+    # POSIX-only: Windows has no rwx owner/group/other bits (os.umask is
+    # effectively a no-op there; NTFS/SMB use ACLs), so the mode application
+    # is guarded and Windows is a clean no-op.
+    file_mode_int = parse_file_mode(file_mode)
+    dir_mode = derive_dir_mode(file_mode_int)
+    is_windows = platform.system() == "Windows"
+    if not is_windows:
+        os.umask(0o777 & ~dir_mode)
 
     event = hook_input.get("hook_event_name", "")
     session_id = hook_input.get("session_id", "unknown") or "unknown"
@@ -717,9 +822,13 @@ def main():
         time_part = now.strftime("%H%M")
         date_display = now.strftime("%Y-%m-%d %H:%M")
 
-    log_dir = resolve_log_dir(project_dir, cfg_dir)
+    log_dir = compose_log_dir(project_dir, cfg_dir, include_repo,
+                              include_user)
     try:
-        os.makedirs(log_dir, exist_ok=True)
+        if is_windows:
+            os.makedirs(log_dir, exist_ok=True)
+        else:
+            os.makedirs(log_dir, mode=dir_mode, exist_ok=True)
     except OSError:
         return
 
@@ -761,6 +870,14 @@ def main():
     try:
         with open(tmp, "w") as f:
             f.write(header + body)
+        # The umask set above already lands the .tmp at exactly file_mode;
+        # an explicit chmod is belt-and-suspenders in case the umask was
+        # relaxed by a future caller. POSIX-only (guarded for Windows).
+        if not is_windows:
+            try:
+                os.chmod(tmp, file_mode_int)
+            except OSError:
+                pass
         os.replace(tmp, out_path)
     except OSError:
         try:

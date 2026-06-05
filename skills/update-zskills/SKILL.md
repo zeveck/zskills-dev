@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.04+d55ebd"
+  version: "2026.06.04+5865da"
 ---
 
 # Update Z Skills Infrastructure
@@ -1666,7 +1666,21 @@ passive, fail-open sidecar logger that NEVER blocks/approves/denies.
 Session logging is OFF by default: both hooks no-op when `logging.enabled`
 is false OR absent — a fresh consumer (whose seeded config carries no
 `logging` block) gets logging off until they opt in with
-`logging.enabled: true`.
+`logging.enabled: true`. Once on, the log path is composed
+`<base>/[<repo>]/[<user>]/<session>.md` from `logging.dir` (the base),
+`logging.include_repo` (default `true`), and `logging.include_user`
+(default `false`, identity resolved at runtime via `ZSKILLS_LOG_USER` >
+`git config user.email` > OS login); `logging.file_mode` (default
+`"0600"`, POSIX-only) sets the file/sidecar mode with the directory mode
+derived (`0660→0770`, `0640→0750`, `0600→0700`). Defaults preserve today's
+exact path + `0600` mode; a shared NFS/SMB mount is the motivating use case
+(see the "Shared-mount recipe" in `docs/guides/zskills-config.md`). The
+resolver (composition + `resolve_user()` + mode derivation) is duplicated
+VERBATIM across `hooks/log-session-stop.sh`,
+`hooks/log-permission-request.sh`, and
+`skills/update-zskills/scripts/session-logs.sh` (issue #1059) and MUST stay
+in agreement — `tests/test-session-logging.sh` asserts writer↔reader
+round-trip.
 
 **Session-init-only `settings.json` load (#460).** `.claude/settings.json`
 is loaded ONCE at session start. The in-memory hook table is fixed at

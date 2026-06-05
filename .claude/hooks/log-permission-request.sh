@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.4
+# zskills-hook-version: 2026.06.5
 # log-permission-request.sh — PermissionRequest hook. Session-logging.
 #
 # Fires ONLY when a permission dialog would appear (Claude Code does NOT
@@ -83,6 +83,7 @@ fi
 import json
 import os
 import platform
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -97,6 +98,9 @@ def read_config(project_dir):
     cfg_path = os.path.join(project_dir, ".claude", "zskills-config.json")
     enabled = False
     log_dir_cfg = ""
+    include_repo = True
+    include_user = False
+    file_mode = "0600"
     try:
         with open(cfg_path) as f:
             cfg = json.load(f)
@@ -107,20 +111,68 @@ def read_config(project_dir):
             d = logging.get("dir", "")
             if isinstance(d, str):
                 log_dir_cfg = d
+            if "include_repo" in logging:
+                include_repo = bool(logging.get("include_repo"))
+            if "include_user" in logging:
+                include_user = bool(logging.get("include_user"))
+            fm = logging.get("file_mode", "")
+            if isinstance(fm, str) and fm:
+                file_mode = fm
     except Exception:
         pass
-    return enabled, log_dir_cfg
+    return enabled, log_dir_cfg, include_repo, include_user, file_mode
 
 
 # KEEP IDENTICAL to log-session-stop.sh / session-logs.sh (issue #1059).
+def sanitize_segment(seg):
+    """Make a string safe as a SINGLE cross-platform path segment. Replace
+    os.sep, /, \\, the Windows-reserved chars (: * ? " < > |) and whitespace
+    with _, strip leading/trailing dots/spaces; empty -> 'unknown'."""
+    if not seg:
+        return "unknown"
+    bad = set(os.sep) | {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
+    out = []
+    for ch in seg:
+        if ch in bad or ch.isspace():
+            out.append("_")
+        else:
+            out.append(ch)
+    result = "".join(out).strip(". ")
+    return result or "unknown"
+
+
 def project_base(project_dir):
     base = os.path.basename(os.path.normpath(project_dir)) or "project"
-    return base.replace(os.sep, "_").replace("/", "_")
+    return sanitize_segment(base)
 
 
-def default_cache_dir(project_dir):
-    """Per-OS stable cache root (replaces tempfile.gettempdir())."""
-    base = project_base(project_dir)
+def resolve_user():
+    """Precedence: ZSKILLS_LOG_USER env > git config user.email >
+    getpass.getuser() > 'unknown'. Resolved at RUNTIME, never stored in
+    config. The git subprocess fail-opens to the getpass/unknown fallback so
+    it never blocks the permission dialog."""
+    user = os.environ.get("ZSKILLS_LOG_USER", "")
+    if not user:
+        try:
+            out = subprocess.run(
+                ["git", "config", "user.email"],
+                capture_output=True, text=True, timeout=5)
+            if out.returncode == 0:
+                user = out.stdout.strip()
+        except Exception:
+            user = ""
+    if not user:
+        try:
+            import getpass
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+    return sanitize_segment(user)
+
+
+def default_cache_base(project_dir):
+    """Per-OS stable cache BASE (replaces tempfile.gettempdir()). The <repo>
+    segment is a composition step, not baked in here."""
     system = platform.system()
     if system == "Windows":
         root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -129,16 +181,46 @@ def default_cache_dir(project_dir):
     else:
         root = (os.environ.get("XDG_CACHE_HOME")
                 or os.path.join(os.path.expanduser("~"), ".cache"))
-    return os.path.join(root, "zskills-session-logs", base)
+    return os.path.join(root, "zskills-session-logs")
 
 
-def resolve_log_dir(project_dir, cfg_dir):
+def resolve_base(project_dir, cfg_dir):
     env_dir = os.environ.get("ZSKILLS_LOG_DIR", "")
     if env_dir:
         return env_dir
     if cfg_dir:
         return cfg_dir
-    return default_cache_dir(project_dir)
+    return default_cache_base(project_dir)
+
+
+def compose_log_dir(project_dir, cfg_dir, include_repo, include_user):
+    """Compose <base>/[<repo>]/[<user>]. KEEP IDENTICAL to the Stop hook so
+    the sidecar lands in the SAME composed dir the Stop renderer reads."""
+    path = resolve_base(project_dir, cfg_dir)
+    if include_repo:
+        path = os.path.join(path, project_base(project_dir))
+    if include_user:
+        path = os.path.join(path, resolve_user())
+    return path
+
+
+def parse_file_mode(file_mode):
+    try:
+        m = int(file_mode, 8)
+    except (ValueError, TypeError):
+        return 0o600
+    if m < 0 or m > 0o777:
+        return 0o600
+    return m
+
+
+def derive_dir_mode(file_mode_int):
+    dir_mode = file_mode_int
+    for shift in (6, 3, 0):
+        triad = (file_mode_int >> shift) & 0o7
+        if triad & 0o6:
+            dir_mode |= (0o1 << shift)
+    return dir_mode
 
 
 def summarize_input(tool_name, tool_input):
@@ -165,14 +247,6 @@ def summarize_input(tool_name, tool_input):
 
 
 def main():
-    # Security: tighten the process umask BEFORE any file creation so the
-    # permission sidecar lands at mode 0o600 (owner read/write only). The
-    # sidecar records verbatim tool-input summaries (Bash commands, URLs
-    # with tokens, file paths) and must never be world-readable on a shared
-    # /tmp. The explicit os.open mode below is belt-and-suspenders in case
-    # the umask is relaxed by a future caller.
-    os.umask(0o077)
-
     raw = os.environ.get("ZSKILLS_HOOK_INPUT", "")
     try:
         hook_input = json.loads(raw) if raw else None
@@ -182,9 +256,24 @@ def main():
         return
 
     project_dir = os.environ.get("ZSKILLS_PROJECT_DIR", os.getcwd())
-    enabled, cfg_dir = read_config(project_dir)
+    enabled, cfg_dir, include_repo, include_user, file_mode = \
+        read_config(project_dir)
     if not enabled:
         return
+
+    # Security: derive the file + directory modes and tighten the process
+    # umask BEFORE any file creation so the permission sidecar lands at
+    # exactly file_mode (default 0o600, owner read/write only). The sidecar
+    # records verbatim tool-input summaries (Bash commands, URLs with tokens,
+    # file paths) and must never be world-readable on a shared mount. The
+    # explicit os.open mode below is belt-and-suspenders in case the umask is
+    # relaxed. POSIX-only: Windows has no rwx bits (os.umask is a no-op;
+    # NTFS/SMB use ACLs), so the mode application is guarded.
+    file_mode_int = parse_file_mode(file_mode)
+    dir_mode = derive_dir_mode(file_mode_int)
+    is_windows = platform.system() == "Windows"
+    if not is_windows:
+        os.umask(0o777 & ~dir_mode)
 
     session_id = hook_input.get("session_id", "unknown") or "unknown"
     tool_name = hook_input.get("tool_name", "") or ""
@@ -198,17 +287,23 @@ def main():
         "tool_use_id": tool_use_id,
     }
 
-    log_dir = resolve_log_dir(project_dir, cfg_dir)
+    log_dir = compose_log_dir(project_dir, cfg_dir, include_repo,
+                              include_user)
     try:
-        os.makedirs(log_dir, exist_ok=True)
+        if is_windows:
+            os.makedirs(log_dir, exist_ok=True)
+        else:
+            os.makedirs(log_dir, mode=dir_mode, exist_ok=True)
     except OSError:
         return
     sidecar = os.path.join(log_dir, f"permissions-{session_id}.jsonl")
     try:
-        # Explicit creation mode 0o600 (owner read/write only) — the umask
-        # set at the top of main() already enforces this, but passing the
-        # mode to os.open makes it robust even if the umask is relaxed.
-        fd = os.open(sidecar, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        # Explicit creation mode = file_mode (default 0o600) — the umask set
+        # in main() already enforces this, but passing the mode to os.open
+        # makes it robust even if the umask is relaxed. On Windows os.open's
+        # mode arg is effectively ignored; pass file_mode_int anyway.
+        fd = os.open(sidecar, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                     file_mode_int)
         with os.fdopen(fd, "a") as f:
             f.write(json.dumps(event) + "\n")
     except OSError:

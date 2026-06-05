@@ -168,7 +168,22 @@
         "dir": {
           "type": "string",
           "default": "",
-          "description": "Override directory for session logs. Resolution precedence used by both hooks AND skills/update-zskills/scripts/session-logs.sh: ZSKILLS_LOG_DIR env > logging.dir (this field) > Python tempfile.gettempdir()/zskills-session-logs/<project>/. Empty (default) falls through to the cross-platform tempdir default."
+          "description": "Override BASE directory for session logs. Composition precedence used by both hooks AND skills/update-zskills/scripts/session-logs.sh: ZSKILLS_LOG_DIR env > logging.dir (this field) > the per-OS cache base (Linux ${XDG_CACHE_HOME:-~/.cache}/zskills-session-logs, macOS ~/Library/Caches/zskills-session-logs, Windows %LOCALAPPDATA%\\zskills-session-logs). The resolved base is then composed with the optional <repo>/<user> segments (see include_repo / include_user). Empty (default) falls through to the per-OS cache base."
+        },
+        "include_repo": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true (default), append a sanitized <repo> segment (the project-dir basename) to the resolved base, so a shared mount keeps each repo's logs in its own subdirectory: <base>/<repo>/... With the default cache base this preserves today's exact path. Set false to write flat to <base>/..."
+        },
+        "include_user": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, append a sanitized <user> segment after the <repo> segment: <base>/[<repo>]/<user>/... The user identity is resolved at RUNTIME (never stored in the committed config): ZSKILLS_LOG_USER env > git config user.email > getpass.getuser() > 'unknown'. Useful on a shared mount written by multiple developers."
+        },
+        "file_mode": {
+          "type": "string",
+          "default": "0600",
+          "description": "POSIX octal mode for created log files + permission sidecars (default 0600, owner-only — logs may contain credentials a user cat-ed, so relaxing this is an explicit per-deployment opt-in). The directory mode is DERIVED by adding a search/exec bit to every read/write triad (0660->0770, 0640->0750, 0600->0700). POSIX-only: on Windows this is a no-op (os.umask is effectively a no-op; NTFS/SMB use ACLs). zskills sets mode bits only; group ownership/inheritance is the admin's job (chgrp -R <group> <dir> && chmod -R g+rws <dir>). The local registry stays 0600 regardless."
         }
       }
     },
