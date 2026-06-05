@@ -46,8 +46,18 @@ trap 'rm -rf "$SANDBOX_ROOT"' EXIT
 
 # We make a SHARED bare base, then two clones acting as parallel
 # worktrees A and B.
+# Concurrency-safe clone via a one-shot bundle SNAPSHOT (setup-robustness only;
+# assertions unchanged). This is a linked worktree → its .git objects+refs are
+# SHARED with the parent repo, and under parallel test fan-out sibling suites
+# churn that store, racing every LIVE clone transport (default copy → tmp_obj
+# `No such file`; upload-pack → `not our ref 000...0`). `git bundle create`
+# takes one atomic consistent read; cloning the static file is immune to both.
+# The two clones below source $BASE_BARE (a fresh tmp bare, not the shared
+# store) so they keep the fast local optimization.
 BASE_BARE="$SANDBOX_ROOT/base.git"
-git clone --quiet --bare "$REPO_ROOT" "$BASE_BARE"
+REPO_SNAPSHOT="$SANDBOX_ROOT/repo-snapshot.bundle"
+git -C "$REPO_ROOT" bundle create --quiet "$REPO_SNAPSHOT" HEAD
+git clone --quiet --bare "$REPO_SNAPSHOT" "$BASE_BARE"
 
 CLONE_A="$SANDBOX_ROOT/clone-a"
 CLONE_B="$SANDBOX_ROOT/clone-b"

@@ -53,7 +53,15 @@ TMP="$(mktemp -d)"
 CLONE="$TMP/clone"
 trap 'rm -rf "$TMP"' EXIT
 
-if ! git clone --quiet "$REPO_ROOT" "$CLONE"; then
+# Concurrency-safe clone via a one-shot bundle SNAPSHOT (setup-robustness only;
+# assertions unchanged). This is a linked worktree → its .git objects+refs are
+# SHARED with the parent repo, and under parallel test fan-out sibling suites
+# churn that store, racing every LIVE clone transport (default copy → tmp_obj
+# `No such file`; upload-pack → `not our ref 000...0`). `git bundle create`
+# takes one atomic consistent read; cloning the static file is immune to both.
+REPO_SNAPSHOT="$TMP/repo-snapshot.bundle"
+git -C "$REPO_ROOT" bundle create --quiet "$REPO_SNAPSHOT" HEAD
+if ! git clone --quiet "$REPO_SNAPSHOT" "$CLONE"; then
   fail "0. git clone of \$REPO_ROOT failed"
   TOTAL=$((PASS_COUNT + FAIL_COUNT))
   printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"

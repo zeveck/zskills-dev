@@ -97,6 +97,27 @@ list_conditional_suites() {
 #       and spawns heavy server child processes. Two copies racing in the
 #       parallel pool would collide on the port / fight over the server
 #       lifecycle, so it is pinned serial.
+#   serial    tests/test_zskills_monitor_csrf.sh
+#   serial    tests/test_zskills_monitor_dashboard_ui.sh
+#   serial    tests/test_zskills_dashboard_skill.sh
+#   serial    tests/test-monitor-state-queue-post-preservation.sh
+#   serial    tests/test-pid-file-self-heal.sh
+#       The rest of the LIVE-SERVER class: each boots a real
+#       `python3 -m zskills_monitor.server` HTTP server in the background and
+#       probes it over a TCP port. The four $$-derived ones map $$ into
+#       OVERLAPPING windows (monitor_server 19000-19499, dashboard_ui
+#       19500-19899, dashboard_skill 19800-19899 — overlaps dashboard_ui,
+#       csrf 20000-20499, state-queue 21000-21499); two of them fanned
+#       concurrently can land on the SAME port and the loser's server fails
+#       to bind. test-pid-file-self-heal.sh uses a single FIXED port (19994)
+#       and a single FIXED fixture path (/tmp/zskills-pid-self-heal-test),
+#       so it is a non-isolatable singleton in the same heavy-server class.
+#       All are pinned serial so they never race in the pool. (Phase 4 fix —
+#       dashboard_skill was the observed flake; the siblings are pinned
+#       proactively, same class, to avoid whack-a-mole.) NOTE the live-server
+#       suite test-plan-skip-clear-paths.sh is NOT pinned: it binds an
+#       OS-assigned ephemeral port (socket bind to 0) under a $$-scoped
+#       fixture, so it cannot collide and stays in the parallel pool.
 #   serial    tests/test-plugin-live-load.sh
 #       The attended live-load suite reads/writes a GLOBAL throttle marker
 #       (~/.zskills/last-attended-plugin-run) and, when the gate passes,
@@ -105,7 +126,7 @@ list_conditional_suites() {
 #       that touches that marker. It is pinned serial AND carries the
 #       attended-gate decision (see serial_run_attended_live_load below).
 #
-# NOTE: both serial suites ALSO appear in list_registered_suites (they are
+# NOTE: all serial suites ALSO appear in list_registered_suites (they are
 # unconditional registrations in run-all.sh — monitor_server always runs;
 # live-load always runs, gated only on whether §B runs live). The Phase-4
 # parallel runner consumes list_registered_suites for the pool and SUBTRACTS
@@ -116,6 +137,18 @@ list_conditional_suites() {
 # is preserved.
 list_serial_suites() {
   printf 'serial\ttests/test_zskills_monitor_server.sh\n'
+  printf 'serial\ttests/test_zskills_monitor_csrf.sh\n'
+  printf 'serial\ttests/test_zskills_monitor_dashboard_ui.sh\n'
+  printf 'serial\ttests/test_zskills_dashboard_skill.sh\n'
+  printf 'serial\ttests/test-monitor-state-queue-post-preservation.sh\n'
+  printf 'serial\ttests/test-pid-file-self-heal.sh\n'
+  # KEEP test-plugin-live-load.sh LAST: the run-all.sh serial-bucket driver
+  # iterates this list and dispatches the attended live-load via
+  # serial_run_attended_live_load (the verbatim attended gate), every other
+  # entry via a plain run_suite. The driver keys that special-case off this
+  # exact path, so its position here is informational only (the driver
+  # matches by path, not by order), but listing it last keeps the
+  # plain-vs-attended split readable.
   printf 'serial\ttests/test-plugin-live-load.sh\n'
 }
 

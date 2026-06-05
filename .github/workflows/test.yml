@@ -31,7 +31,12 @@ jobs:
           git config --global init.defaultBranch main
 
       - name: Run full test suite
-        run: bash tests/run-all.sh
+        # TEST_SUITE_PARALLELIZATION Phase 4 — parallel fan-out. The runner
+        # caps workers at min(configured, nproc); ubuntu-latest is ~4 cores, so
+        # nproc=4 is the binding ceiling here (no -j / matrix needed). ONE
+        # gating `test` job is preserved (no matrix) so the merge-gate status
+        # check stays a single contract. Default (no flag) stays serial.
+        run: ZSKILLS_PARALLEL=1 bash tests/run-all.sh
 
       - name: Bash syntax check on hooks and scripts
         run: |

@@ -63,10 +63,25 @@ trap 'rm -rf "$SANDBOX_ROOT"' EXIT
 
 # Sub-case A and Sub-case B each get an independent sandbox to keep
 # state distinct.
+#
+# Concurrency-safe clone via a one-shot bundle SNAPSHOT (Setup-robustness
+# only; assertions unchanged). This worktree is a *linked* worktree, so its
+# .git objects AND refs are SHARED with the parent repo. Under parallel test
+# fan-out sibling suites churn that shared store concurrently, and EVERY live
+# clone transport races against it: the default local copy walks/copies
+# .git/objects (a concurrently-pruned loose object → `tmp_obj ... No such
+# file`), while `--no-local`/`file://` upload-pack advertises refs that a
+# sibling then deletes (→ `not our ref 000...0`). `git bundle create` takes
+# ONE atomic, consistent read of the source and writes a static file; cloning
+# that file touches no live object dir and no live ref advertisement, so it is
+# immune to both races. Clone lands on a detached HEAD at the snapshot commit,
+# which is all these sub-cases use (commit/reset/show HEAD).
 SANDBOX_A="$SANDBOX_ROOT/multi-edit-day"
 SANDBOX_B="$SANDBOX_ROOT/revert-noop"
-git clone --quiet "$REPO_ROOT" "$SANDBOX_A"
-git clone --quiet "$REPO_ROOT" "$SANDBOX_B"
+REPO_SNAPSHOT="$SANDBOX_ROOT/repo-snapshot.bundle"
+git -C "$REPO_ROOT" bundle create --quiet "$REPO_SNAPSHOT" HEAD
+git clone --quiet "$REPO_SNAPSHOT" "$SANDBOX_A"
+git clone --quiet "$REPO_SNAPSHOT" "$SANDBOX_B"
 
 echo "=== Phase 6.4 canary: revert + multi-edit-day ==="
 

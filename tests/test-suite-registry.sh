@@ -114,53 +114,75 @@ else
   fail "[count] distinct vs raw" "distinct=$COUNT raw=$RAW (expected 150 < distinct < raw)"
 fi
 
-# ── 4b. serial-only bucket (Phase 3) ──────────────────────────────────
-# list_serial_suites reports exactly the 2 genuinely-unparallelizable suites
-# (monitor_server + attended live-load) as "serial<TAB>path", and
-# is_serial_suite is the matching predicate. Both serial suites MUST still be
-# present in the unconditional registered set (they are unconditional
-# registrations; the parallel runner SUBTRACTS the serial bucket to form the
-# parallel pool — it does not depend on them being absent from the list).
+# ── 4b. serial-only bucket (Phase 3 + Phase 4) ────────────────────────
+# list_serial_suites reports the genuinely-unparallelizable suites as
+# "serial<TAB>path", and is_serial_suite is the matching predicate. The set:
+# the LIVE-SERVER class (monitor_server + csrf + dashboard_ui +
+# dashboard_skill + state-queue + pid-file-self-heal — each boots a real HTTP
+# server on a contendable port) plus the attended live-load (global throttle
+# marker + live `claude`). All MUST still be present in the unconditional
+# registered set (they are unconditional registrations; the parallel runner
+# SUBTRACTS the serial bucket to form the parallel pool — it does not depend
+# on them being absent from the list). live-load is kept LAST so the run-all.sh
+# serial driver's plain-vs-attended split reads cleanly (the driver matches by
+# path, not order). Phase 4 widened this set from 2 → 7 to fix the
+# dashboard_skill port-collision flake and proactively pin its siblings.
 SERIAL="$(list_serial_suites)"
-expected_serial=$'serial\ttests/test_zskills_monitor_server.sh\nserial\ttests/test-plugin-live-load.sh'
+expected_serial=$'serial\ttests/test_zskills_monitor_server.sh\nserial\ttests/test_zskills_monitor_csrf.sh\nserial\ttests/test_zskills_monitor_dashboard_ui.sh\nserial\ttests/test_zskills_dashboard_skill.sh\nserial\ttests/test-monitor-state-queue-post-preservation.sh\nserial\ttests/test-pid-file-self-heal.sh\nserial\ttests/test-plugin-live-load.sh'
 if [ "$SERIAL" = "$expected_serial" ]; then
-  pass "[serial] list_serial_suites returns monitor_server + attended live-load with serial tag"
+  pass "[serial] list_serial_suites returns the live-server class + attended live-load with serial tag"
 else
   fail "[serial] serial set" "got: $(printf '%s' "$SERIAL" | tr '\n' '|')"
 fi
 
-# is_serial_suite predicate: true for both serial paths, false for an
+# is_serial_suite predicate: true for every serial path, false for an
 # arbitrary parallel-pool suite.
-if is_serial_suite "tests/test_zskills_monitor_server.sh"; then
-  pass "[serial] is_serial_suite true for monitor_server"
-else
-  fail "[serial] is_serial_suite monitor_server" "expected true, got false"
-fi
-if is_serial_suite "tests/test-plugin-live-load.sh"; then
-  pass "[serial] is_serial_suite true for attended live-load"
-else
-  fail "[serial] is_serial_suite live-load" "expected true, got false"
-fi
+for _ss in \
+  tests/test_zskills_monitor_server.sh \
+  tests/test_zskills_monitor_csrf.sh \
+  tests/test_zskills_monitor_dashboard_ui.sh \
+  tests/test_zskills_dashboard_skill.sh \
+  tests/test-monitor-state-queue-post-preservation.sh \
+  tests/test-pid-file-self-heal.sh \
+  tests/test-plugin-live-load.sh; do
+  if is_serial_suite "$_ss"; then
+    pass "[serial] is_serial_suite true for $_ss"
+  else
+    fail "[serial] is_serial_suite $_ss" "expected true, got false"
+  fi
+done
 if is_serial_suite "tests/test-do.sh"; then
   fail "[serial] is_serial_suite test-do.sh" "expected false (parallel-pool suite), got true"
 else
   pass "[serial] is_serial_suite false for a parallel-pool suite (test-do.sh)"
 fi
+# test-plan-skip-clear-paths.sh boots a live server too, but on an EPHEMERAL
+# OS-assigned port (bind 0) so it is collision-safe and stays in the pool —
+# it must NOT be pinned serial.
+if is_serial_suite "tests/test-plan-skip-clear-paths.sh"; then
+  fail "[serial] is_serial_suite plan-skip-clear-paths" "expected false (ephemeral-port, pool-safe), got true"
+else
+  pass "[serial] is_serial_suite false for ephemeral-port live-server suite (plan-skip-clear-paths)"
+fi
 
-# Both serial suites must still be present in the unconditional registered set
+# Every serial suite must still be present in the unconditional registered set
 # (the parallel runner relies on subtracting the serial bucket, NOT on their
-# absence). monitor_server is a plain unconditional registration; live-load is
-# the deduped attended registration.
-if printf '%s\n' "$SUITES" | grep -qx 'tests/test_zskills_monitor_server.sh'; then
-  pass "[serial] monitor_server still present in unconditional registered set"
-else
-  fail "[serial] monitor_server in registered set" "expected present, absent"
-fi
-if printf '%s\n' "$SUITES" | grep -qx 'tests/test-plugin-live-load.sh'; then
-  pass "[serial] live-load still present in unconditional registered set"
-else
-  fail "[serial] live-load in registered set" "expected present, absent"
-fi
+# absence). All are plain unconditional registrations except live-load, which
+# is the deduped attended registration.
+for _ss in \
+  tests/test_zskills_monitor_server.sh \
+  tests/test_zskills_monitor_csrf.sh \
+  tests/test_zskills_monitor_dashboard_ui.sh \
+  tests/test_zskills_dashboard_skill.sh \
+  tests/test-monitor-state-queue-post-preservation.sh \
+  tests/test-pid-file-self-heal.sh \
+  tests/test-plugin-live-load.sh; do
+  if printf '%s\n' "$SUITES" | grep -qx "$_ss"; then
+    pass "[serial] $_ss still present in unconditional registered set"
+  else
+    fail "[serial] $_ss in registered set" "expected present, absent"
+  fi
+done
 
 # serial_run_attended_live_load carries the attended-gate decision VERBATIM
 # and runs the suite EXACTLY ONCE. Drive the gate purely via env (no live
