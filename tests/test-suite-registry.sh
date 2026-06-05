@@ -80,7 +80,14 @@ fi
 # NOT a raw grep -c. Each of these is a real run_suite registration; assert
 # presence by exact path.
 for known in \
-  tests/test-hooks.sh \
+  tests/test-hooks-block-unsafe.sh \
+  tests/test-hooks-bypass-generic.sh \
+  tests/test-hooks-bypass-project.sh \
+  tests/test-hooks-main-protected.sh \
+  tests/test-hooks-worktree-cd.sh \
+  tests/test-hooks-agent.sh \
+  tests/test-hooks-warn-drift.sh \
+  tests/test-hooks-misc.sh \
   tests/test-skill-conformance.sh \
   tests/test-do.sh \
   tests/test-fix-issues.sh \

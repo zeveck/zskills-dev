@@ -3526,43 +3526,54 @@ echo "=== test-hooks.sh property-matrix axes preserved (issues #564 / #556 / #56
 # fail-closed by construction: drop a loop header → count drops → FAIL.
 # Counts are minimums (>=) rather than literal equality so a future PR
 # can legitimately ADD a third matrix section without churning this gate.
-HOOKS_TEST="$REPO_ROOT/tests/test-hooks.sh"
-# Phase 1a relocated the make_branch_repo helper out of tests/test-hooks.sh
-# into the shared tests/lib/hooks-harness.sh; assertion D greps this file.
+# Phase 1b split the former tests/test-hooks.sh monolith into 8 independent
+# sub-suites. Assertions A/B/C grep the two bypass sub-suites (the #513
+# enumeration moved there: generic axis → test-hooks-bypass-generic.sh,
+# project axis → test-hooks-bypass-project.sh). Each axis token appears once
+# per bypass file, so the count is SUMMED across the two files to preserve the
+# original ">= 2" protective intent (relocation, not weakening). Assertions
+# E1/E2 grep the fixture-owning sub-suites. Phase 1a relocated make_branch_repo
+# into tests/lib/hooks-harness.sh (assertion D greps that — done in 1a).
+BYPASS_GENERIC="$REPO_ROOT/tests/test-hooks-bypass-generic.sh"
+BYPASS_PROJECT="$REPO_ROOT/tests/test-hooks-bypass-project.sh"
+HOOKS_MISC="$REPO_ROOT/tests/test-hooks-misc.sh"
+HOOKS_WARN_DRIFT="$REPO_ROOT/tests/test-hooks-warn-drift.sh"
 HARNESS_LIB="$REPO_ROOT/tests/lib/hooks-harness.sh"
 
-check_min_count() {
+# Sum a grep count across the two bypass sub-suites (the axis token lives once
+# in each, so the original single-file ">= 2" maps to a >= 2 sum).
+check_min_count_bypass() {
   local pattern="$1" expected_min="$2" label="$3" use_extended="$4"
-  local actual
-  if [ "$use_extended" = "E" ]; then
-    actual=$(grep -cE "$pattern" "$HOOKS_TEST" 2>/dev/null || echo 0)
-  else
-    actual=$(grep -cF "$pattern" "$HOOKS_TEST" 2>/dev/null || echo 0)
-  fi
+  local flag="-cF"
+  [ "$use_extended" = "E" ] && flag="-cE"
+  local g p actual
+  g=$(grep $flag "$pattern" "$BYPASS_GENERIC" 2>/dev/null || echo 0)
+  p=$(grep $flag "$pattern" "$BYPASS_PROJECT" 2>/dev/null || echo 0)
+  actual=$(( ${g:-0} + ${p:-0} ))
   if [ "$actual" -ge "$expected_min" ]; then
-    pass "$label: $actual matches (>= $expected_min)"
+    pass "$label: $actual matches across both bypass sub-suites (>= $expected_min)"
   else
-    fail "$label: found $actual matches, expected >= $expected_min" "$pattern in tests/test-hooks.sh"
+    fail "$label: found $actual matches, expected >= $expected_min" "$pattern in tests/test-hooks-bypass-{generic,project}.sh"
   fi
 }
 
 # Assertion A — branch-context axis: `for branch in main feat/test` must
-# appear at least twice (once per matrix section: generic + project).
+# appear at least twice (once per bypass sub-suite: generic + project).
 # Locks the #556 / #565 HEAD-axis branch-context loop in both sections.
-check_min_count "for branch in main feat/test" 2 "branch-context axis preserved" F
+check_min_count_bypass "for branch in main feat/test" 2 "branch-context axis preserved" F
 
 # Assertion B — HEAD destination token: `dest="${force}${refp}HEAD"` must
-# appear at least twice. This is the structural marker for the #565
-# HEAD-axis extension (one per section). The non-HEAD matrix uses
+# appear at least twice (one per bypass sub-suite). This is the structural
+# marker for the #565 HEAD-axis extension. The non-HEAD matrix uses
 # `dest="${force}${refp}${target}"` so this literal is unique to the
 # HEAD-axis loops; counting it directly catches axis collapse.
-check_min_count 'dest="\$\{force\}\$\{refp\}HEAD"' 2 "HEAD destination axis preserved" E
+check_min_count_bypass 'dest="\$\{force\}\$\{refp\}HEAD"' 2 "HEAD destination axis preserved" E
 
 # Assertion C — primary target axis: `for target in main master feat/test`
-# must appear at least twice (once per section). Locks the deny/allow
+# must appear at least twice (one per bypass sub-suite). Locks the deny/allow
 # matrix's non-HEAD target enumeration so a future revert can't shrink
 # the base matrix either.
-check_min_count "for target in main master feat/test" 2 "primary target axis preserved" F
+check_min_count_bypass "for target in main master feat/test" 2 "primary target axis preserved" F
 
 # Assertion D — make_branch_repo helper function is defined. The #565
 # HEAD-axis generic-hook loop depends on this helper to create a temp
@@ -3583,15 +3594,17 @@ fi
 # that produced 10/10 misses of `__TEST_LITERAL__` in the
 # fixture-extension assertion). The literal source tokens carry `$$`
 # verbatim; `grep -F` keeps `$$` as text (no shell expansion).
-if grep -qF 'FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-$$' "$HOOKS_TEST"; then
+# Phase 1b: the fixture-extension coverage moved to test-hooks-misc.sh and the
+# skill-drift warn coverage to test-hooks-warn-drift.sh; greps repointed.
+if grep -qF 'FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-$$' "$HOOKS_MISC"; then
   pass "fixture-extension-test path is PID-scoped (issue #594)"
 else
-  fail "fixture-extension-test path missing PID suffix (issue #594)" "expected FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-\$\$ in tests/test-hooks.sh"
+  fail "fixture-extension-test path missing PID suffix (issue #594)" "expected FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-\$\$ in tests/test-hooks-misc.sh"
 fi
-if grep -qF 'SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-$$' "$HOOKS_TEST"; then
+if grep -qF 'SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-$$' "$HOOKS_WARN_DRIFT"; then
   pass "warn-skill-drift-test path is PID-scoped (issue #594)"
 else
-  fail "warn-skill-drift-test path missing PID suffix (issue #594)" "expected SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-\$\$ in tests/test-hooks.sh"
+  fail "warn-skill-drift-test path missing PID suffix (issue #594)" "expected SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-\$\$ in tests/test-hooks-warn-drift.sh"
 fi
 
 # ----------------------------------------------------------------------

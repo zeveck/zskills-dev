@@ -47,7 +47,19 @@ run_suite() {
   fi
 }
 
-run_suite "test-hooks.sh" "tests/test-hooks.sh"
+# Phase 1b: the former tests/test-hooks.sh monolith is split into 8 independent
+# sub-suites, each sourcing tests/lib/hooks-harness.sh. The literal registry
+# stays here (the Phase 4 parallel runner READS it). Σ of the 8 sub-suite pass
+# counts == the monolith's 2384 (no self-registration → net-zero whole-suite
+# change). The monolith is removed (no shim) to avoid double-counting.
+run_suite "test-hooks-block-unsafe.sh" "tests/test-hooks-block-unsafe.sh"
+run_suite "test-hooks-bypass-generic.sh" "tests/test-hooks-bypass-generic.sh"
+run_suite "test-hooks-bypass-project.sh" "tests/test-hooks-bypass-project.sh"
+run_suite "test-hooks-main-protected.sh" "tests/test-hooks-main-protected.sh"
+run_suite "test-hooks-worktree-cd.sh" "tests/test-hooks-worktree-cd.sh"
+run_suite "test-hooks-agent.sh" "tests/test-hooks-agent.sh"
+run_suite "test-hooks-warn-drift.sh" "tests/test-hooks-warn-drift.sh"
+run_suite "test-hooks-misc.sh" "tests/test-hooks-misc.sh"
 run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
 run_suite "test-normalize-tool-path.sh" "tests/test-normalize-tool-path.sh"

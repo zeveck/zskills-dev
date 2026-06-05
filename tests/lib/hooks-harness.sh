@@ -219,6 +219,96 @@ expect_project_allow() {
   fi
 }
 
+# ── run_main_protected_test ──────────────────────────────────────────────
+# Shared project-hook fixture runner: builds a temp repo on $branch with a
+# rendered project hook + runtime config, then runs the hook against $cmd and
+# echoes the hook's stdout (deny envelope or empty). Relocated into the harness
+# in Phase 1b because it is now shared across three sub-suites
+# (test-hooks-main-protected.sh, test-hooks-bypass-project.sh, and the PR-mode
+# section of test-hooks-misc.sh); in the monolith it lived inline in the
+# main_protected section. Closes over the absolutized $PROJECT_HOOK global.
+run_main_protected_test() {
+  local branch="$1"
+  local config_content="$2"
+  local cmd="$3"
+  local test_tmpdir
+  test_tmpdir=$(mktemp -d)
+
+  mkdir -p "$test_tmpdir/.claude/hooks"
+  mkdir -p "$test_tmpdir/.zskills/tracking"
+
+  # Copy the hook template. Post-Phase-1 the hook reads test-cmd / UI values
+  # at runtime from .claude/zskills-config.json.
+  cp "$PROJECT_HOOK" "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
+
+  # Create mock package.json and transcript
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$test_tmpdir/package.json"
+  printf 'npm run test:all\n' > "$test_tmpdir/.transcript"
+
+  # Initialize git repo on specified branch
+  (cd "$test_tmpdir" && git init -q && git checkout -b "$branch" 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
+
+  # Write config: always include test-cmd fields so runtime read populates
+  # FULL_TEST_CMD (used by the commit transcript gate). The caller-supplied
+  # config_content may override (e.g., to add execution.main_protected).
+  if [ -n "$config_content" ]; then
+    # Caller supplied partial config (e.g. just {"execution": {...}}). Merge
+    # default testing/ui fields so the runtime-read block populates the
+    # hook's test-cmd / UI-pattern vars. python3 is available on CI.
+    CALLER_CFG="$config_content" python3 -c '
+import json, os
+caller = json.loads(os.environ["CALLER_CFG"])
+defaults = {"testing": {"unit_cmd": "npm test", "full_cmd": "npm run test:all"}, "ui": {"file_patterns": "src/ui/"}}
+for k, v in defaults.items():
+    caller.setdefault(k, v)
+print(json.dumps(caller))
+' > "$test_tmpdir/.claude/zskills-config.json"
+  else
+    cat > "$test_tmpdir/.claude/zskills-config.json" <<'EOF'
+{
+  "testing": {
+    "unit_cmd": "npm test",
+    "full_cmd": "npm run test:all"
+  },
+  "ui": {
+    "file_patterns": "src/ui/"
+  }
+}
+EOF
+  fi
+
+  # JSON shape: "command" is the LAST field so the hook's greedy sed
+  # extraction (`.*"command":"\(.*\)".*`) doesn't bleed envelope tokens
+  # like `transcript_path` into COMMAND. Single-line JSON is required by
+  # the helper; reordering to put `command` last is the simplest way to
+  # match production (where Claude Code's JSON is multi-line, also clean).
+  # Issue #81: rule (c)'s PUSH_ARGS-based check needs a clean COMMAND so
+  # the post-`git push` segment doesn't get JSON envelope words spliced in.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$test_tmpdir/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
+  # Override LOCAL_ROOT and TRACKING_ROOT so the hook resolves to the fixture,
+  # not the caller's worktree. Without these, the hook's push-path tracking
+  # block reads .zskills-tracked + tracking markers from wherever the test was
+  # invoked from (typically a zskills-tracked worktree with accumulated commits),
+  # firing the tracking guard before the main_protected check this test asserts.
+  local result
+  # cd into the fixture repo before invoking the hook. The project hook's
+  # HEAD-rewrite block (block-unsafe-project.sh.template:1057) calls
+  # `git branch --show-current` against the cwd to resolve `git push origin
+  # HEAD` to the local branch. Without cd, the hook sees the test runner's
+  # outer cwd (the worktree where tests/test-hooks.sh lives) instead of the
+  # fixture repo on $branch, breaking #556's branch-context assertions.
+  # Existing assertions (using REPO_ROOT for is_on_main) are unaffected.
+  result=$(echo "$json" | \
+    REPO_ROOT="$test_tmpdir" \
+    LOCAL_ROOT="$test_tmpdir" \
+    TRACKING_ROOT="$test_tmpdir" \
+    bash -c "cd '$test_tmpdir' && bash '$test_tmpdir/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+
+  # Cleanup
+  rm -rf "$test_tmpdir"
+  echo "$result"
+}
+
 # ── setup_project_test_on_main ───────────────────────────────────────────
 # Owned by the harness via sourcing tests/test-hooks-helpers.sh (single source
 # of truth — no duplicate definition). setup_project_test is already defined
