@@ -27,16 +27,21 @@
 #   4. Empty fixture (no legacy): no-op. .pre-paths-migration NOT
 #      created; config unchanged.
 #
-# Per CLAUDE.md test-output idiom, fixtures are written to
-# /tmp/zskills-tests/$(basename "$REPO_ROOT")/paths-migration-fixture-*
-# so they never appear in `git status` of the worktree.
+# Per CLAUDE.md test-output idiom, fixtures are written under a per-worker
+# mktemp -d scratch root ($TEST_OUT)/paths-migration-fixture-* so they never
+# appear in `git status` of the worktree AND two concurrent copies of this
+# suite (distinct injected $TMPDIR) never collide.
 
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")"
-mkdir -p "$TEST_OUT"
+# Per-worker-unique scratch root. Honors any injected $TMPDIR (bare mktemp -d),
+# so two concurrent copies of this suite never collide on a fixed path. An EXIT
+# trap removes the whole tree via `rm -rf -- "$dir"` (the per-case init_repo at
+# line ~53 still does its own `rm -rf -- "$dir"` for re-runnability).
+TEST_OUT="$(mktemp -d)"
+trap 'rm -rf -- "$TEST_OUT"' EXIT
 
 MIGRATE_SCRIPT="$REPO_ROOT/skills/update-zskills/scripts/migrate-paths.sh"
 
