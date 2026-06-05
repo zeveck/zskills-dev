@@ -26,10 +26,56 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# MAIN_ROOT resolves via git-common-dir — may differ from REPO_ROOT when
-# this test runs from within a nested worktree. The script anchors all
-# paths on MAIN_ROOT, so the test must too (else default paths mismatch).
-MAIN_ROOT="$(cd "$(git -C "$REPO_ROOT" rev-parse --git-common-dir)/.." && pwd)"
+# ────────────────────────────────────────────────────────────────────
+# Per-invocation private clone (#1101) — cross-process isolation.
+#
+# create-worktree.sh anchors EVERYTHING on MAIN_ROOT, which it derives
+# from `git rev-parse --git-common-dir` at the invocation cwd. The bulk
+# of the cases (1-7, 9-16, 18-21) invoke the script WITHOUT cd-ing, so it
+# resolves MAIN_ROOT to the SHARED clone's `.git` — and registers/prunes
+# worktrees in `<clone>/.git/worktrees/`. When two `tests/run-all.sh`
+# invocations run concurrently in the SAME clone, one instance's
+# `git worktree list`/prune races the other's worktree removal →
+# `fatal: ... commondir: No such file or directory` → intermittent
+# false-fail (#1101).
+#
+# Fix: clone the shared repo into a unique, private working area (mktemp
+# honors $TMPDIR, which the parallel runner injects per-suite), then cd
+# the test PROCESS into it. Now BOTH the test's $MAIN_ROOT variable AND
+# the script-under-test's internally-derived MAIN_ROOT resolve to this
+# invocation's OWN clone, so its `.git/worktrees/` is never shared. The
+# script-under-test stays the in-flight worktree copy ($SCRIPT, anchored
+# on $REPO_ROOT below); only the git STATE the cases operate on is
+# privatised. Single-run behaviour is unchanged (the assertions are
+# identical; only PROJECT_NAME differs, and every case derives its
+# expected paths from PROJECT_NAME, so they track automatically).
+#
+# --local --no-hardlinks gives a self-contained object store (safe under
+# concurrent worktree churn). The clone preserves HEAD; we materialise a
+# local `main` ref when the source HEAD isn't already `main`, so the
+# `main`-preferring fixture anchors below resolve as they would in a
+# fresh main-branch checkout. The whole clone lives under $PRIVATE_CLONE_PARENT
+# (a mktemp dir) and is removed by the EXIT trap.
+# ────────────────────────────────────────────────────────────────────
+SHARED_MAIN_ROOT="$(cd "$(git -C "$REPO_ROOT" rev-parse --git-common-dir)/.." && pwd)"
+PRIVATE_CLONE_PARENT="$(mktemp -d)"
+MAIN_ROOT="$PRIVATE_CLONE_PARENT/$(basename "$SHARED_MAIN_ROOT")"
+git clone --quiet --local --no-hardlinks "$SHARED_MAIN_ROOT" "$MAIN_ROOT"
+# Hermetic identity for the clone (commit-tree fixtures need an author).
+git -C "$MAIN_ROOT" config user.email "test-create-worktree@test.invalid"
+git -C "$MAIN_ROOT" config user.name "test-create-worktree"
+# Ensure a local `main` ref exists (the source HEAD may be a feature
+# branch, e.g. this very fix branch). The clone has refs/remotes/origin/main
+# whenever the source has main; materialise a local main pointing at it so
+# the `main`-preferring anchors below behave like a main-branch checkout.
+if ! git -C "$MAIN_ROOT" rev-parse --verify --quiet main >/dev/null 2>&1; then
+  if git -C "$MAIN_ROOT" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+    git -C "$MAIN_ROOT" branch main origin/main 2>/dev/null || true
+  fi
+fi
+# cd the test PROCESS into the private clone so no-cd script invocations
+# resolve their MAIN_ROOT here, not the shared clone.
+cd "$MAIN_ROOT"
 PROJECT_NAME="$(basename "$MAIN_ROOT")"
 
 # Fixture anchors for cases 10, 11, 19. These cases construct synthetic
@@ -133,6 +179,17 @@ cleanup() {
   # Fixture teardown (includes the hermetic HOME — must run AFTER any
   # subprocess git calls so they still see a valid GIT_CONFIG_GLOBAL).
   rm -rf -- "$TEST_TMPDIR" 2>/dev/null || true
+
+  # Per-invocation private clone (#1101). Prune its worktrees + remove the
+  # whole mktemp parent. cd out first so we never rm the cwd from under us.
+  cd / 2>/dev/null || true
+  if [ -n "${MAIN_ROOT:-}" ] && [ -d "$MAIN_ROOT" ]; then
+    git -C "$MAIN_ROOT" worktree prune 2>/dev/null || true
+  fi
+  if [ -n "${PRIVATE_CLONE_PARENT:-}" ] && [ -d "$PRIVATE_CLONE_PARENT" ] \
+     && [[ "$PRIVATE_CLONE_PARENT" == /tmp/* || "$PRIVATE_CLONE_PARENT" == "${TMPDIR%/}"/* ]]; then
+    rm -rf -- "$PRIVATE_CLONE_PARENT" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
