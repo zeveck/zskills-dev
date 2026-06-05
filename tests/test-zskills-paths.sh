@@ -47,6 +47,14 @@ if [ ! -f "$HELPER" ]; then
 fi
 
 # --- Case 1: empty config → legacy fallback --------------------------------
+# REGRESSION ANCHOR: a fresh-config SCAFFOLD now seeds output.plans_dir =
+# "docs/plans" (both lanes — see hooks/session-start-materialise.sh and
+# skills/update-zskills/SKILL.md, locked symmetric in test-skill-conformance.sh).
+# That change MUST NOT touch the resolver's legacy fallback: an EXISTING config
+# with NO output block (or none at all) must still resolve to <root>/plans so
+# pre-migration consumers are preserved. Case 1 proves zskills-paths.sh keeps
+# that legacy behavior. If this case ever flips to docs/plans, the scaffold
+# change leaked into the resolver — STOP.
 echo "=== Case 1: empty config — $ZSKILLS_PLANS_DIR falls back to <root>/plans ==="
 T1=$(mktemp -d /tmp/zskills-paths-t1-XXXXXX)
 # No config file at all.

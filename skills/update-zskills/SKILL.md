@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.04+5865da"
+  version: "2026.06.04+1477e6"
 ---
 
 # Update Z Skills Infrastructure
@@ -567,12 +567,18 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    re-running on an already-backfilled config is a no-op.
    <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
    ```markdown
-   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`,
-   > `output.issues_dir`, and `output.reports_dir` MUST NOT be inserted into
-   > `.claude/zskills-config.json` during install or `--rerender`. Their
-   > absence is meaningful — the helper falls back to legacy `plans/`,
-   > preserving consumer-current behavior. Only `/update-zskills
-   > --migrate-paths` writes these keys (and writes BOTH or NEITHER).
+   > **Path-config keys: FRESH-SCAFFOLD writes them; auto-backfill does NOT.**
+   > A FRESH config scaffold (both lanes — this install's `Write` below and
+   > the plugin lane's SessionStart materialiser seed) DOES write
+   > `output.plans_dir = "docs/plans"`, `output.issues_dir = "docs/issues"`,
+   > and `output.reports_dir = "docs/reports"`, so a brand-new consumer's
+   > dashboard and plan-skills find plans in `docs/plans` out of the box.
+   > But these keys MUST NEVER be auto-BACKFILLED into an EXISTING config
+   > that lacks them during install or `--rerender`. Their absence in an
+   > existing config is meaningful — the helper falls back to legacy
+   > `plans/`, preserving consumer-current behavior. Relocating an EXISTING
+   > legacy layout is owned by `/update-zskills --migrate-paths`, which
+   > writes these keys (and writes BOTH or NEITHER).
    > See plan `docs/plans/ZSKILLS_PATH_CONFIG.md` (or
    > `plans/ZSKILLS_PATH_CONFIG.md` pre-migration).
    ```
@@ -631,6 +637,11 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
      "ci": {
        "auto_fix": true,
        "max_fix_attempts": 2
+     },
+     "output": {
+       "plans_dir": "docs/plans",
+       "issues_dir": "docs/issues",
+       "reports_dir": "docs/reports"
      }
    }
    ```
