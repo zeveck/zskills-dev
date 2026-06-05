@@ -34,6 +34,8 @@ fn_source() {
       echo "hooks/_lib/resolve-effective-worktree-root.sh" ;;
     zskills_resolve_python)
       echo "hooks/_lib/resolve-python.sh" ;;
+    zskills_normalize_tool_path)
+      echo "hooks/_lib/normalize-tool-path.sh" ;;
     *)
       echo "" ;;
   esac
@@ -162,6 +164,34 @@ else
       pass "drift: $CONSUMER zskills_resolve_python matches source-of-truth"
     else
       fail "drift: $CONSUMER zskills_resolve_python drifted from $RP_SRC"
+    fi
+  done
+fi
+
+# ── zskills_normalize_tool_path drift (Windows-native-path normaliser) ──────
+# Source-of-truth body lives in hooks/_lib/normalize-tool-path.sh. Like the
+# resolver, it is inlined VERBATIM into each consuming hook (the legacy-mirror
+# hooks under .claude/hooks/ cannot reach _lib at runtime — .claude/hooks/_lib/
+# is not mirrored), so the body must be byte-identical to the source-of-truth.
+NORMALIZE_PATH_CONSUMERS=(
+  hooks/block-main-edits.sh
+  hooks/warn-config-drift.sh
+)
+NP_SRC="$(fn_source zskills_normalize_tool_path)"
+if [ -z "$NP_SRC" ] || [ ! -f "$NP_SRC" ]; then
+  fail "drift: zskills_normalize_tool_path source-of-truth file not found ($NP_SRC)"
+else
+  for CONSUMER in "${NORMALIZE_PATH_CONSUMERS[@]}"; do
+    if [ ! -f "$CONSUMER" ]; then
+      fail "drift: $CONSUMER zskills_normalize_tool_path consumer file not found"
+      continue
+    fi
+    if diff <(sed -n "/^zskills_normalize_tool_path()/,/^}$/p" "$CONSUMER") \
+            <(sed -n "/^zskills_normalize_tool_path()/,/^}$/p" "$NP_SRC") \
+            > /dev/null; then
+      pass "drift: $CONSUMER zskills_normalize_tool_path matches source-of-truth"
+    else
+      fail "drift: $CONSUMER zskills_normalize_tool_path drifted from $NP_SRC"
     fi
   done
 fi

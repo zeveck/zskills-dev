@@ -50,6 +50,7 @@ run_suite() {
 run_suite "test-hooks.sh" "tests/test-hooks.sh"
 run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
+run_suite "test-normalize-tool-path.sh" "tests/test-normalize-tool-path.sh"
 run_suite "test-resolve-effective-worktree-root.sh" "tests/test-resolve-effective-worktree-root.sh"
 run_suite "test-resolve-python.sh" "tests/test-resolve-python.sh"
 run_suite "test-python-resolver-drift.sh" "tests/test-python-resolver-drift.sh"
