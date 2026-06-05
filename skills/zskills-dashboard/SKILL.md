@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.04+160eac"
+  version: "2026.06.05+f90549"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -23,8 +23,11 @@ The server itself is `skills/zskills-dashboard/scripts/zskills_monitor/`
 (stdlib-only Python, localhost-bound, atomic-write state). This skill
 body wraps it: port resolution, PID-file handling, process-identity
 checks (command name AND cwd), tracking markers for state-changing
-modes, and a SIGTERM-only stop path (CLAUDE.md rule — never escalate
-to SIGKILL).
+modes, and a SIGTERM-only stop path on POSIX (CLAUDE.md rule — never
+escalate to SIGKILL). On Windows (Git-Bash / MSYS), where Python runs no
+SIGTERM handler, stop instead requests a graceful `taskkill //PID`, then
+escalates to a TARGETED `taskkill //PID //F` of the single verified PID
+(never a port/name mass-kill) — see the stop section.
 
 ## Arguments
 
@@ -109,6 +112,31 @@ fi
 
 # Server's own scripts dir is in-skill — no install/source split.
 mkdir -p "$MAIN_ROOT/.zskills"
+
+# Platform detector (#1093/#1096 stop-path mirror). The PID file holds the
+# server's *Windows* PID (os.getpid), so on Git-Bash/MSYS the POSIX
+# kill/lsof//proc primitives — which key on MSYS PIDs — target the wrong
+# thing. ZSK_WIN gates each POSIX-only operation; the POSIX branch stays
+# byte-for-byte unchanged on Linux/macOS (ZSK_WIN=0).
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ZSK_WIN=1 ;;
+  *)                    ZSK_WIN=0 ;;
+esac
+
+# port_has_listener PORT — returns 0 if some process is LISTENing on PORT,
+# 1 otherwise. Shared by the start pre-flight and the stop release-verify so
+# both sites branch on the same platform logic.
+#   POSIX:   lsof -iTCP:PORT -sTCP:LISTEN (unchanged from the pre-Windows path)
+#   Windows: lsof is ABSENT; netstat IS present. `netstat -ano` lists every
+#            socket with state; a LISTENING row for :PORT means in-use.
+port_has_listener() {
+  local _port="$1"
+  if [ "$ZSK_WIN" -eq 1 ]; then
+    netstat -ano 2>/dev/null | grep -E ":$_port[[:space:]]" | grep -qi LISTENING
+  else
+    lsof -iTCP:"$_port" -sTCP:LISTEN >/dev/null 2>&1
+  fi
+}
 ```
 
 ### Process-identity check (shared by start and stop)
@@ -130,12 +158,59 @@ If EITHER check fails (command-name mismatch OR cwd-mismatch when
 verifiable), the PID is stale, PID-reused, or belongs to a different
 worktree's dashboard — do NOT kill it. Treat the PID file as stale.
 
+**Windows (Git-Bash / MSYS) degraded identity (#1093/#1096 stop-path).**
+Windows has neither `/proc` nor `lsof`, and `ps`'s command column does not
+carry the `python … zskills_monitor.server` argv reliably — so the POSIX
+two-checks cannot run. On Windows (`ZSK_WIN=1`) the helper degrades to three
+Windows-tool checks, ALL of which must pass:
+  1. **Alive** — `tasklist //FI "PID eq $PID"` lists the PID (liveness).
+  2. **Owns our port** — `netstat -ano` shows the PID as the LISTENING
+     owner of our port (the `ZSK_IDENTITY_PORT` global the caller sets).
+  3. **Image is python** — `tasklist` shows the PID's image as `python*.exe`.
+The cwd-identity check is belt-and-suspenders and is simply unavailable on
+Windows; "owns our port + is python + alive" is the strongest identity the
+platform affords before a targeted kill. Identity is verified BEFORE any
+`taskkill`, exactly as the POSIX path verifies before `kill`.
+
 ```bash
 # Returns 0 if PID is alive AND identity matches; 1 otherwise.
 # Stdout is the matched command name (for diagnostics on mismatch).
 verify_monitor_identity() {
   local pid="$1"
   local cmd cwd_proc cwd_lsof matched_cwd
+
+  # Windows (Git-Bash / MSYS) degraded identity (#1093/#1096). No /proc, no
+  # lsof, and the MSYS `kill -0` keys on MSYS PIDs while the PID file holds
+  # the server's Windows PID — so the POSIX path below cannot run here.
+  # Three Windows-tool checks, ALL required: alive (tasklist), owns our port
+  # (netstat LISTENING owner == PID on ZSK_IDENTITY_PORT), image is python
+  # (tasklist image == python*.exe). cwd-identity is unavailable on Windows.
+  if [ "${ZSK_WIN:-0}" -eq 1 ]; then
+    local tl_line
+    # tasklist row for this PID (//NH = no header). 2>/dev/null because a
+    # dead PID yields "INFO: No tasks…" on stderr — the expected branch.
+    tl_line=$(tasklist //FI "PID eq $pid" //NH 2>/dev/null)
+    # Alive: the PID must appear as a whole word in the row.
+    if ! printf '%s' "$tl_line" | grep -q "\b$pid\b"; then
+      return 1
+    fi
+    # Image is python*.exe (the server is launched via "$PYTHON").
+    if ! printf '%s' "$tl_line" | grep -qiE '(^|[[:space:]])python[0-9.]*\.exe'; then
+      printf 'identity-mismatch: image=%s\n' "$(printf '%s' "$tl_line" | awk '{print $1}')" >&2
+      return 1
+    fi
+    # Owns our port: netstat must show the PID as the LISTENING owner of
+    # ZSK_IDENTITY_PORT (the last column of a netstat -ano row is the PID).
+    if [ -n "${ZSK_IDENTITY_PORT:-}" ]; then
+      if ! netstat -ano 2>/dev/null | grep -E ":$ZSK_IDENTITY_PORT[[:space:]]" \
+           | grep -i LISTENING | grep -qw "$pid"; then
+        printf 'identity-mismatch: PID %s is not the LISTENING owner of port %s\n' "$pid" "$ZSK_IDENTITY_PORT" >&2
+        return 1
+      fi
+    fi
+    printf 'python (windows, pid %s, port %s)\n' "$pid" "${ZSK_IDENTITY_PORT:-?}"
+    return 0
+  fi
 
   # Liveness — kill -0 with a 2>/dev/null because failure here is the
   # expected branch (dead PID).
@@ -284,6 +359,9 @@ if [ "$SUB" = "start" ]; then
     fi
 
     if [ -n "$EXISTING_PID" ]; then
+      # Thread the PID file's port to the identity helper for the Windows
+      # degraded "owns our port" check (no-op on POSIX, which uses /proc/lsof).
+      ZSK_IDENTITY_PORT="${EXISTING_PORT:-}"
       if verify_monitor_identity "$EXISTING_PID" >/dev/null; then
         echo "already running at http://127.0.0.1:${EXISTING_PORT:-?}/ (pid $EXISTING_PID)"
         write_tracking_marker "start-already-running" "$EXISTING_PID" "${EXISTING_PORT:-}"
@@ -309,9 +387,15 @@ if [ "$SUB" = "start" ]; then
     exit 1
   fi
 
-  # Pre-flight: refuse if another holder owns the port.
-  if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    HOLDER=$(lsof -iTCP:"$PORT" -sTCP:LISTEN -Fpcn 2>/dev/null | head -20 | tr '\n' ' ')
+  # Pre-flight: refuse if another holder owns the port. port_has_listener
+  # branches POSIX (lsof) vs Windows (netstat) internally; the holder
+  # diagnostic is lsof-only (POSIX), netstat-derived on Windows.
+  if port_has_listener "$PORT"; then
+    if [ "$ZSK_WIN" -eq 1 ]; then
+      HOLDER=$(netstat -ano 2>/dev/null | grep -E ":$PORT[[:space:]]" | grep -i LISTENING | tr '\n' ' ')
+    else
+      HOLDER=$(lsof -iTCP:"$PORT" -sTCP:LISTEN -Fpcn 2>/dev/null | head -20 | tr '\n' ' ')
+    fi
     echo "ERROR: port $PORT is already in use (holder: $HOLDER). Stop the holder manually or set DEV_PORT to a free port; do NOT use SIGKILL." >&2
     exit 2
   fi
@@ -403,17 +487,27 @@ fi
 2. Parse `pid` and `port`. If the PID is not alive, the file is stale
    — remove it and exit 0.
 
-3. **Process-identity check** (command name AND cwd, per F-11). If
-   EITHER fails, print the mismatch diagnostic and **refuse to kill**
-   — exit 1 without touching the unrelated process.
+3. **Process-identity check** (command name AND cwd on POSIX; degraded
+   alive + owns-our-port + is-python on Windows, per F-11 and #1093/#1096).
+   If it fails, print the mismatch diagnostic and **refuse to kill** — exit
+   1 without touching the unrelated process.
 
-4. `kill -TERM $PID`. Poll `kill -0 $PID` every 200ms for up to 5s.
+4. **POSIX:** `kill -TERM $PID`. Poll `kill -0 $PID` every 200ms for up to
+   5s. **Windows:** the PID file holds the server's Windows PID and Python
+   on Windows runs no SIGTERM handler, so a graceful close is requested via
+   `taskkill //PID $PID` FIRST (no `//F`), polling liveness via `tasklist`
+   for up to 5s.
 
-5. If the process is still alive after 5s, refuse to escalate to
-   SIGKILL (CLAUDE.md rule). Print a manual-recovery message and
-   exit 1.
+5. **POSIX:** if still alive after 5s, refuse to escalate to SIGKILL
+   (CLAUDE.md rule) — print a manual-recovery message and exit 1.
+   **Windows:** if still alive after the bounded wait, escalate to
+   `taskkill //PID $PID //F` — a *targeted* force-terminate of the SINGLE
+   verified PID (identity already confirmed above), NOT a port/name
+   mass-kill. The skill removes the PID file itself afterward, since the
+   force-terminate runs no Python cleanup handler.
 
-6. Verify the port is free with `lsof`. Remove the PID file. Exit 0.
+6. Verify the port is free (`lsof` on POSIX, `netstat` on Windows, via
+   `port_has_listener`). Remove the PID file. Exit 0.
 
 ```bash
 if [ "$SUB" = "stop" ]; then
@@ -438,51 +532,108 @@ if [ "$SUB" = "stop" ]; then
     exit 1
   fi
 
-  # kill -0 — failure is the expected branch (dead PID), so 2>/dev/null
-  # is allowed here per CLAUDE.md rule.
-  if ! kill -0 "$STOP_PID" 2>/dev/null; then
-    echo "Dashboard PID file is stale (PID $STOP_PID is not running). Removing $PID_FILE."
-    rm -- "$PID_FILE"
-    write_tracking_marker "stop-stale-pidfile" "$STOP_PID" "${STOP_PORT:-}"
-    exit 0
+  # Liveness — POSIX `kill -0` keys on MSYS PIDs and the PID file holds the
+  # server's *Windows* PID, so on Windows liveness goes through tasklist.
+  # In both branches failure here is the expected (dead-PID) path. The POSIX
+  # branch is byte-for-byte the original `kill -0` stale-check.
+  if [ "$ZSK_WIN" -eq 1 ]; then
+    if ! tasklist //FI "PID eq $STOP_PID" //NH 2>/dev/null | grep -q "\b$STOP_PID\b"; then
+      echo "Dashboard PID file is stale (PID $STOP_PID is not running). Removing $PID_FILE."
+      rm -- "$PID_FILE"
+      write_tracking_marker "stop-stale-pidfile" "$STOP_PID" "${STOP_PORT:-}"
+      exit 0
+    fi
+  else
+    # kill -0 — failure is the expected branch (dead PID), so 2>/dev/null
+    # is allowed here per CLAUDE.md rule.
+    if ! kill -0 "$STOP_PID" 2>/dev/null; then
+      echo "Dashboard PID file is stale (PID $STOP_PID is not running). Removing $PID_FILE."
+      rm -- "$PID_FILE"
+      write_tracking_marker "stop-stale-pidfile" "$STOP_PID" "${STOP_PORT:-}"
+      exit 0
+    fi
   fi
 
-  # Identity check — refuse to kill on either command-name OR cwd mismatch.
+  # Identity check — refuse to kill on mismatch. Thread the PID file's port
+  # to the helper for the Windows degraded "owns our port" check (no-op on
+  # POSIX, which uses command-name + /proc/lsof cwd).
+  ZSK_IDENTITY_PORT="${STOP_PORT:-}"
   IDENTITY_CMD=""
   if ! IDENTITY_CMD=$(verify_monitor_identity "$STOP_PID"); then
-    # Re-read for diagnostics.
-    DIAG_CMD=$(ps -p "$STOP_PID" -o command= || echo "<gone>")
-    DIAG_CWD=$(readlink "/proc/$STOP_PID/cwd" 2>/dev/null \
-      || lsof -p "$STOP_PID" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}' \
-      || echo "<unknown>")
+    # Re-read for diagnostics. POSIX uses ps/proc/lsof (absent on Windows);
+    # Windows uses tasklist + netstat.
+    if [ "$ZSK_WIN" -eq 1 ]; then
+      DIAG_CMD=$(tasklist //FI "PID eq $STOP_PID" //NH 2>/dev/null | awk '{print $1}' || echo "<gone>")
+      DIAG_CWD="<unavailable-on-windows>"
+    else
+      DIAG_CMD=$(ps -p "$STOP_PID" -o command= || echo "<gone>")
+      DIAG_CWD=$(readlink "/proc/$STOP_PID/cwd" 2>/dev/null \
+        || lsof -p "$STOP_PID" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}' \
+        || echo "<unknown>")
+    fi
     echo "PID $STOP_PID does not appear to be zskills-dashboard for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
     exit 1
   fi
 
-  # SIGTERM only — never escalate to SIGKILL or use process-mass-kill tools.
-  if ! kill -TERM "$STOP_PID"; then
-    echo "ERROR: kill -TERM $STOP_PID failed." >&2
-    exit 1
-  fi
-
-  # Poll for exit (up to ~5s, 200ms granularity).
-  EXITED=0
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do
-    if ! kill -0 "$STOP_PID" 2>/dev/null; then
-      EXITED=1
-      break
+  if [ "$ZSK_WIN" -eq 1 ]; then
+    # Windows: Python runs no SIGTERM handler, so request a graceful close
+    # via `taskkill //PID` FIRST (no //F). This is a TARGETED kill of the
+    # SINGLE verified PID from the PID file — identity confirmed above — NOT
+    # a port/name mass-kill, so it is consistent with the "never escalate to
+    # a process-mass-kill tool" rule (that rule targets mass-kills).
+    taskkill //PID "$STOP_PID" >/dev/null 2>&1 || true
+    EXITED=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do
+      if ! tasklist //FI "PID eq $STOP_PID" //NH 2>/dev/null | grep -q "\b$STOP_PID\b"; then
+        EXITED=1
+        break
+      fi
+      sleep 0.2
+    done
+    if [ "$EXITED" -ne 1 ]; then
+      # Bounded graceful wait elapsed — escalate to a TARGETED force-terminate
+      # of the SINGLE verified PID (//F). Still NOT a mass-kill. The skill
+      # removes the PID file itself below since //F runs no Python cleanup.
+      taskkill //PID "$STOP_PID" //F >/dev/null 2>&1 || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if ! tasklist //FI "PID eq $STOP_PID" //NH 2>/dev/null | grep -q "\b$STOP_PID\b"; then
+          EXITED=1
+          break
+        fi
+        sleep 0.2
+      done
+      if [ "$EXITED" -ne 1 ]; then
+        echo "Dashboard did not exit after taskkill //F for PID $STOP_PID (port $STOP_PORT). Investigate manually." >&2
+        exit 1
+      fi
     fi
-    sleep 0.2
-  done
+  else
+    # SIGTERM only — never escalate to SIGKILL or use process-mass-kill tools.
+    if ! kill -TERM "$STOP_PID"; then
+      echo "ERROR: kill -TERM $STOP_PID failed." >&2
+      exit 1
+    fi
 
-  if [ "$EXITED" -ne 1 ]; then
-    echo "Dashboard did not exit within 5s. Run 'lsof -i :$STOP_PORT' and stop manually; do NOT escalate to SIGKILL." >&2
-    exit 1
+    # Poll for exit (up to ~5s, 200ms granularity).
+    EXITED=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do
+      if ! kill -0 "$STOP_PID" 2>/dev/null; then
+        EXITED=1
+        break
+      fi
+      sleep 0.2
+    done
+
+    if [ "$EXITED" -ne 1 ]; then
+      echo "Dashboard did not exit within 5s. Run 'lsof -i :$STOP_PORT' and stop manually; do NOT escalate to SIGKILL." >&2
+      exit 1
+    fi
   fi
 
-  # Verify port released. lsof returning 0 (still LISTENing) is failure.
+  # Verify port released. A still-present listener after exit is suspicious.
+  # port_has_listener branches lsof (POSIX) vs netstat (Windows) internally.
   if [ -n "$STOP_PORT" ]; then
-    if lsof -iTCP:"$STOP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    if port_has_listener "$STOP_PORT"; then
       echo "WARN: PID $STOP_PID is gone but port $STOP_PORT still has a listener. Investigate before next start." >&2
     fi
   fi
@@ -640,12 +791,19 @@ The dashboard reads `.claude/zskills-config.json` for one field:
 
 ## Key rules
 
-- **SIGTERM only.** Never escalate to SIGKILL, and never reach for
-  process-mass-kill tools (the obvious ones are forbidden by
-  CLAUDE.md). On a stuck process, surface manual-recovery
-  instructions and exit 1.
-- **Never bypass identity check.** Both command-name AND cwd must
-  match before `stop` will signal a PID. Same defense applies on
+- **SIGTERM only (POSIX); targeted taskkill (Windows).** On POSIX, never
+  escalate to SIGKILL and never reach for process-mass-kill tools (the
+  obvious ones are forbidden by CLAUDE.md); on a stuck process, surface
+  manual-recovery instructions and exit 1. On Windows (Git-Bash / MSYS),
+  Python runs no SIGTERM handler, so stop requests a graceful
+  `taskkill //PID $PID` and, if still alive after the bounded wait,
+  escalates to `taskkill //PID $PID //F` — a TARGETED force-terminate of
+  the SINGLE verified PID from the PID file (identity confirmed first),
+  NEVER a port/name mass-kill. This is consistent with the mass-kill
+  prohibition, which targets unverified-PID-source mass-kills.
+- **Never bypass identity check.** On POSIX both command-name AND cwd must
+  match before `stop` will signal a PID; on Windows the degraded check
+  (alive + owns-our-port + is-python) must pass. Same defense applies on
   `start` when checking an existing PID file.
 - **No JSON CLI parser.** Use `BASH_REMATCH` for all parsing (PID
   file is `.env`-style; config reads via `port.sh`'s own bash regex).
