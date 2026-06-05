@@ -132,6 +132,10 @@ run_suite "test-skill-content-hash.sh" "tests/test-skill-content-hash.sh"
 run_suite "test-skill-description-budget.sh" "tests/test-skill-description-budget.sh"
 run_suite "test-skill-version-compare.sh" "tests/test-skill-version-compare.sh"
 run_suite "test-skill-conformance.sh" "tests/test-skill-conformance.sh"
+# #1102 — standing guard against the false-pass-on-stale-/tmp class: a test
+# checking a hardcoded /tmp/<artifact> for output a ${TMPDIR:-/tmp}-honoring
+# script actually writes under $TMPDIR (caught once in #1100).
+run_suite "test-tmpdir-hardcode-guard.sh" "tests/test-tmpdir-hardcode-guard.sh"
 run_suite "test-no-conflict-markers.sh" "tests/test-no-conflict-markers.sh"
 run_suite "test-skill-version-enforcement.sh" "tests/test-skill-version-enforcement.sh"
 run_suite "test-skill-version-canary-missed-bump.sh" "tests/test-skill-version-canary-missed-bump.sh"
