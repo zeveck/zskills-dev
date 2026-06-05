@@ -190,7 +190,7 @@
   <p>An estimate of how many Claude Code permission prompts the user would have faced building Z Skills, if approvals had been live instead of bypassed via <code>--dangerously-skip-permissions</code>.</p>
   <p style="font-size: 0.95em;"><strong>The headline depends almost entirely on the <code>permissions</code> config.</strong> A permissive config gives a few hundred prompts. A conservative one (like the example used here, with <code>gh *</code> and web tools in <code>ask</code>) gives thousands. This page uses <a href="EXAMPLE_settings.json">EXAMPLE_settings.json</a> &mdash; a representative enterprise-leaning Claude Code config &mdash; as the reference, applied to the actual JSONL tool-call history.</p>
   <p style="font-size: 0.95em;"><strong>Companion reports: <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="TECHNICAL.html">Technical Stats &rarr;</a></strong></p>
-  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-06-04</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>permission burden</em>.</p>
+  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-06-05</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>permission burden</em>.</p>
 </section>
 
 <section id="topline" class="fade-in">
@@ -199,13 +199,13 @@
   <div class="caveat"><strong>Read this before the headline.</strong> Counts apply Anthropic's documented permission rules to recorded tool calls. The estimate combines <em>front-loaded</em> approvals (one-time per Bash command prefix, permanent after) with <em>recurring</em> ones (every Edit/Write session, every <code>ask</code>-matched call). It excludes the actual development period before 2026-04-18 (Opus 4.6 era, no JSONL transcripts) and assumes the user always selects the most-permissive option offered. The "first-time Bash prefixes" bucket is parsing-noisy in both this pass and the 2026-05-21 snapshot (see <a href="#method">Methodology</a>); the headline carries ~5-10% measurement uncertainty.</div>
 
   <div class="stat-grid">
-    <div class="stat"><div class="val">~2,907</div><div class="label">Total estimated prompts</div><div class="sub">Over 48 days of logged activity (2026-04-18 &rarr; 2026-06-04). ~61/day average; distribution is heavily mixed (see <a href="#profile">Daily profile</a>).</div></div>
-    <div class="stat orange"><div class="val">1,246</div><div class="label">Every-time prompts (recurring)</div><div class="sub">From <code>ask</code> rules (1,079 Bash + 103 WebFetch + 64 WebSearch). Each invocation prompts; no "always-allow" escape. <code>gh *</code> alone drives 953 of these.</div></div>
-    <div class="stat purple"><div class="val">1,394</div><div class="label">Session-scoped resets</div><div class="sub">759 Edit + 635 Write prompts. Each new session re-prompts on first Edit/Write; "always-allow" expires at session end per Anthropic docs.</div></div>
-    <div class="stat green"><div class="val">267</div><div class="label">First-time Bash prefixes</div><div class="sub">Each prompts ONCE then auto-allows permanently per project. Front-loaded in the first ~1-2 weeks. Caveat: both this count and the 2026-05-21 snapshot's 440 include parsing artifacts (shell syntax, quoted-string fragments, lowercase env-var assignments) as "prefixes"; real distinct commands is closer to 40-50.</div></div>
+    <div class="stat"><div class="val">~3,006</div><div class="label">Total estimated prompts</div><div class="sub">Over 49 days of logged activity (2026-04-18 &rarr; 2026-06-05). ~61/day average; distribution is heavily mixed (see <a href="#profile">Daily profile</a>).</div></div>
+    <div class="stat orange"><div class="val">1,271</div><div class="label">Every-time prompts (recurring)</div><div class="sub">From <code>ask</code> rules (1,095 Bash + 104 WebFetch + 72 WebSearch). Each invocation prompts; no "always-allow" escape. <code>gh *</code> alone drives 969 of these.</div></div>
+    <div class="stat purple"><div class="val">1,461</div><div class="label">Session-scoped resets</div><div class="sub">800 Edit + 661 Write prompts. Each new session re-prompts on first Edit/Write; "always-allow" expires at session end per Anthropic docs.</div></div>
+    <div class="stat green"><div class="val">274</div><div class="label">First-time Bash prefixes</div><div class="sub">Each prompts ONCE then auto-allows permanently per project. Front-loaded in the first ~1-2 weeks. Caveat: both this count and the 2026-05-21 snapshot's 440 include parsing artifacts (shell syntax, quoted-string fragments, lowercase env-var assignments) as "prefixes"; real distinct commands is closer to 40-50.</div></div>
   </div>
 
-  <p style="color: var(--text-dim); font-size: 0.92em;">Plus 6 distinct named Agent <code>subagent_type</code> values dispatched 2,257 times (plus ~60 calls with no <code>subagent_type</code> set; uncertain persistence; could be one-per-type permanent or one-per-type-per-session) and 204 hard-denied calls (201× <code>rm -rf /...</code>, 2× <code>dd</code>, 1× <code>sudo</code>) blocked by deny rules &mdash; no "always" option, intentionally.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Plus 6 distinct named Agent <code>subagent_type</code> values dispatched 2,350 times (plus ~61 calls with no <code>subagent_type</code> set; uncertain persistence; could be one-per-type permanent or one-per-type-per-session) and 213 hard-denied calls (210× <code>rm -rf /...</code>, 2× <code>dd</code>, 1× <code>sudo</code>) blocked by deny rules &mdash; no "always" option, intentionally.</p>
 </section>
 
 <section id="breakdown" class="fade-in">
@@ -216,25 +216,25 @@
       <tr><th>Tool / Pattern</th><th class="num">Calls</th><th class="num">Prompts</th><th>Why</th></tr>
     </thead>
     <tbody>
-      <tr><td>Bash (built-in read-only: <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>find</code>, read-only <code>git</code>, etc.)</td><td class="num">48,399</td><td class="num">0</td><td>Never prompt per Anthropic docs</td></tr>
-      <tr><td>Bash (matches <code>allow</code> list, excl. built-in-readonly overlap)</td><td class="num">396</td><td class="num">0</td><td>Auto-allowed by config (e.g., <code>git fetch *</code>, <code>git checkout *</code>, <code>mkdir *</code>) &mdash; counts ABOVE-and-BEYOND what's already covered by built-in read-only</td></tr>
-      <tr><td>Bash (matches <code>ask</code> list: <code>gh *</code>, <code>curl *</code>, etc.)</td><td class="num">1,079</td><td class="num">1,079</td><td><code>ask</code> prompts every call, no escape (953 <code>gh *</code> + 126 <code>curl *</code>)</td></tr>
-      <tr><td>Bash (first-time prefix prompts, 267 unique)</td><td class="num">8,824</td><td class="num">267</td><td>Default-mode prompts; "always" persists per project per prefix. Unique-prefix count includes parsing artifacts in both this pass and the 2026-05-21 snapshot &mdash; real distinct commands is closer to 40-50</td></tr>
-      <tr><td>Bash (denied by <code>deny</code> rules)</td><td class="num">204</td><td class="num">0 (blocked)</td><td>Hard-fail; no "always" option</td></tr>
-      <tr><td>Read</td><td class="num">16,673</td><td class="num">0</td><td>Built-in read tool; no approval per Anthropic docs</td></tr>
-      <tr><td>Grep / Glob</td><td class="num">269</td><td class="num">0</td><td>Built-in read tools; no approval (244 Grep + 25 Glob)</td></tr>
-      <tr><td>Edit (session-scoped)</td><td class="num">8,918</td><td class="num">759</td><td>One prompt per session that uses Edit; resets at session end</td></tr>
-      <tr><td>Write (session-scoped)</td><td class="num">1,448</td><td class="num">635</td><td>Same as Edit, per session</td></tr>
-      <tr><td>WebFetch (in <code>ask</code> under EXAMPLE)</td><td class="num">103</td><td class="num">103</td><td>Every call prompts</td></tr>
-      <tr><td>WebSearch (in <code>ask</code> under EXAMPLE)</td><td class="num">64</td><td class="num">64</td><td>Every call prompts</td></tr>
-      <tr><td>Agent (subagent dispatch, 6 named <code>subagent_type</code> values + ~60 untyped)</td><td class="num">2,257</td><td class="num">6</td><td>Probably permanent per type; persistence not explicit in docs. Mix: general-purpose 1,274; implementer 415; verifier 390; Explore 108; claude-code-guide 9; <code>general-puroose</code> 1 (typo); plus ~60 calls without a <code>subagent_type</code> set</td></tr>
-      <tr><td>Skill / ToolSearch / Task* / Cron* / Monitor / ScheduleWakeup / AskUserQuestion / StructuredOutput</td><td class="num">~3,743</td><td class="num">0</td><td>Built-in Claude Code mechanics, not subject to permission prompts</td></tr>
+      <tr><td>Bash (built-in read-only: <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>find</code>, read-only <code>git</code>, etc.)</td><td class="num">50,472</td><td class="num">0</td><td>Never prompt per Anthropic docs</td></tr>
+      <tr><td>Bash (matches <code>allow</code> list, excl. built-in-readonly overlap)</td><td class="num">403</td><td class="num">0</td><td>Auto-allowed by config (e.g., <code>git fetch *</code>, <code>git checkout *</code>, <code>mkdir *</code>) &mdash; counts ABOVE-and-BEYOND what's already covered by built-in read-only</td></tr>
+      <tr><td>Bash (matches <code>ask</code> list: <code>gh *</code>, <code>curl *</code>, etc.)</td><td class="num">1,095</td><td class="num">1,095</td><td><code>ask</code> prompts every call, no escape (969 <code>gh *</code> + 126 <code>curl *</code>)</td></tr>
+      <tr><td>Bash (first-time prefix prompts, 274 unique)</td><td class="num">9,156</td><td class="num">274</td><td>Default-mode prompts; "always" persists per project per prefix. Unique-prefix count includes parsing artifacts in both this pass and the 2026-05-21 snapshot &mdash; real distinct commands is closer to 40-50</td></tr>
+      <tr><td>Bash (denied by <code>deny</code> rules)</td><td class="num">213</td><td class="num">0 (blocked)</td><td>Hard-fail; no "always" option</td></tr>
+      <tr><td>Read</td><td class="num">17,260</td><td class="num">0</td><td>Built-in read tool; no approval per Anthropic docs</td></tr>
+      <tr><td>Grep / Glob</td><td class="num">274</td><td class="num">0</td><td>Built-in read tools; no approval (~249 Grep + ~25 Glob)</td></tr>
+      <tr><td>Edit (session-scoped)</td><td class="num">9,293</td><td class="num">800</td><td>One prompt per session that uses Edit; resets at session end</td></tr>
+      <tr><td>Write (session-scoped)</td><td class="num">1,503</td><td class="num">661</td><td>Same as Edit, per session</td></tr>
+      <tr><td>WebFetch (in <code>ask</code> under EXAMPLE)</td><td class="num">104</td><td class="num">104</td><td>Every call prompts</td></tr>
+      <tr><td>WebSearch (in <code>ask</code> under EXAMPLE)</td><td class="num">72</td><td class="num">72</td><td>Every call prompts</td></tr>
+      <tr><td>Agent (subagent dispatch, 6 named <code>subagent_type</code> values + ~61 untyped)</td><td class="num">2,350</td><td class="num">6</td><td>Probably permanent per type; persistence not explicit in docs. Mix: general-purpose 1,307; implementer 444; verifier 417; Explore 111; claude-code-guide 9; <code>general-puroose</code> 1 (typo); plus ~61 calls without a <code>subagent_type</code> set</td></tr>
+      <tr><td>Skill / ToolSearch / Task* / Cron* / Monitor / ScheduleWakeup / AskUserQuestion / StructuredOutput</td><td class="num">~3,937</td><td class="num">0</td><td>Built-in Claude Code mechanics, not subject to permission prompts</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Total</strong></td><td class="num">~92,380</td><td class="num"><strong>~2,907</strong></td><td>Plus 204 hard-denied calls</td></tr>
+      <tr><td><strong>Total</strong></td><td class="num">~96,230</td><td class="num"><strong>~3,006</strong></td><td>Plus 213 hard-denied calls</td></tr>
     </tfoot>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">Source: 58,902 Bash + 8,918 Edit + 1,448 Write + 2,257 Agent + 103 WebFetch + 64 WebSearch + ~20,700 other tool calls across 2,363 JSONL sessions (top-level + isolated subagent dispatches) in 6 project working directories. The 2026-05-21 snapshot scanned 8 dirs; two <code>-tmp-zskills-*</code> worktree dirs have since been cleaned off disk &mdash; some historical traffic is no longer measurable.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Source: 61,339 Bash + 9,293 Edit + 1,503 Write + 2,350 Agent + 104 WebFetch + 72 WebSearch + ~21,400 other tool calls across 2,465 JSONL sessions (top-level + isolated subagent dispatches) in 6 project working directories. The 2026-05-21 snapshot scanned 8 dirs; two <code>-tmp-zskills-*</code> worktree dirs have since been cleaned off disk &mdash; some historical traffic is no longer measurable.</p>
 </section>
 
 <section id="patterns" class="fade-in">
@@ -247,42 +247,42 @@
       <tr><th>Pattern</th><th class="num">Prompts</th><th>Note</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>gh *</code></td><td class="num">953</td><td>Every PR, issue, and CI interaction</td></tr>
+      <tr><td><code>gh *</code></td><td class="num">969</td><td>Every PR, issue, and CI interaction</td></tr>
       <tr><td><code>curl *</code></td><td class="num">126</td><td>Most often health-checks and downloads</td></tr>
-      <tr><td><code>WebFetch</code></td><td class="num">103</td><td>Tool-level ask in EXAMPLE config</td></tr>
-      <tr><td><code>WebSearch</code></td><td class="num">64</td><td>Tool-level ask in EXAMPLE config</td></tr>
+      <tr><td><code>WebFetch</code></td><td class="num">104</td><td>Tool-level ask in EXAMPLE config</td></tr>
+      <tr><td><code>WebSearch</code></td><td class="num">72</td><td>Tool-level ask in EXAMPLE config</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Total recurring prompts</strong></td><td class="num"><strong>1,246</strong></td><td>~26/day sustained</td></tr>
+      <tr><td><strong>Total recurring prompts</strong></td><td class="num"><strong>1,271</strong></td><td>~26/day sustained</td></tr>
     </tfoot>
   </table>
 
   <h3>First-time Bash prefix prompts (one per project, then permanent)</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">Each unique prefix prompts once. After the user selects "Yes, don't ask again," the prefix is auto-allowed permanently per project (per Anthropic docs). 267 unique prefixes were extracted by the simulator &mdash; but as a caveat (see <a href="#method">Methodology</a>), this count includes parsing artifacts: shell keywords (<code>for</code>, <code>until</code>, <code>while</code>, <code>if</code>), shell syntax fragments (<code>&amp;&amp;</code>, <code>.</code>, <code>{</code>, <code>#</code> comment lines, <code>"$(git</code> quoted heredoc fragments), and lowercase env-var assignments. The filtered top-10 below shows real commands.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Each unique prefix prompts once. After the user selects "Yes, don't ask again," the prefix is auto-allowed permanently per project (per Anthropic docs). 274 unique prefixes were extracted by the simulator &mdash; but as a caveat (see <a href="#method">Methodology</a>), this count includes parsing artifacts: shell keywords (<code>for</code>, <code>until</code>, <code>while</code>, <code>if</code>), shell syntax fragments (<code>&amp;&amp;</code>, <code>.</code>, <code>{</code>, <code>#</code> comment lines, <code>"$(git</code> quoted heredoc fragments), and lowercase env-var assignments. The filtered top-10 below shows real commands.</p>
   <table>
     <thead>
       <tr><th>Top 10 prefixes (real commands)</th><th class="num">Hits (after first prompt)</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>export *</code></td><td class="num">1,374</td></tr>
-      <tr><td><code>sed *</code></td><td class="num">828</td></tr>
+      <tr><td><code>export *</code></td><td class="num">1,493</td></tr>
+      <tr><td><code>sed *</code></td><td class="num">831</td></tr>
       <tr><td><code>playwright-cli *</code></td><td class="num">547</td></tr>
-      <tr><td><code>bash *</code></td><td class="num">379</td></tr>
+      <tr><td><code>bash *</code></td><td class="num">387</td></tr>
       <tr><td><code>ps *</code></td><td class="num">337</td></tr>
-      <tr><td><code>sleep *</code></td><td class="num">318</td></tr>
+      <tr><td><code>sleep *</code></td><td class="num">328</td></tr>
       <tr><td><code>date *</code></td><td class="num">244</td></tr>
-      <tr><td><code>awk *</code></td><td class="num">179</td></tr>
+      <tr><td><code>awk *</code></td><td class="num">184</td></tr>
       <tr><td><code>python3 *</code></td><td class="num">164</td></tr>
       <tr><td><code>cp *</code></td><td class="num">141</td></tr>
     </tbody>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">Movement since the 2026-06-01 snapshot: <code>ps</code> jumped from #9 (140) to #5 (337) &mdash; reflecting more process-state inspection in the recent window. <code>playwright-cli</code> grew from 471 to 547 (browser-automation work). Otherwise the top-10 mix is stable. The original 2026-05-21 snapshot reported 440 unique prefixes; the 2026-06-04 pass reports 267 &mdash; the gap is parsing-methodology divergence between passes, not a real shrinkage. Default-mode CALLS rose from 3,225 (2026-05-21) to 7,698 (2026-06-01) to 8,824 (2026-06-04), a 2.7&times; increase.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Movement since the 2026-06-04 snapshot: <code>export</code> grew to 1,493 (+119) &mdash; sustained heavy use of env-var setting in test harnesses. Otherwise the top-10 ordering is stable. The original 2026-05-21 snapshot reported 440 unique prefixes; the 2026-06-05 pass reports 274 &mdash; the gap is parsing-methodology divergence between passes, not a real shrinkage. Default-mode CALLS rose from 3,225 (2026-05-21) to 7,698 (2026-06-01) to 8,824 (2026-06-04) to 9,156 (2026-06-05), a 2.8&times; increase from the original snapshot.</p>
 </section>
 
 <section id="profile" class="fade-in">
   <h2>Daily Profile</h2>
 
-  <p>~2,907 prompts over 48 days averages <strong>~61 prompts per day</strong>, but the distribution mixes three patterns:</p>
+  <p>~3,006 prompts over 49 days averages <strong>~61 prompts per day</strong>, but the distribution mixes three patterns:</p>
 
   <table>
     <thead>
@@ -290,14 +290,14 @@
     </thead>
     <tbody>
       <tr><td><code>gh *</code> ask prompts</td><td class="num">~20/day</td><td>Sustained throughout. Spikes during /fix-issues sprints and PR landings. Per-day rate down from ~28/day in the 2026-05-21 snapshot &mdash; recent work uses auto-merge more aggressively, replacing manual <code>gh pr merge</code> / <code>gh pr view</code> calls.</td></tr>
-      <tr><td>Edit + Write session resets</td><td class="num">~29/day</td><td>Sustained. ~16 sessions/day touch Edit, ~13 touch Write; each first-touch prompts.</td></tr>
+      <tr><td>Edit + Write session resets</td><td class="num">~30/day</td><td>Sustained. ~16 sessions/day touch Edit, ~13 touch Write; each first-touch prompts.</td></tr>
       <tr><td>First-time Bash prefixes</td><td class="num">~5.6/day average</td><td>Heavily front-loaded. Days 1-7 likely 40-60/day; later days near zero unless new commands appear.</td></tr>
       <tr><td>WebFetch ask prompts</td><td class="num">~2/day</td><td>Sustained but declining. Documentation lookups and API research; less in recent period as the project matured.</td></tr>
       <tr><td>WebSearch + curl + others in ask</td><td class="num">~4/day</td><td>Sustained.</td></tr>
     </tbody>
   </table>
 
-  <p style="color: var(--text-dim); font-size: 0.92em;">Most of the long-tail (~55 prompts/day, sustained) comes from <code>ask</code>-matched recurring prompts plus session-scoped Edit/Write resets &mdash; not from new Bash prefixes. After the first ~1-2 weeks, new-prefix prompts drop to near zero, but the recurring components stay at the same rate. The EXAMPLE config's choice to put <code>gh *</code> in <code>ask</code> is the single biggest driver: relaxing it to <code>allow</code> would cut the total to ~1,954 prompts (~41/day).</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Most of the long-tail (~56 prompts/day, sustained) comes from <code>ask</code>-matched recurring prompts plus session-scoped Edit/Write resets &mdash; not from new Bash prefixes. After the first ~1-2 weeks, new-prefix prompts drop to near zero, but the recurring components stay at the same rate. The EXAMPLE config's choice to put <code>gh *</code> in <code>ask</code> is the single biggest driver: relaxing it to <code>allow</code> would cut the total to ~2,037 prompts (~42/day).</p>
 </section>
 
 <section id="method" class="fade-in">
@@ -319,7 +319,7 @@
   </ul>
 
   <h3>Tool-call extraction</h3>
-  <p>Scanned 2,363 JSONL files across 6 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 5 <code>-tmp-zskills-*/</code> worktree-spawned dirs). For each assistant turn, extracted every <code>tool_use</code> content block; recorded tool name and input parameters. Bash commands were classified by deriving the primary command intent (first non-noise word after stripping wrappers and env-var assignments) and matching against the settings' allow / ask / deny lists. The 2026-05-21 snapshot scanned 8 dirs; two <code>-tmp-zskills-*</code> dirs have since been cleaned off disk and their historical traffic is no longer measurable, which understates some net-growth figures relative to pure activity scaling.</p>
+  <p>Scanned 2,465 JSONL files across 6 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 5 <code>-tmp-zskills-*/</code> worktree-spawned dirs). For each assistant turn, extracted every <code>tool_use</code> content block; recorded tool name and input parameters. Bash commands were classified by deriving the primary command intent (first non-noise word after stripping wrappers and env-var assignments) and matching against the settings' allow / ask / deny lists. The 2026-05-21 snapshot scanned 8 dirs; two <code>-tmp-zskills-*</code> dirs have since been cleaned off disk and their historical traffic is no longer measurable, which understates some net-growth figures relative to pure activity scaling.</p>
 
   <h3>Counting model</h3>
   <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
@@ -337,19 +337,19 @@
   <p style="color: var(--text-dim); font-size: 0.92em;">The 2026-06-01 refresh was double-checked by five independent verification agents using methodology distinct from the primary Python recompute (ripgrep over raw JSONL bytes for Bash/WebFetch/WebSearch counts, <code>grep -l</code> file-list-union/intersection for Edit/Write session counts, separate spot-check sampling for breakdown claims). All agents reported the headline figures match within ~0.05% (methodology noise on total Bash count from JSON-extraction-regex edge cases).</p>
   <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
     <li><strong>Permission docs cross-referenced.</strong> Anthropic's permission documentation directly confirms the per-Bash-prefix-permanent / per-session Edit/Write / never-prompt-read-only model used here.</li>
-    <li><strong>Bash ask-pattern counts verified independently.</strong> Ripgrep on raw JSONL bytes returned 953 <code>gh *</code> and 126 <code>curl *</code>; primary Python pass matches within 0.2% (small drift from session-count growth between recompute and verification). WebFetch (103) and WebSearch (64) match exactly.</li>
-    <li><strong>Hard-deny breakdown verified.</strong> Independent count using the literal deny patterns from <code>EXAMPLE_settings.json</code> (<code>rm -rf /</code>, <code>rm -rf /*</code>, <code>dd *</code>, <code>sudo *</code>): 201 + 2 + 1 = 204. Exact match.</li>
-    <li><strong>Session counts verified.</strong> Cross-checked via <code>grep -l '"name":"Edit"'</code> file-list (759 Edit / 635 Write / 1,076 union / 318 intersection). Counts match the primary Python pass exactly.</li>
-    <li><strong>Methodology caveat: unique-prefix count is noisy.</strong> The "267 first-time Bash prefixes" includes parsing artifacts &mdash; shell keywords (<code>for</code>, <code>until</code>, <code>while</code>, <code>if</code>), shell-syntax fragments (<code>&amp;&amp;</code>, <code>.</code>, <code>{</code>, <code>#</code> comment lines, <code>"$(git</code> quoted heredoc fragments), and lowercase env-var assignments my env-stripper misses (<code>f=/tmp/...</code>, <code>to=/tmp/...</code>). Real distinct commands is closer to 40-50. The 2026-05-21 snapshot's 440 was inflated in the same way; the gap between 440 and 267 is therefore methodology-divergence between parsing passes, not a real shrinkage in the project's command surface.</li>
+    <li><strong>Bash ask-pattern counts verified independently.</strong> Ripgrep on raw JSONL bytes returned 969 <code>gh *</code> and 126 <code>curl *</code>; primary Python pass matches exactly. WebFetch (104) and WebSearch (72) match exactly.</li>
+    <li><strong>Hard-deny breakdown verified.</strong> Independent count using the literal deny patterns from <code>EXAMPLE_settings.json</code> (<code>rm -rf /</code>, <code>rm -rf /*</code>, <code>dd *</code>, <code>sudo *</code>): 210 + 2 + 1 = 213. The 210 figure for the rm-deny pattern reflects commands whose <code>command</code> field starts with <code>rm -rf /...</code> after env-var stripping (anchored, DOTALL on); a verifier using a different anchor (raw substring) reported 422 hits, of which 96% target legitimate <code>/tmp/...</code> paths (the EXAMPLE config's <code>rm -rf /*</code> glob is intentionally broad).</li>
+    <li><strong>Session counts verified.</strong> Cross-checked via <code>grep -l '"name":"Edit"'</code> file-list (800 Edit / 661 Write / 1,127 union / 334 intersection). Counts match the primary Python pass exactly.</li>
+    <li><strong>Methodology caveat: unique-prefix count is noisy.</strong> The "274 first-time Bash prefixes" includes parsing artifacts &mdash; shell keywords (<code>for</code>, <code>until</code>, <code>while</code>, <code>if</code>), shell-syntax fragments (<code>&amp;&amp;</code>, <code>.</code>, <code>{</code>, <code>#</code> comment lines, <code>"$(git</code> quoted heredoc fragments), and lowercase env-var assignments my env-stripper misses (<code>f=/tmp/...</code>, <code>to=/tmp/...</code>). Real distinct commands is closer to 40-50. The 2026-05-21 snapshot's 440 was inflated in the same way; the gap between 440 and 274 is therefore methodology-divergence between parsing passes, not a real shrinkage in the project's command surface.</li>
     <li><strong>Two project dirs dropped.</strong> The 2026-05-21 snapshot scanned 8 dirs (1 main + 7 <code>-tmp-zskills-*</code>); the 2026-06-01 refresh has 6 (1 + 5). Two ephemeral worktree dirs were cleaned off disk between snapshots and their JSONL is no longer measurable. Per-bucket growth rates carry this caveat &mdash; some figures are accordingly understated.</li>
     <li><strong>Settings rules cross-referenced with current file.</strong> Allow/ask/deny lists read directly from <code>EXAMPLE_settings.json</code> at the time of analysis.</li>
   </ul>
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>~2,907 estimated permission prompts under a conservative settings config &rarr; the headline number scales heavily with what's in <code>ask</code>. <code>gh *</code> alone accounts for ~33% of all prompts.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>~3,006 estimated permission prompts under a conservative settings config &rarr; the headline number scales heavily with what's in <code>ask</code>. <code>gh *</code> alone accounts for ~32% of all prompts.</strong></p>
   <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost report</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-06-04. Settings source: EXAMPLE_settings.json.</p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-06-05. Settings source: EXAMPLE_settings.json.</p>
 </section>
 
 </div>
