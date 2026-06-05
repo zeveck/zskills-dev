@@ -114,6 +114,107 @@ else
   fail "[count] distinct vs raw" "distinct=$COUNT raw=$RAW (expected 150 < distinct < raw)"
 fi
 
+# ── 4b. serial-only bucket (Phase 3) ──────────────────────────────────
+# list_serial_suites reports exactly the 2 genuinely-unparallelizable suites
+# (monitor_server + attended live-load) as "serial<TAB>path", and
+# is_serial_suite is the matching predicate. Both serial suites MUST still be
+# present in the unconditional registered set (they are unconditional
+# registrations; the parallel runner SUBTRACTS the serial bucket to form the
+# parallel pool — it does not depend on them being absent from the list).
+SERIAL="$(list_serial_suites)"
+expected_serial=$'serial\ttests/test_zskills_monitor_server.sh\nserial\ttests/test-plugin-live-load.sh'
+if [ "$SERIAL" = "$expected_serial" ]; then
+  pass "[serial] list_serial_suites returns monitor_server + attended live-load with serial tag"
+else
+  fail "[serial] serial set" "got: $(printf '%s' "$SERIAL" | tr '\n' '|')"
+fi
+
+# is_serial_suite predicate: true for both serial paths, false for an
+# arbitrary parallel-pool suite.
+if is_serial_suite "tests/test_zskills_monitor_server.sh"; then
+  pass "[serial] is_serial_suite true for monitor_server"
+else
+  fail "[serial] is_serial_suite monitor_server" "expected true, got false"
+fi
+if is_serial_suite "tests/test-plugin-live-load.sh"; then
+  pass "[serial] is_serial_suite true for attended live-load"
+else
+  fail "[serial] is_serial_suite live-load" "expected true, got false"
+fi
+if is_serial_suite "tests/test-do.sh"; then
+  fail "[serial] is_serial_suite test-do.sh" "expected false (parallel-pool suite), got true"
+else
+  pass "[serial] is_serial_suite false for a parallel-pool suite (test-do.sh)"
+fi
+
+# Both serial suites must still be present in the unconditional registered set
+# (the parallel runner relies on subtracting the serial bucket, NOT on their
+# absence). monitor_server is a plain unconditional registration; live-load is
+# the deduped attended registration.
+if printf '%s\n' "$SUITES" | grep -qx 'tests/test_zskills_monitor_server.sh'; then
+  pass "[serial] monitor_server still present in unconditional registered set"
+else
+  fail "[serial] monitor_server in registered set" "expected present, absent"
+fi
+if printf '%s\n' "$SUITES" | grep -qx 'tests/test-plugin-live-load.sh'; then
+  pass "[serial] live-load still present in unconditional registered set"
+else
+  fail "[serial] live-load in registered set" "expected present, absent"
+fi
+
+# serial_run_attended_live_load carries the attended-gate decision VERBATIM
+# and runs the suite EXACTLY ONCE. Drive the gate purely via env (no live
+# claude): force capability ON + a fresh throttle marker that is OLD enough to
+# pass, then assert the gate-pass branch fired (ZSKILLS_LIVE_ATTENDED=1 set for
+# the single call) and the marker was refreshed. Use a fake run_suite stub
+# that records the call count + the flag it saw.
+GATE_TMP=$(mktemp -d)
+GATE_MARKER="$GATE_TMP/.zskills/last-attended-plugin-run"
+mkdir -p "$(dirname "$GATE_MARKER")"
+echo "1" > "$GATE_MARKER"            # epoch 1 → ancient → throttle elapsed
+CALL_LOG="$GATE_TMP/calls"; : > "$CALL_LOG"
+fake_run_suite() {
+  # Record: which suite + whether ZSKILLS_LIVE_ATTENDED reached this call.
+  printf '%s\tlive=%s\n' "$2" "${ZSKILLS_LIVE_ATTENDED:-unset}" >> "$CALL_LOG"
+}
+(
+  export HOME="$GATE_TMP"
+  export ZSKILLS_GATE_FORCE_CLAUDE=1 ZSKILLS_GATE_FORCE_CREDS=1
+  export ZSKILLS_ATTENDED_THROTTLE_SECONDS=1
+  serial_run_attended_live_load fake_run_suite >/dev/null 2>&1
+)
+GATE_CALLS=$(grep -c . "$CALL_LOG" || echo 0)
+GATE_LIVE_LINE=$(grep -c 'live=1' "$CALL_LOG" || echo 0)
+GATE_MARKER_VAL=$(cat "$GATE_TMP/.zskills/last-attended-plugin-run" 2>/dev/null || echo "")
+if [ "$GATE_CALLS" -eq 1 ] && [ "$GATE_LIVE_LINE" -eq 1 ]; then
+  pass "[serial] serial_run_attended_live_load runs live-load ONCE with gate PASS (ZSKILLS_LIVE_ATTENDED=1)"
+else
+  fail "[serial] gate-pass branch" "calls=$GATE_CALLS live=1-lines=$GATE_LIVE_LINE (expected 1 call, 1 live)"
+fi
+# Marker must have been refreshed to a fresh epoch (no longer the ancient '1').
+if [ -n "$GATE_MARKER_VAL" ] && [ "$GATE_MARKER_VAL" != "1" ]; then
+  pass "[serial] gate-pass refreshes the throttle marker"
+else
+  fail "[serial] marker refresh" "marker='$GATE_MARKER_VAL' (expected fresh epoch, not '1')"
+fi
+
+# Gate-FAIL branch: force capability OFF → plain branch, ONE call, no flag.
+CALL_LOG2="$GATE_TMP/calls2"; : > "$CALL_LOG2"
+fake_run_suite2() { printf '%s\tlive=%s\n' "$2" "${ZSKILLS_LIVE_ATTENDED:-unset}" >> "$CALL_LOG2"; }
+(
+  export HOME="$GATE_TMP"
+  export ZSKILLS_GATE_FORCE_CLAUDE=0 ZSKILLS_GATE_FORCE_CREDS=0
+  serial_run_attended_live_load fake_run_suite2 >/dev/null 2>&1
+)
+GATE2_CALLS=$(grep -c . "$CALL_LOG2" || echo 0)
+GATE2_UNSET=$(grep -c 'live=unset' "$CALL_LOG2" || echo 0)
+if [ "$GATE2_CALLS" -eq 1 ] && [ "$GATE2_UNSET" -eq 1 ]; then
+  pass "[serial] serial_run_attended_live_load runs live-load ONCE on gate FAIL (no ZSKILLS_LIVE_ATTENDED)"
+else
+  fail "[serial] gate-fail branch" "calls=$GATE2_CALLS unset-lines=$GATE2_UNSET (expected 1 call, 1 unset)"
+fi
+rm -rf "$GATE_TMP"
+
 # ── 5. parser must NOT execute run-all.sh ─────────────────────────────
 # Poison run-all by making its execution observably fail: copy it to a temp
 # fixture, prepend an `exit 7 / touch SENTINEL` that WOULD fire if sourced or
