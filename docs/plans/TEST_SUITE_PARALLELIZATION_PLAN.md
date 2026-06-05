@@ -70,7 +70,7 @@ additive term and the attended gate pinned OFF.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 0 — Baseline capture + shared infra: result-parser + registry reader | ⬚ | | |
+| 0 — Baseline capture + shared infra: result-parser + registry reader | ✅ Done | 62475b4 | baseline: 7546 existing / 2384 test-hooks / 713 conformance; +23 new ⇒ 7569 |
 | 1a — Extract hooks-harness lib (incl. test-hooks-helpers); verify monolith still 2384 | ⬚ | | |
 | 1b — Relocate test-hooks sections into sub-suites | ⬚ | | |
 | 2 — Targeted isolation (apply-preset, paths-migration) | ⬚ | | |
