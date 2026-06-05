@@ -440,6 +440,20 @@ fi
 TMP_ROOT="/tmp/zskills-monitor-ui-test.$$"
 mkdir -p "$TMP_ROOT"
 
+# --- Hermetic gh: intercept live `gh issue list` from the server ----------
+# The live-server smoke below starts `python3 -m zskills_monitor.server`,
+# which calls collect_snapshot() on /api/state and shells `gh issue list`
+# from the server PROCESS — bypassing any in-process runner DI seam. A
+# PATH-prefixed mock `gh` IS inherited by the spawned server. Prepend a
+# stateless offline stub (returns `[]` for issue list) so the smoke is
+# hermetic and deterministic. The smoke asserts served bytes, content-types,
+# HTTP codes, and plan-fixture shape — none depend on live issue content.
+MOCK_GH_BIN_DIR="$(mktemp -d -t zskills-mock-gh-XXXXXX)"
+cp "$SCRIPT_DIR/mocks/mock-gh-offline.sh" "$MOCK_GH_BIN_DIR/gh"
+chmod +x "$MOCK_GH_BIN_DIR/gh"
+PATH="$MOCK_GH_BIN_DIR:$PATH"
+export PATH
+
 TRACKED_PIDS=""
 cleanup() {
   for p in $TRACKED_PIDS; do
@@ -450,6 +464,9 @@ cleanup() {
   done
   if [ -d "$TMP_ROOT" ]; then
     rm -rf "$TMP_ROOT"
+  fi
+  if [ -d "$MOCK_GH_BIN_DIR" ]; then
+    rm -rf "$MOCK_GH_BIN_DIR"
   fi
 }
 trap cleanup EXIT INT TERM

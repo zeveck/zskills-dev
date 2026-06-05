@@ -17,6 +17,24 @@ PKG_PARENT="$REPO_ROOT/skills/zskills-dashboard/scripts"
 COLLECT_PY="$PKG_PARENT/zskills_monitor/collect.py"
 FIXTURES="$REPO_ROOT/tests/fixtures/monitor"
 
+# --- Hermetic gh: intercept live `gh issue list` from subprocesses --------
+# Several cases below invoke collect.py via `--repo-root`, `collect_snapshot()`
+# without an injected runner, against the real repo or a tmpdir — collect.py
+# then shells `gh issue list` from a CHILD process, bypassing the in-process
+# `_runner`/`issue_runner` DI seam (an in-process runner cannot reach a child).
+# A PATH-prefixed mock `gh` IS inherited by that child. Prepend a stateless
+# offline stub (returns `[]` for issue list, exits 0 otherwise) so the suite
+# is hermetic, deterministic, and never network/IO-bound. The live-firing
+# assertions here (plan-set parity, snapshot keys, byte-identity, repo_root,
+# activity) do not depend on issue content, so an empty list is correct.
+MOCK_GH_BIN_DIR="$(mktemp -d -t zskills-mock-gh-XXXXXX)"
+cp "$SCRIPT_DIR/mocks/mock-gh-offline.sh" "$MOCK_GH_BIN_DIR/gh"
+chmod +x "$MOCK_GH_BIN_DIR/gh"
+PATH="$MOCK_GH_BIN_DIR:$PATH"
+export PATH
+_cleanup_mock_gh() { rm -rf "$MOCK_GH_BIN_DIR"; }
+trap _cleanup_mock_gh EXIT
+
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0

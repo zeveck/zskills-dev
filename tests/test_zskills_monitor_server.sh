@@ -51,6 +51,21 @@ if [ ! -f "$SERVER_PY" ]; then
   print_summary_and_exit
 fi
 
+# --- Hermetic gh: intercept live `gh issue list` from the server ----------
+# The server (`python3 -m zskills_monitor.server`) calls collect_snapshot()
+# on every /api/state, which shells `gh issue list` from the server PROCESS —
+# bypassing any in-process runner DI seam. A PATH-prefixed mock `gh` IS
+# inherited by the spawned server. Prepend a stateless offline stub (returns
+# `[]` for issue list) so the suite is hermetic and deterministic against the
+# real GitHub API. These tests assert endpoint shape, plan/queue handling,
+# and lifecycle — none depend on live issue content, so an empty list is
+# correct.
+MOCK_GH_BIN_DIR="$(mktemp -d -t zskills-mock-gh-XXXXXX)"
+cp "$SCRIPT_DIR/mocks/mock-gh-offline.sh" "$MOCK_GH_BIN_DIR/gh"
+chmod +x "$MOCK_GH_BIN_DIR/gh"
+PATH="$MOCK_GH_BIN_DIR:$PATH"
+export PATH
+
 # Per-process scratch root. Reused across test phases (each phase clears
 # only the parts it owns; no broad rm -rf).
 TMP_ROOT="/tmp/zskills-monitor-server-test.$$"
@@ -71,6 +86,10 @@ cleanup() {
   # Remove our scoped tmpdir (literal /tmp/<name> path).
   if [ -d "$TMP_ROOT" ]; then
     rm -rf "$TMP_ROOT"
+  fi
+  # Remove the mock-gh bin dir.
+  if [ -d "$MOCK_GH_BIN_DIR" ]; then
+    rm -rf "$MOCK_GH_BIN_DIR"
   fi
 }
 trap cleanup EXIT INT TERM

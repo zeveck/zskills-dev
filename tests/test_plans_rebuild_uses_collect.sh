@@ -30,6 +30,22 @@ PKG_PARENT="$REPO_ROOT/skills/zskills-dashboard/scripts"
 COLLECT_PY="$PKG_PARENT/zskills_monitor/collect.py"
 FIXTURES="$REPO_ROOT/tests/fixtures/monitor"
 
+# --- Hermetic gh: intercept live `gh issue list` from subprocesses --------
+# AC-7's parity smoke runs collect.py with `--repo-root "$REPO_ROOT"` against
+# the real repo; collect.py then shells `gh issue list` from a CHILD process,
+# bypassing the in-process runner DI seam. A PATH-prefixed mock `gh` IS
+# inherited by that child. Prepend a stateless offline stub (returns `[]` for
+# issue list) so the suite is hermetic and deterministic. AC-7 asserts
+# plan-set parity (plans only) and traceback-freedom — neither depends on
+# live issue content, so an empty list is correct.
+MOCK_GH_BIN_DIR="$(mktemp -d -t zskills-mock-gh-XXXXXX)"
+cp "$SCRIPT_DIR/mocks/mock-gh-offline.sh" "$MOCK_GH_BIN_DIR/gh"
+chmod +x "$MOCK_GH_BIN_DIR/gh"
+PATH="$MOCK_GH_BIN_DIR:$PATH"
+export PATH
+_cleanup_mock_gh() { rm -rf "$MOCK_GH_BIN_DIR"; }
+trap _cleanup_mock_gh EXIT
+
 TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
 mkdir -p "$TEST_OUT"
 RESULTS="$TEST_OUT/test_plans_rebuild_uses_collect.log"
@@ -403,7 +419,9 @@ print("|".join(bad))
 
   # Run the canonical CLI line with an empty PATH; expect non-zero.
   TMP_DIR=$(mktemp -d)
-  trap "rm -rf '$TMP_DIR'" EXIT
+  # Fold the mock-gh cleanup into this EXIT trap so the earlier
+  # `trap _cleanup_mock_gh EXIT` is not silently dropped.
+  trap "rm -rf '$TMP_DIR'; _cleanup_mock_gh" EXIT
   set +e
   env -i HOME="$HOME" PATH="$TMP_DIR" \
     bash -c 'PYTHONPATH="'"$PKG_PARENT"'" python3 -m zskills_monitor.collect --fixture "'"$FIXTURES/minimal"'"' \
