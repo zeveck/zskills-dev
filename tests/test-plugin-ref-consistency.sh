@@ -7,8 +7,8 @@
 # THE publisher is the "🚀 Ship to Prod" button:
 #   .github/workflows/ship-to-prod.yml → scripts/build-prod.sh
 #   → push to prod's BARE `main` branch + a BARE `<version>` tag
-#     (ship-to-prod.yml: `git push prod "${PROD_SHA}:refs/heads/main"` and
-#      `git push prod "${PROD_SHA}:refs/tags/${TAG}"`).
+#     (ship-to-prod.yml pushes "${PROD_SHA}:refs/heads/main" and
+#      "${PROD_SHA}:refs/tags/${TAG}", via an explicit PAT extraheader).
 #
 # Consumers resolve:
 #   - .claude-plugin/marketplace.json's `zs` source.ref — the moving window
@@ -60,11 +60,17 @@ for f in "$WF" "$MP" "$DOC"; do
   fi
 done
 
-# ── Parse the two `git push prod ...` refspec lines out of the WORKFLOW ─────
-# Heads refspec: git push prod "${PROD_SHA}:refs/heads/main"
-# Tags  refspec: git push prod "${PROD_SHA}:refs/tags/${TAG}"
-HEADS_LINE="$(grep -E 'git push prod .*:refs/heads/' "$WF" | head -1)"
-TAGS_LINE="$(grep -E 'git push prod .*:refs/tags/' "$WF" | head -1)"
+# ── Parse the two `git ... push ...` refspec lines out of the WORKFLOW ─────
+# The real-push step issues (with an explicit PAT extraheader to override the
+# checkout-installed GITHUB_TOKEN header — see the workflow comment):
+#   git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/heads/main"
+#   git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/tags/${TAG}"
+# Match on `push ... :refs/heads/` / `:refs/tags/` (NOT pinned to a remote
+# alias) so the same bare-ref invariant is validated regardless of whether the
+# push targets the `prod` remote alias or an explicit "$PROD_URL". Exclude the
+# pre-flight write-probe's throwaway ref (refs/heads/__ship-preflight-probe-).
+HEADS_LINE="$(grep -E 'push .*:refs/heads/' "$WF" | grep -v '__ship-preflight-probe' | head -1)"
+TAGS_LINE="$(grep -E 'push .*:refs/tags/' "$WF" | head -1)"
 
 if [ -n "$HEADS_LINE" ]; then
   pass "workflow has a heads-refspec push line"

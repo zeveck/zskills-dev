@@ -11,7 +11,7 @@
     "dashboard_completed_limit": 500
   },
   "commit": {
-    "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+    "co_author": "Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   },
   "logging": {
     "enabled": true,

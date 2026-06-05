@@ -42,10 +42,14 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      - name: Pre-flight — verify PROD_PUSH_TOKEN is valid
-        # Runs before any state-changing work so an expired/missing PAT
-        # fails the workflow in seconds, with zero cleanup required. Also
-        # runs on dry-run so you can catch a dead token without shipping.
+      - name: Pre-flight — verify PROD_PUSH_TOKEN can WRITE to prod
+        # A real write-probe, not a read. The old `git ls-remote` proved only a READ,
+        # which works for ANY identity on a public repo (even github-actions[bot]) — so
+        # it went green while the real push later 403'd. This probe pushes a throwaway
+        # ref to prod using the PAT via the SAME explicit auth header the real push uses,
+        # then deletes it. Runs on dry-run too: a dry-run now makes exactly ONE reversible
+        # write (this probe ref, pushed-then-deleted, pointing at prod's existing main SHA
+        # — no content change) and otherwise still writes nothing.
         env:
           PROD_PUSH_TOKEN: ${{ secrets.PROD_PUSH_TOKEN }}
         run: |
@@ -53,11 +57,22 @@ jobs:
             echo "::error::PROD_PUSH_TOKEN secret is not set. See RELEASING.md for one-time setup."
             exit 1
           fi
-          if ! git ls-remote --heads "https://x-access-token:${PROD_PUSH_TOKEN}@github.com/zeveck/zskills.git" >/dev/null 2>&1; then
-            echo "::error::PROD_PUSH_TOKEN auth failed against zeveck/zskills. Rotate the PAT (RELEASING.md → 'One-time setup') and re-run."
-            exit 1
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PROD_PUSH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$AUTH"
+          PROD_URL="https://github.com/zeveck/zskills.git"
+          PROBE="refs/heads/__ship-preflight-probe-${{ github.run_id }}"
+          if ! git -c "http.https://github.com/.extraheader=$AUTH" fetch "$PROD_URL" main 2>fetch-err.log; then
+            echo "::error::Could not reach zeveck/zskills with PROD_PUSH_TOKEN:"; cat fetch-err.log; exit 1
           fi
-          echo "::notice::PAT auth OK."
+          PROD_MAIN=$(git rev-parse FETCH_HEAD)
+          if ! git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "$PROD_MAIN:$PROBE" 2>probe-err.log; then
+            echo "::error::PROD_PUSH_TOKEN cannot WRITE to zeveck/zskills (the real push would fail the same way). Rotate/repair the PAT — RELEASING.md 'One-time setup' — and re-run."
+            cat probe-err.log; exit 1
+          fi
+          if ! git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" ":$PROBE" 2>cleanup-err.log; then
+            echo "::warning::Probe ref cleanup failed; delete $PROBE on zeveck/zskills manually."; cat cleanup-err.log
+          fi
+          echo "::notice::PAT write-access to prod confirmed."
 
       - name: Capture dev SHA being released
         id: dev_sha
@@ -103,14 +118,21 @@ jobs:
 
       - name: Push to prod (prod-first, so dev stays clean on failure)
         if: ${{ inputs.dry-run == false }}
+        env:
+          PROD_PUSH_TOKEN: ${{ secrets.PROD_PUSH_TOKEN }}
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
           PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
-          # 1) Push transformed commit to prod's main. Fast-forward — we
-          #    built on prod/main as parent in the commit-tree step above.
-          git push prod "${PROD_SHA}:refs/heads/main"
-          # 2) Push the same tag to prod, pointing at the transformed commit.
-          git push prod "${PROD_SHA}:refs/tags/${TAG}"
+          # actions/checkout installs a global http.https://github.com/.extraheader
+          # carrying the GITHUB_TOKEN (github-actions[bot]). Left in place it OVERRIDES
+          # the PAT and the push authenticates as the bot, which has no write access to
+          # the separate prod repo -> 403. Force the correct identity by setting the
+          # extraheader to the PAT (the same mechanism checkout uses, with our token).
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PROD_PUSH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$AUTH"
+          PROD_URL="https://github.com/zeveck/zskills.git"
+          git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/heads/main"
+          git -c "http.https://github.com/.extraheader=$AUTH" push "$PROD_URL" "${PROD_SHA}:refs/tags/${TAG}"
 
       - name: Tag dev + create Release (only after prod succeeded)
         if: ${{ inputs.dry-run == false }}
