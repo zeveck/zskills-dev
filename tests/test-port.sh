@@ -178,8 +178,10 @@ rm -rf "$proj"
 # Verify PROJECT_ROOT env override + tightened regex + fail-loud guard.
 
 # 11. Fixture with default_port: 7777 — verifies PROJECT_ROOT override + configured value
-FIXTURE=/tmp/zskills-port-fixture
-rm -rf "$FIXTURE" && mkdir -p "$FIXTURE/.claude"
+# Per-invocation private fixture root (#1101): a FIXED /tmp path collides when
+# two concurrent run-alls share a clone. mktemp -d (honors $TMPDIR, which the
+# parallel runner injects per-suite) makes the fixture unique per invocation.
+FIXTURE=$(mktemp -d) && mkdir -p "$FIXTURE/.claude"
 cat > "$FIXTURE/.claude/zskills-config.json" <<JSON
 {"dev_server": {"main_repo_path": "$FIXTURE", "default_port": 7777}}
 JSON
@@ -192,8 +194,8 @@ fi
 rm -rf "$FIXTURE"
 
 # 12. Fixture WITHOUT default_port field — verifies fail-loud
-FIXTURE=/tmp/zskills-port-fixture-absent
-rm -rf "$FIXTURE" && mkdir -p "$FIXTURE/.claude"
+# Per-invocation private fixture root (#1101) — see case 11.
+FIXTURE=$(mktemp -d) && mkdir -p "$FIXTURE/.claude"
 cat > "$FIXTURE/.claude/zskills-config.json" <<JSON
 {"dev_server": {"main_repo_path": "$FIXTURE"}}
 JSON
@@ -210,8 +212,8 @@ rm -rf "$FIXTURE"
 # NOTE: main_repo_path is placed BEFORE the nested "limits" object so the (still-loose) main_repo_path
 # regex matches; default_port appears only inside "limits", so the tight [^{}]* regex must NOT match,
 # leaving DEFAULT_PORT="" and triggering fail-loud in the main-repo branch.
-FIXTURE=/tmp/zskills-port-fixture-nested
-rm -rf "$FIXTURE" && mkdir -p "$FIXTURE/.claude"
+# Per-invocation private fixture root (#1101) — see case 11.
+FIXTURE=$(mktemp -d) && mkdir -p "$FIXTURE/.claude"
 cat > "$FIXTURE/.claude/zskills-config.json" <<JSON
 {"dev_server": {"main_repo_path": "$FIXTURE", "limits": {"default_port": 9999}}}
 JSON
