@@ -184,6 +184,25 @@ else
   fail "13. seeded config wrong: no config file"
 fi
 
+# 13b. Fresh seed defaults output.{plans,issues,reports}_dir to docs/ so a
+# brand-new consumer's dashboard + plan-skills find plans in docs/plans out of
+# the box (NOT the legacy plans/ fallback the resolver applies to an absent
+# output block). This seed MUST stay byte-identical to the /update-zskills
+# install scaffold in skills/update-zskills/SKILL.md (asserted symmetric in
+# tests/test-skill-conformance.sh).
+if [ -f "$SEED_CFG" ]; then
+  seed_plans=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["output"]["plans_dir"])' "$SEED_CFG" 2>/dev/null)
+  seed_issues=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["output"]["issues_dir"])' "$SEED_CFG" 2>/dev/null)
+  seed_reports=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["output"]["reports_dir"])' "$SEED_CFG" 2>/dev/null)
+  if [ "$seed_plans" = "docs/plans" ] && [ "$seed_issues" = "docs/issues" ] && [ "$seed_reports" = "docs/reports" ]; then
+    pass "13b. seeded config output block = docs/{plans,issues,reports}"
+  else
+    fail "13b. seeded config output wrong: plans=$seed_plans issues=$seed_issues reports=$seed_reports"
+  fi
+else
+  fail "13b. seeded config output check skipped: no config file"
+fi
+
 # 14. All 5 artifacts materialised now that the render gate passes.
 if [ -f "$SEED/.claude/agents/verifier.md" ] \
    && [ -f "$SEED/.claude/agents/implementer.md" ] \

@@ -2351,6 +2351,87 @@ else
 fi
 
 echo ""
+echo "=== Fresh-config scaffold: both lanes seed output.{plans,issues,reports}_dir = docs/ ==="
+# A FRESH config scaffold must default the output path keys to the documented
+# docs/ layout so a brand-new consumer's dashboard + plan-skills find plans in
+# docs/plans out of the box (resolver falls back to legacy plans/ only when the
+# output block is ABSENT — proven separately in tests/test-zskills-paths.sh
+# Case 1). Both scaffold sites must write the SAME output block:
+#   - plugin lane: hooks/session-start-materialise.sh seed dict
+#   - /update-zskills lane: skills/update-zskills/SKILL.md install scaffold JSON
+# This tightens the prior invariant (the seed used to carry NO output block).
+SCAFFOLD_PY="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+SCAFFOLD_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "$SCAFFOLD_PY" <<'PYEOF'
+import json, os, re, sys
+
+repo = os.environ["ZS_REPO_ROOT"]
+errs = []
+
+# --- (1) Plugin-lane seed: extract the `cfg = { ... }` dict literal from the
+#     materialiser and eval it as Python (it's a plain dict of literals; the
+#     only non-literal is os.environ["PROJECT_NAME"], which we stub).
+mat = os.path.join(repo, "hooks", "session-start-materialise.sh")
+src = open(mat, encoding="utf-8").read()
+m = re.search(r"\ncfg = (\{.*?\n\})\n", src, re.DOTALL)
+plugin_out = None
+if not m:
+    errs.append("could not locate `cfg = {...}` dict in session-start-materialise.sh")
+else:
+    ns = {"os": type("O", (), {"environ": {"PROJECT_NAME": "x"}})()}
+    try:
+        cfg = eval(m.group(1), {"__builtins__": {}, "True": True, "False": False}, ns)
+        plugin_out = cfg.get("output")
+    except Exception as e:  # noqa: BLE001
+        errs.append("failed to eval plugin seed cfg dict: %r" % (e,))
+
+# --- (2) /update-zskills lane: extract the install scaffold JSON block under
+#     the "Content to write to `.claude/zskills-config.json`:" heading, strip
+#     the <detected>/<preset.*> placeholders to JSON-valid dummies, json.load.
+skill = os.path.join(repo, "skills", "update-zskills", "SKILL.md")
+sk = open(skill, encoding="utf-8").read()
+idx = sk.find("Content to write to `.claude/zskills-config.json`:")
+scaffold_out = None
+if idx < 0:
+    errs.append("could not locate install scaffold heading in update-zskills/SKILL.md")
+else:
+    fence = re.search(r"```json\n(.*?)\n[ \t]*```", sk[idx:], re.DOTALL)
+    if not fence:
+        errs.append("could not locate ```json scaffold fence in update-zskills/SKILL.md")
+    else:
+        raw = fence.group(1)
+        # Replace placeholder tokens with JSON-valid dummies.
+        raw = raw.replace("<preset.main_protected>", "true")
+        raw = re.sub(r'"<[^"]*>"', '"x"', raw)   # quoted <detected>/<preset.landing>
+        raw = re.sub(r'\["<[^"]*>"\]', '["x"]', raw)  # ["<detected>"] arrays
+        try:
+            scaffold_out = json.loads(raw).get("output")
+        except Exception as e:  # noqa: BLE001
+            errs.append("install scaffold JSON does not parse after placeholder strip: %r" % (e,))
+
+EXPECTED = {"plans_dir": "docs/plans", "issues_dir": "docs/issues", "reports_dir": "docs/reports"}
+if plugin_out != EXPECTED:
+    errs.append("plugin seed output block != %r (got %r)" % (EXPECTED, plugin_out))
+if scaffold_out != EXPECTED:
+    errs.append("install scaffold output block != %r (got %r)" % (EXPECTED, scaffold_out))
+if plugin_out is not None and scaffold_out is not None and plugin_out != scaffold_out:
+    errs.append("the two seeds DISAGREE on the output block: plugin=%r scaffold=%r"
+                % (plugin_out, scaffold_out))
+
+for e in errs:
+    print(e)
+sys.exit(0)
+PYEOF
+)"
+if [ -z "$SCAFFOLD_HITS" ]; then
+  pass "fresh-config scaffold: both lanes seed identical output = docs/{plans,issues,reports}"
+else
+  fail "fresh-config scaffold output block (both-lanes symmetry)" "$SCAFFOLD_HITS"
+  printf '%s\n' "$SCAFFOLD_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+fi
+
+echo ""
 echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py) ==="
 # Sibling deny-list scan over non-markdown sources that the existing
 # skills/**/*.md scanner above doesn't see:

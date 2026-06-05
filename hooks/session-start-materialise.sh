@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.5
+# zskills-hook-version: 2026.06.6
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -356,6 +356,11 @@ cfg = {
     "ci": {
         "auto_fix": True,
         "max_fix_attempts": 2,
+    },
+    "output": {
+        "plans_dir": "docs/plans",
+        "issues_dir": "docs/issues",
+        "reports_dir": "docs/reports",
     },
 }
 with open(sys.argv[1], "w") as f:
