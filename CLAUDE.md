@@ -58,6 +58,10 @@ have `cd`-ed into the correct repo/worktree root; or derive it from an
 explicit `$WORKTREE_PATH` the caller passes you (never assume cwd if you
 were just handed a path).
 
+**`tests/run-all.sh` runs its suites in parallel by default** (bounded-worker
+fan-out). Set `ZSKILLS_PARALLEL=0 bash tests/run-all.sh` to force the
+byte-identical serial reference path when debugging an interleaved failure.
+
 **Never suppress errors on operations you need to verify.** Do not use
 `2>/dev/null` on commands whose success matters (git worktree remove,
 git cherry-pick, rm, mv, cp of important files). Do not use `; echo "done"`
