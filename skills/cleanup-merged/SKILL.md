@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `--force`) — they are always skipped.
 metadata:
-  version: "2026.06.04+4fda47"
+  version: "2026.06.05+4a9c2a"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -374,7 +374,21 @@ CURRENT=$(git rev-parse --abbrev-ref HEAD)
 LOCAL_DELETED=0
 LOCAL_SKIPPED=0
 LOCAL_PROTECTED=0
+LOCAL_PRESERVED=0
 LOCAL_CANDIDATES=()  # branch names that are merged and deletable
+
+# Preview-mode grouped-output accumulators. Each entry is
+# "<branch>\t<suffix>" — split on the literal tab when emitting. Apply
+# mode keeps per-line progress and does not read these arrays.
+# Tracked counts (LOCAL_DELETED, LOCAL_SKIPPED, LOCAL_PROTECTED,
+# LOCAL_PRESERVED) are updated in BOTH preview and apply paths so the
+# summary in Phase 7 is always accurate.
+LOCAL_TO_DELETE=()
+LOCAL_PRESERVED_LIST=()
+LOCAL_TO_SKIP=()
+LOCAL_PROTECTED_LIST=()
+LOCAL_DELETE_WT_COUNT=0     # of LOCAL_TO_DELETE, how many drag a worktree
+LOCAL_PRESERVED_WT_COUNT=0  # of LOCAL_PRESERVED_LIST, how many have a worktree
 
 if [ "$DO_LOCAL" -eq 1 ]; then
   echo ""
@@ -390,6 +404,19 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       continue
     fi
 
+    # Worktree detection: does any registered worktree hold $branch?
+    # Moved up so it is available to every classification arm (preserved
+    # branches need to know if they have a worktree for the suffix; skip
+    # arms inherit it; delete arms still use it for the worktree-remove
+    # path).
+    WORKTREE_FOR_BRANCH=""
+    while IFS= read -r wt_path && IFS= read -r wt_branch; do
+      if [ "${wt_branch#branch refs/heads/}" = "$branch" ]; then
+        WORKTREE_FOR_BRANCH="${wt_path#worktree }"
+        break
+      fi
+    done < <(git worktree list --porcelain | awk '/^worktree /{wt=$0} /^branch /{print wt; print $0}')
+
     # ── Protected branch check — ALWAYS FIRST, NEVER OVERRIDABLE ──────
     # This is the load-bearing safety invariant: a config-protected
     # branch is never deleted, no matter what. `--force` is evaluated only
@@ -398,13 +425,17 @@ if [ "$DO_LOCAL" -eq 1 ]; then
     if is_protected "$branch"; then
       if is_named "$branch"; then
         if [ "$FORCE" -eq 1 ]; then
-          echo "  PROTECTED (config) $branch — refusing to delete even with --force"
+          PROT_NOTE="PROTECTED (config) — refusing to delete even with --force"
+          [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) $branch — refusing to delete even with --force"
         else
-          echo "  PROTECTED (config) $branch — refusing to delete (named explicitly)"
+          PROT_NOTE="PROTECTED (config) — refusing to delete (named explicitly)"
+          [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) $branch — refusing to delete (named explicitly)"
         fi
       else
-        echo "  PROTECTED (config) $branch"
+        PROT_NOTE="PROTECTED (config)"
+        [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) $branch"
       fi
+      LOCAL_PROTECTED_LIST+=("$branch"$'\t'"$PROT_NOTE")
       LOCAL_PROTECTED=$((LOCAL_PROTECTED+1))
       continue
     fi
@@ -439,13 +470,34 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       MERGED=1
     fi
 
+    # Plain-English PR-state phrase for the preserved/preview suffix.
+    # Empty PR_STATE = `no PR`; CLOSED-not-merged = `closed PR`;
+    # OPEN = `open PR`. (MERGED never reaches here as a preserved class.)
+    case "$PR_STATE" in
+      CLOSED) PR_PHRASE="closed PR" ;;
+      OPEN)   PR_PHRASE="open PR" ;;
+      "")     PR_PHRASE="no PR" ;;
+      *)      PR_PHRASE="PR ${PR_STATE,,}" ;;
+    esac
+
     # Merged-check: a named branch under `--force` skips the merged
     # requirement (the user vouched for it explicitly). Un-named branches
-    # (full-scan path) always require merged confirmation.
+    # (full-scan path) without merged confirmation are PRESERVED in
+    # preview output (so the user sees them) and silently skipped in apply.
     if [ "$MERGED" -eq 0 ]; then
       if [ "$NAMED_FORCE" -eq 1 ]; then
-        echo "  FORCE  $branch (not confirmed merged; deleting because explicitly named with --force)"
+        [ "${APPLY:-0}" -eq 1 ] && echo "  FORCE  $branch (not confirmed merged; deleting because explicitly named with --force)"
       else
+        # Classify as preserved (not-merged). Suffix: PR phrase, plus
+        # `, has worktree` when a worktree holds the branch (it stays).
+        if [ -n "$WORKTREE_FOR_BRANCH" ]; then
+          PRESERVED_SUFFIX="${PR_PHRASE}, has worktree"
+          LOCAL_PRESERVED_WT_COUNT=$((LOCAL_PRESERVED_WT_COUNT+1))
+        else
+          PRESERVED_SUFFIX="${PR_PHRASE}"
+        fi
+        LOCAL_PRESERVED_LIST+=("$branch"$'\t'"$PRESERVED_SUFFIX")
+        LOCAL_PRESERVED=$((LOCAL_PRESERVED+1))
         continue
       fi
     fi
@@ -464,7 +516,9 @@ if [ "$DO_LOCAL" -eq 1 ]; then
     fi
 
     if [ -n "$UNPUSHED" ]; then
-      echo "  SKIP   $branch (has unpushed commits; delete manually with 'git branch -D $branch' if intentional, or re-run with '--force' and the branch name)"
+      SKIP_NOTE="has unpushed commits"
+      LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
+      [ "${APPLY:-0}" -eq 1 ] && echo "  SKIP   $branch (has unpushed commits; delete manually with 'git branch -D $branch' if intentional, or re-run with '--force' and the branch name)"
       LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
       continue
     fi
@@ -489,7 +543,9 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       LOCAL_TIP=$(git rev-parse "$branch" 2>/dev/null || echo "")
       if [ -n "$PR_HEAD" ]; then
         if [ "$LOCAL_TIP" != "$PR_HEAD" ] && git merge-base --is-ancestor "$PR_HEAD" "$LOCAL_TIP" 2>/dev/null; then
-          echo "  SKIP   $branch (PR merged but local tip is ahead of the merged PR head — post-merge work; investigate, do not auto-remove)"
+          SKIP_NOTE="PR merged, local tip ahead — investigate"
+          LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
+          [ "${APPLY:-0}" -eq 1 ] && echo "  SKIP   $branch (PR merged but local tip is ahead of the merged PR head — post-merge work; investigate, do not auto-remove)"
           LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
           continue
         fi
@@ -501,22 +557,16 @@ if [ "$DO_LOCAL" -eq 1 ]; then
         AHEAD=$(git rev-list --count "$MAIN_BRANCH..$branch" 2>/dev/null || echo 0)
         [ -z "$AHEAD" ] && AHEAD=0
         if [ "$AHEAD" -gt 0 ]; then
-          echo "  SKIP   $branch (PR merged but PR head unavailable from gh and branch has $AHEAD commits not on main — investigate; do not auto-remove)"
+          SKIP_NOTE="PR merged, gh head unavailable, $AHEAD commits not on main — investigate"
+          LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
+          [ "${APPLY:-0}" -eq 1 ] && echo "  SKIP   $branch (PR merged but PR head unavailable from gh and branch has $AHEAD commits not on main — investigate; do not auto-remove)"
           LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
           continue
         fi
       fi
     fi
 
-    # Worktree detection: does any registered worktree hold $branch?
-    WORKTREE_FOR_BRANCH=""
-    while IFS= read -r wt_path && IFS= read -r wt_branch; do
-      if [ "${wt_branch#branch refs/heads/}" = "$branch" ]; then
-        WORKTREE_FOR_BRANCH="${wt_path#worktree }"
-        break
-      fi
-    done < <(git worktree list --porcelain | awk '/^worktree /{wt=$0} /^branch /{print wt; print $0}')
-
+    # Apply-mode reason string (per-line progress in apply path).
     if [ "$NAMED_FORCE" -eq 1 ] && [ "$MERGED" -eq 0 ]; then
       REASON="forced (named, not confirmed merged)"
     elif [ "$PR_STATE" = "MERGED" ]; then
@@ -529,8 +579,11 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       REASON="contained in main"
     fi
 
+    # Worktree action: a delete candidate may carry a worktree to remove.
     if [ -n "$WORKTREE_FOR_BRANCH" ]; then
       if [ "$WORKTREE_FOR_BRANCH" = "$MAIN_ROOT" ]; then
+        SKIP_NOTE="checked out in main repo — checkout main first"
+        LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
         echo "  WARN: merged branch $branch is checked out in main repo; checkout main before cleanup-merged." >&2
         LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
         continue
@@ -538,29 +591,36 @@ if [ "$DO_LOCAL" -eq 1 ]; then
 
       WT_DIRTY=$(git -C "$WORKTREE_FOR_BRANCH" status --porcelain 2>/dev/null)
       if [ -n "$WT_DIRTY" ]; then
+        SKIP_NOTE="worktree has uncommitted changes — inspect manually"
+        LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
         echo "  WARN: worktree at $WORKTREE_FOR_BRANCH holds merged branch $branch but has uncommitted changes — inspect and remove manually." >&2
         LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
         continue
       fi
 
       if [ "$APPLY" -eq 0 ]; then
-        echo "  WOULD-REMOVE-WORKTREE $WORKTREE_FOR_BRANCH (holds $branch)"
-        echo "  WOULD-DELETE $branch ($REASON)"
+        LOCAL_TO_DELETE+=("$branch"$'\t'"and worktree")
+        LOCAL_DELETE_WT_COUNT=$((LOCAL_DELETE_WT_COUNT+1))
         LOCAL_DELETED=$((LOCAL_DELETED+1))
         LOCAL_CANDIDATES+=("$branch")
         continue
       fi
 
       if ! git worktree remove "$WORKTREE_FOR_BRANCH"; then
+        SKIP_NOTE="git worktree remove failed"
+        LOCAL_TO_SKIP+=("$branch"$'\t'"$SKIP_NOTE")
         echo "  FAILED  $branch (git worktree remove $WORKTREE_FOR_BRANCH exited non-zero)" >&2
         LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
         continue
       fi
       echo "  REMOVED-WORKTREE $WORKTREE_FOR_BRANCH (held $branch)"
+      LOCAL_DELETE_WT_COUNT=$((LOCAL_DELETE_WT_COUNT+1))
     fi
 
     if [ "$APPLY" -eq 0 ]; then
-      echo "  WOULD-DELETE $branch ($REASON)"
+      # Preview path: no per-line WOULD-DELETE. Accumulate; grouped output
+      # is emitted at the end of this phase.
+      LOCAL_TO_DELETE+=("$branch"$'\t'"")
       LOCAL_DELETED=$((LOCAL_DELETED+1))
       LOCAL_CANDIDATES+=("$branch")
     else
@@ -608,6 +668,33 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       fi
     fi
   done < <(git for-each-ref --format='%(refname:short)' refs/heads/)
+
+  # Preview grouped output. Apply mode already emitted per-line progress
+  # inside the loop above; the summary in Phase 7 prints the counters.
+  if [ "$APPLY" -eq 0 ]; then
+    emit_group() {
+      # emit_group <header-prefix> <count> <count-suffix> <array-name>
+      local header_prefix="$1" count="$2" count_suffix="$3" array_name="$4"
+      [ "$count" -le 0 ] && return 0
+      echo ""
+      echo "${header_prefix}${count}${count_suffix}"
+      eval "local _entries=(\"\${${array_name}[@]}\")"
+      local entry name suffix
+      for entry in "${_entries[@]}"; do
+        name="${entry%%$'\t'*}"
+        suffix="${entry#*$'\t'}"
+        if [ -n "$suffix" ] && [ "$suffix" != "$entry" ]; then
+          printf '  %-45s %s\n' "$name" "$suffix"
+        else
+          printf '  %s\n' "$name"
+        fi
+      done
+    }
+    emit_group "Local — " "$LOCAL_DELETED"   " to delete (PR merged):"    LOCAL_TO_DELETE
+    emit_group "Local — " "$LOCAL_PRESERVED" " preserved (not merged):"   LOCAL_PRESERVED_LIST
+    emit_group "Local — " "$LOCAL_SKIPPED"   " to skip:"                  LOCAL_TO_SKIP
+    emit_group "Local — " "$LOCAL_PROTECTED" " protected:"                LOCAL_PROTECTED_LIST
+  fi
 fi
 ```
 
@@ -630,8 +717,9 @@ main branch:
 1. Check if the branch has a MERGED PR via `gh pr view`.
 2. Skip branches with OPEN PRs — never delete an active branch.
 3. Skip protected branches (from config).
-4. In preview, show `WOULD-DELETE-REMOTE`; in apply, run
-   `git push origin --delete <branch>`.
+4. In preview, the branch appears under the `Remote — N to delete (PR
+   merged):` section; in apply, run `git push origin --delete <branch>`
+   and emit `DELETED-REMOTE` per line as it executes.
 
 Requires `gh` — if `gh` is unavailable and `remote`/`all` scope is
 requested, warn and skip.
@@ -640,6 +728,14 @@ requested, warn and skip.
 REMOTE_DELETED=0
 REMOTE_SKIPPED=0
 REMOTE_PROTECTED=0
+REMOTE_PRESERVED=0
+
+# Preview-mode grouped-output accumulators (remote phase). Same
+# tab-delimited "<branch>\t<suffix>" convention as the local phase.
+# Apply path still emits per-line progress.
+REMOTE_TO_DELETE=()
+REMOTE_PRESERVED_LIST=()
+REMOTE_PROTECTED_LIST=()
 
 if [ "$DO_REMOTE" -eq 1 ]; then
   echo ""
@@ -666,12 +762,16 @@ if [ "$DO_REMOTE" -eq 1 ]; then
       # reach a protected branch.
       if is_protected "$branch"; then
         if is_named "$branch" && [ "$FORCE" -eq 1 ]; then
-          echo "  PROTECTED (config) origin/$branch — refusing to delete even with --force"
+          RPROT_NOTE="PROTECTED (config) — refusing to delete even with --force"
+          [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) origin/$branch — refusing to delete even with --force"
         elif is_named "$branch"; then
-          echo "  PROTECTED (config) origin/$branch — refusing to delete (named explicitly)"
+          RPROT_NOTE="PROTECTED (config) — refusing to delete (named explicitly)"
+          [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) origin/$branch — refusing to delete (named explicitly)"
         else
-          echo "  PROTECTED (config) origin/$branch"
+          RPROT_NOTE="PROTECTED (config)"
+          [ "${APPLY:-0}" -eq 1 ] && echo "  PROTECTED (config) origin/$branch"
         fi
+        REMOTE_PROTECTED_LIST+=("origin/$branch"$'\t'"$RPROT_NOTE")
         REMOTE_PROTECTED=$((REMOTE_PROTECTED+1))
         continue
       fi
@@ -683,11 +783,25 @@ if [ "$DO_REMOTE" -eq 1 ]; then
 
       PR_STATE=$(gh pr view "$branch" --json state -q .state 2>/dev/null || echo "")
 
+      # Plain-English PR phrase for the preserved-remote suffix (only the
+      # PR class signals matter on the remote side — no worktree, no
+      # contained-in-main, no upstream-gone).
+      case "$PR_STATE" in
+        CLOSED) RPR_PHRASE="closed PR" ;;
+        OPEN)   RPR_PHRASE="open PR" ;;
+        "")     RPR_PHRASE="no PR" ;;
+        *)      RPR_PHRASE="PR ${PR_STATE,,}" ;;
+      esac
+
       if [ "$PR_STATE" = "OPEN" ] && [ "$NAMED_FORCE" -eq 0 ]; then
+        REMOTE_PRESERVED_LIST+=("origin/$branch"$'\t'"$RPR_PHRASE")
+        REMOTE_PRESERVED=$((REMOTE_PRESERVED+1))
         continue  # Active PR — never delete (unless explicitly named + --force)
       fi
 
       if [ "$PR_STATE" != "MERGED" ] && [ "$NAMED_FORCE" -eq 0 ]; then
+        REMOTE_PRESERVED_LIST+=("origin/$branch"$'\t'"$RPR_PHRASE")
+        REMOTE_PRESERVED=$((REMOTE_PRESERVED+1))
         continue  # Only delete branches with confirmed MERGED PRs
       fi
 
@@ -698,7 +812,8 @@ if [ "$DO_REMOTE" -eq 1 ]; then
       fi
 
       if [ "$APPLY" -eq 0 ]; then
-        echo "  WOULD-DELETE-REMOTE origin/$branch ($RREASON)"
+        # Preview: accumulate; grouped output emitted at end of phase.
+        REMOTE_TO_DELETE+=("origin/$branch"$'\t'"")
         REMOTE_DELETED=$((REMOTE_DELETED+1))
       else
         if git push origin --delete "$branch" 2>/dev/null; then
@@ -711,27 +826,103 @@ if [ "$DO_REMOTE" -eq 1 ]; then
       fi
     done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin/)
   fi
+
+  # Preview grouped output for the remote phase. Apply mode keeps the
+  # per-line progress emitted inside the loop above.
+  if [ "$APPLY" -eq 0 ]; then
+    emit_remote_group() {
+      local header_prefix="$1" count="$2" count_suffix="$3" array_name="$4"
+      [ "$count" -le 0 ] && return 0
+      echo ""
+      echo "${header_prefix}${count}${count_suffix}"
+      eval "local _entries=(\"\${${array_name}[@]}\")"
+      local entry name suffix
+      for entry in "${_entries[@]}"; do
+        name="${entry%%$'\t'*}"
+        suffix="${entry#*$'\t'}"
+        if [ -n "$suffix" ] && [ "$suffix" != "$entry" ]; then
+          printf '  %-45s %s\n' "$name" "$suffix"
+        else
+          printf '  %s\n' "$name"
+        fi
+      done
+    }
+    emit_remote_group "Remote — " "$REMOTE_DELETED"   " to delete (PR merged):"  REMOTE_TO_DELETE
+    emit_remote_group "Remote — " "$REMOTE_PRESERVED" " preserved (not merged):" REMOTE_PRESERVED_LIST
+    emit_remote_group "Remote — " "$REMOTE_PROTECTED" " protected:"              REMOTE_PROTECTED_LIST
+  fi
 fi
 ```
 
 ## Phase 7 — Summary
 
 ```bash
+# build_summary_line: render one summary row ("Local: ..." or
+# "Remote: ..."). Sub-clauses with a zero count are dropped so the line
+# stays terse on quiet days. Verb tense flips for apply (`deleted` vs
+# `delete`); the `(N with worktrees)` parenthetical is local-only.
+build_summary_line() {
+  local label="$1" tense="$2" deleted="$3" wt_in_delete="$4" \
+        preserved="$5" wt_in_preserved="$6" skipped="$7" protected="$8"
+  local verb_delete verb_preserve verb_skip verb_protected
+  if [ "$tense" = "past" ]; then
+    verb_delete="deleted"; verb_preserve="preserved"
+    verb_skip="skipped"; verb_protected="protected"
+  else
+    verb_delete="delete"; verb_preserve="preserved"
+    verb_skip="skip"; verb_protected="protected"
+  fi
+  local parts=()
+  if [ "$deleted" -gt 0 ]; then
+    if [ "$wt_in_delete" -gt 0 ]; then
+      parts+=("$deleted $verb_delete ($wt_in_delete with worktrees)")
+    else
+      parts+=("$deleted $verb_delete")
+    fi
+  fi
+  if [ "$preserved" -gt 0 ]; then
+    if [ "$wt_in_preserved" -gt 0 ]; then
+      parts+=("$preserved $verb_preserve ($wt_in_preserved with worktrees)")
+    else
+      parts+=("$preserved $verb_preserve")
+    fi
+  fi
+  [ "$skipped" -gt 0 ]   && parts+=("$skipped $verb_skip")
+  [ "$protected" -gt 0 ] && parts+=("$protected $verb_protected")
+  local n=${#parts[@]}
+  if [ "$n" -eq 0 ]; then
+    printf '  %-8s nothing\n' "$label:"
+  else
+    printf '  %-8s %s' "$label:" "${parts[0]}"
+    local i
+    for ((i=1; i<n; i++)); do
+      printf ', %s' "${parts[i]}"
+    done
+    printf '\n'
+  fi
+}
+
 echo ""
 if [ "$APPLY" -eq 0 ]; then
-  # Preview summary
+  # Preview summary — emit the "Summary:" block, then the apply hint.
   TOTAL_WOULD=0
-  MSG_PARTS=()
+  echo "Summary:"
   if [ "$DO_LOCAL" -eq 1 ]; then
-    MSG_PARTS+=("local: $LOCAL_DELETED to delete, $LOCAL_SKIPPED to skip, $LOCAL_PROTECTED protected")
+    build_summary_line "Local" present \
+      "$LOCAL_DELETED" "$LOCAL_DELETE_WT_COUNT" \
+      "$LOCAL_PRESERVED" "$LOCAL_PRESERVED_WT_COUNT" \
+      "$LOCAL_SKIPPED" "$LOCAL_PROTECTED"
     TOTAL_WOULD=$((TOTAL_WOULD + LOCAL_DELETED))
   fi
   if [ "$DO_REMOTE" -eq 1 ]; then
-    MSG_PARTS+=("remote: $REMOTE_DELETED to delete, $REMOTE_SKIPPED to skip, $REMOTE_PROTECTED protected")
+    # Remote has no worktree concept — pass 0 for the wt sub-counts so the
+    # parenthetical never renders.
+    build_summary_line "Remote" present \
+      "$REMOTE_DELETED" 0 \
+      "$REMOTE_PRESERVED" 0 \
+      "$REMOTE_SKIPPED" "$REMOTE_PROTECTED"
     TOTAL_WOULD=$((TOTAL_WOULD + REMOTE_DELETED))
   fi
-
-  echo "cleanup-merged (preview): $(printf '%s; ' "${MSG_PARTS[@]}" | sed 's/; $//')"
   echo ""
 
   if [ "$TOTAL_WOULD" -gt 0 ]; then
@@ -744,16 +935,20 @@ if [ "$APPLY" -eq 0 ]; then
     echo "Nothing to clean up."
   fi
 else
-  # Apply summary
-  MSG_PARTS=()
+  # Apply summary — same shape, past-tense verbs.
+  echo "Summary:"
   if [ "$DO_LOCAL" -eq 1 ]; then
-    MSG_PARTS+=("local: deleted $LOCAL_DELETED, skipped $LOCAL_SKIPPED, protected $LOCAL_PROTECTED")
+    build_summary_line "Local" past \
+      "$LOCAL_DELETED" "$LOCAL_DELETE_WT_COUNT" \
+      "$LOCAL_PRESERVED" "$LOCAL_PRESERVED_WT_COUNT" \
+      "$LOCAL_SKIPPED" "$LOCAL_PROTECTED"
   fi
   if [ "$DO_REMOTE" -eq 1 ]; then
-    MSG_PARTS+=("remote: deleted $REMOTE_DELETED, skipped $REMOTE_SKIPPED, protected $REMOTE_PROTECTED")
+    build_summary_line "Remote" past \
+      "$REMOTE_DELETED" 0 \
+      "$REMOTE_PRESERVED" 0 \
+      "$REMOTE_SKIPPED" "$REMOTE_PROTECTED"
   fi
-
-  echo "cleanup-merged: $(printf '%s; ' "${MSG_PARTS[@]}" | sed 's/; $//')"
 
   if [ "$SWITCHED" -eq 1 ]; then
     echo "(switched to $MAIN_BRANCH and pulled.)"

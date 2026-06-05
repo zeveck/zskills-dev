@@ -105,13 +105,18 @@ fi
 #
 # Migrated to the shared extract_sentinel_block: bracket the post-merge
 # gate `if … fi` exclusively between the comment that immediately precedes
-# the `if` ("# unsafe delete.") and the "# Worktree detection" comment that
-# immediately follows the closing `fi`. The slice thus contains exactly the
-# `if [ "$PR_STATE" = "MERGED" ] … fi` block. POSIX char classes for the
-# literal `.`/`:` so gawk emits no warning.
+# the `if` ("# unsafe delete.") and the "# Apply-mode reason string"
+# comment that immediately follows the closing `fi`. The slice thus contains
+# exactly the `if [ "$PR_STATE" = "MERGED" ] … fi` block. POSIX char classes
+# for the literal `.`/`:` so gawk emits no warning.
+#
+# Note: the gate block now also pushes the SKIP classification into
+# LOCAL_TO_SKIP[] for the preview-mode grouped output. The
+# `LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))` counter still increments, so the
+# behavioral assertions below remain a valid skip-vs-not-skip oracle.
 GATE_BLOCK=$(extract_sentinel_block "$SKILL" \
   '^[[:space:]]*#[[:space:]]+unsafe delete[.]$' \
-  '^[[:space:]]*# Worktree detection')
+  '^[[:space:]]*# Apply-mode reason string')
 
 if [ -z "$GATE_BLOCK" ]; then
   fail "Phase 5: could not extract gate block for behavioral test"
@@ -165,10 +170,14 @@ STUB
     PR_STATE=MERGED
     UPSTREAM_GONE=0
     NAMED_FORCE=0   # exercise the non-force post-merge gate path
+    APPLY=1         # exercise the per-line SKIP echo (preview-mode array
+                    # push is functionally equivalent — issue #1113 grouped
+                    # output kept apply-path per-line progress unchanged).
 
     run_gate() {
       branch="$1"
       LOCAL_SKIPPED=0
+      LOCAL_TO_SKIP=()
       OUT=$(
         for _once in 1; do
           eval "$GATE_BLOCK"
