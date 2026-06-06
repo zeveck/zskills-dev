@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.06.03+050ebb"
+  version: "2026.06.06+32a321"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -260,6 +260,7 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
 - "Test could be stronger" without a current masked defect
 - Latent bugs requiring infrastructure failure or rare race conditions
 - Defense-on-defense (closure-incomplete on test-matrix gap unless runtime exposed)
+- "Closure-incomplete WHEN runtime exposed" does NOT qualify for findings against an inherently-incomplete matcher (bash tokenizer, PATH shim, any string-gate over a Turing-complete grammar) — for those surfaces only common-path breakage or observed incidence qualifies (runtime exposure is permanently true and cannot be the trigger)
 
 **Filter — DO file:**
 - Real-impact bug observable in current sessions / sprint reports / memory anchors
@@ -300,7 +301,10 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
    Low with clear fix) **that passed Step 5 verification**, create issues via
    `gh issue create`. Include: summary, root cause, suggested fix/test,
    severity, which commit introduced it, and the verification command/result
-   from Step 5.
+   from Step 5. Before filing each finding, RE-APPLY TIGHT-BAR Q2 ("real
+   user/agent plausibly hits this within ~1 month?") to the finding yourself
+   — delegating the bar to the finding agents does NOT re-assert it at your own
+   filing step, and a finding that fails Q2 here is dropped, not filed.
 
    **Issue body format — every filed issue MUST include near the top:**
 

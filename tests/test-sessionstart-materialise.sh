@@ -206,6 +206,37 @@ else
   fail "13b. seeded config output check skipped: no config file"
 fi
 
+# 13c. Seeded config carries agents.min_model (#1136). Absence used to make
+# block-agents.sh exit 0 with NO enforcement, silently disabling the
+# never-Haiku floor on fresh plugin installs. The schema default is "auto".
+if [ -f "$SEED_CFG" ]; then
+  seed_min_model=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("agents",{}).get("min_model",""))' "$SEED_CFG" 2>/dev/null)
+  if [ "$seed_min_model" = "auto" ]; then
+    pass "13c. seeded config carries agents.min_model=auto (#1136)"
+  else
+    fail "13c. seeded config agents.min_model wrong: '$seed_min_model' (expected auto)"
+  fi
+else
+  fail "13c. seeded agents.min_model check skipped: no config file"
+fi
+
+# 13d. Materialiser stamps zskills_version into the config (#1137). On the
+# plugin lane /update-zskills Step F.5 is unreachable, so this is the only
+# writer. The test sets CLAUDE_PLUGIN_ROOT=$REPO_ROOT, which has a
+# .claude-plugin/plugin.json, so resolve-repo-version.sh returns a non-empty
+# value (latest tag, else plugin.json version) and the field IS written.
+if [ -f "$SEED_CFG" ]; then
+  seed_zver=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("zskills_version",""))' "$SEED_CFG" 2>/dev/null)
+  expected_zver=$(bash "$REPO_ROOT/skills/update-zskills/scripts/resolve-repo-version.sh" "$REPO_ROOT" 2>/dev/null || echo "")
+  if [ -n "$seed_zver" ] && [ "$seed_zver" = "$expected_zver" ]; then
+    pass "13d. materialiser stamped zskills_version=$seed_zver (#1137)"
+  else
+    fail "13d. zskills_version wrong: stamped='$seed_zver' expected='$expected_zver'"
+  fi
+else
+  fail "13d. zskills_version check skipped: no config file"
+fi
+
 # 14. All 5 artifacts materialised now that the render gate passes.
 if [ -f "$SEED/.claude/agents/verifier.md" ] \
    && [ -f "$SEED/.claude/agents/implementer.md" ] \
@@ -239,8 +270,12 @@ fi
 echo ""
 echo "=== Config seeding: existing config is NEVER clobbered ==="
 
-# A project that already has a config (any values) must keep it verbatim —
-# the materialiser only seeds when ABSENT.
+# A project that already has a config (any values) must keep its CHOSEN values
+# verbatim — the materialiser only SEEDS when ABSENT. The one permitted
+# additive change is the orthogonal zskills_version stamp (#1137), which heals
+# an already-installed plugin consumer each session; it never rewrites the
+# consumer's chosen execution/commit/etc. values. So we assert the consumer's
+# choices are preserved AND the only delta is the additive zskills_version.
 KEEP="$TMP/keepproj"
 mkdir -p "$KEEP/.claude"
 cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$KEEP/"
@@ -257,16 +292,36 @@ cat > "$KEEP/.claude/zskills-config.json" <<'KEEPCFG'
   }
 }
 KEEPCFG
-KEEP_BEFORE=$(cat "$KEEP/.claude/zskills-config.json")
 
 env CLAUDE_PROJECT_DIR="$KEEP" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
   bash "$REPO_ROOT/$MAT" 2>/dev/null
 
-KEEP_AFTER=$(cat "$KEEP/.claude/zskills-config.json")
-if [ "$KEEP_BEFORE" = "$KEEP_AFTER" ]; then
-  pass "17. existing config left byte-identical (never clobbered)"
+# The consumer's chosen values must be preserved verbatim; the ONLY allowed
+# delta is the additive zskills_version stamp.
+keep_preserved=$(python3 - "$KEEP/.claude/zskills-config.json" "$REPO_ROOT" <<'PY'
+import json, subprocess, sys
+cfg = json.load(open(sys.argv[1]))
+repo = sys.argv[2]
+expected_zver = subprocess.run(
+    ["bash", repo + "/skills/update-zskills/scripts/resolve-repo-version.sh", repo],
+    capture_output=True, text=True).stdout.strip()
+ok = (
+    cfg.get("$schema") == "./zskills-config.schema.json"
+    and cfg.get("project_name") == "my-existing-project"
+    and cfg.get("execution", {}).get("landing") == "cherry-pick"
+    and cfg.get("execution", {}).get("main_protected") is False
+    and cfg.get("execution", {}).get("branch_prefix") == "feat/"
+    # The ONLY new key permitted is zskills_version, set to the resolved value.
+    and cfg.get("zskills_version") == expected_zver
+    and set(cfg.keys()) - {"zskills_version"} == {"$schema", "project_name", "execution"}
+)
+print("ok" if ok else "bad:" + json.dumps(cfg))
+PY
+)
+if [ "$keep_preserved" = "ok" ]; then
+  pass "17. existing config: chosen values preserved; only additive zskills_version stamped"
 else
-  fail "17. existing config was modified by the materialiser"
+  fail "17. existing config clobbered or stamped wrong ($keep_preserved)"
 fi
 # 18. And no spurious seed notice for the existing-config case.
 if [ ! -f "$KEEP/.zskills/config-seeded-notice" ]; then

@@ -358,6 +358,9 @@ cfg = {
         "auto_fix": True,
         "max_fix_attempts": 2,
     },
+    "agents": {
+        "min_model": "auto",
+    },
     "output": {
         "plans_dir": "docs/plans",
         "issues_dir": "docs/issues",
@@ -385,6 +388,31 @@ PY
   else
     rm -f "$config_tmp"
     echo "zskills: failed to seed default zskills-config.json — managed.md will NOT be rendered" >&2
+  fi
+fi
+
+# ── Stamp zskills_version into the config (#1137, plugin-lane heal) ───────
+# On the plugin lane, /update-zskills Step F.5 (the only writer of
+# `zskills_version`) is unreachable, so the field is never recorded and
+# verify-install WARNs permanently. Mirror Step F.5 here: resolve the version
+# the SAME way (latest git tag, falling back to .claude-plugin/plugin.json's
+# `version` per #1124) and write it idempotently — only when absent OR when it
+# differs from the resolved value. Skip silently on an empty resolve (a
+# genuinely unversioned clone), matching Step F.5. Runs after the config is
+# ensured to exist, so it heals both fresh AND already-installed consumers.
+if [ -f "$CONFIG" ] && [ -f "$PLUGIN/skills/update-zskills/scripts/resolve-repo-version.sh" ]; then
+  resolved_ver="$(bash "$PLUGIN/skills/update-zskills/scripts/resolve-repo-version.sh" "$PLUGIN" 2>/dev/null || true)"
+  if [ -n "$resolved_ver" ]; then
+    current_ver="$("$PYTHON" -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("zskills_version", ""))
+except Exception:
+    print("")' "$CONFIG" 2>/dev/null || echo "")"
+    if [ "$current_ver" != "$resolved_ver" ]; then
+      bash "$PLUGIN/skills/update-zskills/scripts/json-set-string-field.sh" \
+        "$CONFIG" zskills_version "$resolved_ver" \
+        || echo "zskills: failed to stamp zskills_version into config" >&2
+    fi
   fi
 fi
 
