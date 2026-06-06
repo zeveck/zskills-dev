@@ -33,13 +33,18 @@ direct — your choice).
 
 ## Docs
 
-- [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
-- [`docs/guides/workflows.md`](docs/guides/workflows.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
-- [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) — install via the plugin marketplace or the `/update-zskills` script.
-- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 21 user-facing skills + 2 helpers.
-- [`docs/guides/inspecting-and-monitoring.md`](docs/guides/inspecting-and-monitoring.md) — observe a running zskills project.
+Read the docs in the **[in-browser docs viewer](https://zeveck.github.io/zskills-dev/docs/#docs/README.md)** —
+a searchable site rather than raw files. Jump straight to the
+**[Workflows guide](https://zeveck.github.io/zskills-dev/docs/#docs/guides/workflows.md)**
+(end-to-end recipes that chain skills — plan-driven dev, backlog sprints,
+post-merge cleanup), **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**
+(plugin marketplace or the `/update-zskills` script), the
+**[Skill reference](https://zeveck.github.io/zskills-dev/docs/#docs/skills/README.md)**
+(per-skill docs for all 21 user-facing skills + 2 helpers), or
+**[Inspecting &amp; monitoring](https://zeveck.github.io/zskills-dev/docs/#docs/guides/inspecting-and-monitoring.md)**
+(observe a running zskills project).
 
-**[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
+**[View the full presentation →](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
 for the architecture, workflow stages, enforcement model, and war
 stories.
 
@@ -53,30 +58,23 @@ stories.
 
 ## Install
 
-zskills ships via **two permanent, first-class install lanes** — pick
-**exactly one**. Running both at once is *not* a supported end-state; it is
-tolerated only transiently while switching lanes (the mirror wins and the
-plugin materialiser defers — run `scripts/switch-install-path.sh` to
-consolidate). The full side-by-side comparison, tradeoff matrix,
-version-pinning idiom, and per-lane `.gitignore` guidance live in
-**[`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md)**.
+zskills installs two ways. **We recommend the plugin lane** — one-command
+install and updates through the Claude Code marketplace. The classic
+**`/update-zskills` lane** (clone + copy + run `/update-zskills`) is fully
+supported, and is the better fit for headless CI runners with no `claude`
+CLI on the host. Pick **one** — running both at once isn't a supported
+end-state; it's tolerated only transiently while switching lanes (run
+`scripts/switch-install-path.sh` to consolidate). For the full side-by-side
+comparison, tradeoffs, version-pinning idiom, and per-lane `.gitignore`
+guidance, see **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**.
 
-| | Plugin lane | `/update-zskills` lane |
+| | Plugin lane *(recommended)* | `/update-zskills` lane |
 |---|---|---|
 | Install | `/plugin marketplace add zeveck/zskills`<br>`/plugin install zs@zskills` | clone + copy skills, then `/update-zskills install` |
 | Slash prefix | `/zs:run-plan`, `/zs:do` | bare `/run-plan`, `/do` |
 | Update | `/plugin marketplace update` | `/update-zskills install` |
 | `claude` CLI required on host | yes | no |
-
-**Default recommendation** (for the indecisive reader — both lanes are
-first-class, this is not a constraint):
-
-- **Interactive workflows: plugin lane** — one-command install/updates,
-  marketplace-native, the slash menu surfaces the `/zs:` prefix.
-- **Headless CI consumers: `/update-zskills` lane** — no `claude` CLI
-  required on runners; install state is plain tracked files you can verify
-  with a file check.
-- **Power users: either** — the difference is cosmetic.
+| Best for | interactive workflows | headless CI runners |
 
 This is **not** a pip/npm package — do not `pip install` or `npm install`
 it. The repo contains prompt files and scripts.
