@@ -1062,6 +1062,99 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
+# Case 20 — Fix A (#1118): --force is decoupled from the review veto.
+#   (a) Phase 0b REJECT arm HALTS regardless of $FORCE — the old
+#       `On REJECT and $FORCE -eq 1: ... Continue` override arm is GONE.
+#   (b) The Phase 0b prose explicitly states REJECT halts regardless of
+#       --force.
+#   (c) Arguments `--force` description scopes the bypass to the triage
+#       redirect ONLY and points at --rounds 0 / --force --rounds 0.
+#   (d) Phase 0a's `REDIRECT + FORCE=1 → proceed` arm is RETAINED (the
+#       triage bypass we keep).
+# These are model-layer behaviors documented in prose; assert the prose.
+# ────────────────────────────────────────────────────────────────────
+# (a) The override arm must be GONE. Match the structural shape of the
+# old arm: an "On REJECT and ... FORCE ... 1" line that CONTINUES (the
+# bypass). The new prose says REJECT halts regardless of $FORCE, so any
+# "On REJECT and `$FORCE -eq 1`" line is the regression marker.
+if grep -qE 'On REJECT and `\$FORCE -eq 1`' "$SKILL"; then
+  fail "20a Phase 0b still has the 'On REJECT and \$FORCE -eq 1' override arm (must be removed)"
+else
+  pass "20a Phase 0b: REJECT+FORCE override arm removed (#1118 Fix A)"
+fi
+# (b) The REJECT arm prose must state the halt is regardless of FORCE.
+if grep -qF 'On REJECT: print verdict, `exit 0` — **regardless of `$FORCE`.**' "$SKILL"; then
+  pass "20b Phase 0b: REJECT arm states halt is regardless of \$FORCE"
+else
+  fail "20b Phase 0b: REJECT arm missing 'regardless of \$FORCE' halt prose"
+fi
+# (c) Arguments --force description scopes bypass to triage redirect and
+# documents --rounds 0 / --force --rounds 0.
+FORCE_DESC_TRIAGE=$(grep -c 'bypass the triage redirect (Phase 0a)' "$SKILL")
+FORCE_DESC_NOTREVIEW=$(grep -c 'a review REJECT still HALTS regardless of' "$SKILL")
+FORCE_DESC_BOTH=$(grep -c '`--force --rounds 0`' "$SKILL")
+if [ "$FORCE_DESC_TRIAGE" -ge 1 ] && [ "$FORCE_DESC_NOTREVIEW" -ge 1 ] && [ "$FORCE_DESC_BOTH" -ge 1 ]; then
+  pass "20c Arguments --force: scopes to triage redirect, review still gates, --force --rounds 0 documented (triage=$FORCE_DESC_TRIAGE notreview=$FORCE_DESC_NOTREVIEW both=$FORCE_DESC_BOTH)"
+else
+  fail "20c Arguments --force prose incomplete: triage=$FORCE_DESC_TRIAGE notreview=$FORCE_DESC_NOTREVIEW both=$FORCE_DESC_BOTH (each must be ≥1)"
+fi
+# (d) Phase 0a's REDIRECT + FORCE=1 → proceed arm is RETAINED.
+if grep -qE 'On REDIRECT and `\$FORCE -eq 1`' "$SKILL" \
+   && grep -q 'REDIRECT(<target>) overridden by --force; proceeding.' "$SKILL"; then
+  pass "20d Phase 0a: REDIRECT+FORCE=1 → proceed arm retained (the triage bypass we keep)"
+else
+  fail "20d Phase 0a: REDIRECT+FORCE=1 proceed arm missing (must be retained)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 21 — Fix B (#1118): file-enumeration triage signal raised/loosened.
+#   (a) The old `≥ 3 distinct files explicitly named` rubric row is GONE.
+#   (b) The new row uses the ≥8–10 logical-file / sprawling-scope wording.
+#   (c) The LOGICAL-files-not-raw-count + wide-but-settled prose present.
+#   (d) The division-of-labor prose (coarse backstop; Phase 0b acceptance
+#       ceiling is the real depth gate; Fix #N names no files) present.
+#   (e) Redirect-message templates are byte-identical (the /draft-plan
+#       template line still matches exactly — only the trigger changed).
+# ────────────────────────────────────────────────────────────────────
+# (a) old ≥3 row removed.
+if grep -qE '≥ ?3 distinct files explicitly named' "$SKILL"; then
+  fail "21a Phase 0a rubric still contains the old '≥3 distinct files' row"
+else
+  pass "21a Phase 0a rubric: old '≥3 distinct files' row removed (#1118 Fix B)"
+fi
+# (b) new ≥8–10 / sprawl row present.
+if grep -qE 'Description enumerates many distinct files \(roughly ≥8–10\) OR sprawls across clearly unrelated concerns' "$SKILL"; then
+  pass "21b Phase 0a rubric: new '≥8–10 logical files / sprawling scope' row present"
+else
+  fail "21b Phase 0a rubric: new ≥8–10 / sprawl row missing"
+fi
+# (c) logical-files + wide-but-settled judgment prose.
+LF_LOGICAL=$(grep -c 'Judge \*\*LOGICAL files\*\*, not raw count' "$SKILL")
+LF_WIDE=$(grep -c 'wide-but-settled mechanical change' "$SKILL")
+if [ "$LF_LOGICAL" -ge 1 ] && [ "$LF_WIDE" -ge 1 ]; then
+  pass "21c file-enumeration row: logical-files + wide-but-settled prose present (logical=$LF_LOGICAL wide=$LF_WIDE)"
+else
+  fail "21c file-enumeration prose incomplete: logical=$LF_LOGICAL wide=$LF_WIDE (each must be ≥1)"
+fi
+# (d) division-of-labor prose: coarse backstop + Phase 0b acceptance
+# ceiling as the real depth gate + Fix #N names no files.
+DOL_BACKSTOP=$(grep -c 'coarse backstop' "$SKILL")
+DOL_CEILING=$(grep -c "Phase 0b's acceptance-bullet ceiling" "$SKILL")
+DOL_FIXN=$(grep -c 'Issue-numbered descriptions (`Fix #N`) name no' "$SKILL")
+if [ "$DOL_BACKSTOP" -ge 1 ] && [ "$DOL_CEILING" -ge 1 ] && [ "$DOL_FIXN" -ge 1 ]; then
+  pass "21d division-of-labor prose present (backstop=$DOL_BACKSTOP ceiling=$DOL_CEILING fix#N=$DOL_FIXN)"
+else
+  fail "21d division-of-labor prose incomplete: backstop=$DOL_BACKSTOP ceiling=$DOL_CEILING fix#N=$DOL_FIXN (each must be ≥1)"
+fi
+# (e) redirect-message template byte-identical (the /draft-plan line).
+DP_TEMPLATE='This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.'
+if grep -qF "$DP_TEMPLATE" "$SKILL"; then
+  pass "21e /draft-plan redirect-message template byte-identical (only trigger changed, not message)"
+else
+  fail "21e /draft-plan redirect-message template was altered (must stay byte-identical)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Suite summary
 # ────────────────────────────────────────────────────────────────────
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

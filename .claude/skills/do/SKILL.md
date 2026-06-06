@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.04+e9a157"
+  version: "2026.06.05+498b5d"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -70,8 +70,11 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   - Cron is session-scoped — dies when the session dies
 - **now** (optional) — run immediately. When combined with `every`, runs
   immediately AND schedules. Without `every`, `now` is the default behavior.
-- **--force** (optional) — bypass triage redirect and review reject. Persists
-  into the cron prompt verbatim when used with `every`.
+- **--force** (optional) — bypass the triage redirect (Phase 0a). It does
+  NOT bypass the Phase 0b review: a review REJECT still HALTS regardless of
+  `--force`. To skip the review entirely, use `--rounds 0`; `--force --rounds 0`
+  does both (past the size guard AND no review). Persists into the cron prompt
+  verbatim when used with `every`.
 - **--no-claim** (optional) — claim absolutely NOTHING; treat every `#N` in
   the description as a mere mention. This now suppresses ALL claims (#1032),
   not just the stray-ref warning: the pre-flight forces `ISSUE_NUMS` empty so
@@ -518,18 +521,38 @@ test vars) always run the full Agent path. Recognized stub values:
 
 The model judges `$DESCRIPTION` against this rubric — qualitative,
 observable from description text, no LOC counting. /do always works in a
-fresh worktree (PR mode) or main (direct/worktree mode), so the "≥3
-distinct files in description" rule applies uniformly (no MODE carve-out
-needed).
+fresh worktree (PR mode) or main (direct/worktree mode), so the
+file-enumeration rule applies uniformly (no MODE carve-out needed).
 
 | Signal | Verdict |
 |--------|---------|
 | Description scopes to one concept | PROCEED |
-| ≥ 3 distinct files explicitly named in description | REDIRECT → `/draft-plan` |
+| Description enumerates many distinct files (roughly ≥8–10) OR sprawls across clearly unrelated concerns | REDIRECT → `/draft-plan` |
 | Verbs include any of: `add feature`, `redesign`, `rewrite`, `refactor across` | REDIRECT → `/draft-plan` |
 | `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` |
 | Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user |
 | References an existing plan file under `$ZSKILLS_PLANS_DIR` | REDIRECT → `/run-plan` |
+
+The file-enumeration row is a **model-layer judgment, not a hard count.**
+~8–10 is a calibration anchor, not a threshold to mechanically tally:
+- Judge **LOGICAL files**, not raw count. A source file and its mirror, or
+  a generated file and its source, count as ONE logical file (editing
+  `hooks/X.sh` plus its `.claude/hooks/X.sh` mirror is ONE logical file).
+  Generated-doc doubling does not inflate.
+- A **wide-but-settled mechanical change** — one concept, many files (e.g. a
+  bulk rename, a single find-replace across the tree) — stays `/do`. Width is
+  not depth (CLAUDE.md: "heavy is staging or design depth, not breadth").
+- The row only fires when the description **explicitly enumerates** a sprawl
+  of distinct files or unrelated concerns.
+
+**Division of labor.** The file-enumeration row is a coarse backstop for
+**sprawling, explicitly-enumerated** descriptions — it catches "edit A.js,
+B.css, C.html, D.json, … and rework the build" before any work starts. The
+real depth/concept gate is **Phase 0b's acceptance-bullet ceiling** (>4
+Acceptance bullets → REVISE), which judges the composed inline plan rather
+than the raw description text. Issue-numbered descriptions (`Fix #N`) name no
+files, so this triage row never fires on them — that is expected; Phase 0b's
+inline-plan review is what catches an over-scoped `Fix #N`.
 
 **Worked examples (calibrate the model's PROCEED/REDIRECT calls):**
 
@@ -538,6 +561,9 @@ needed).
 | `/do Fix README typo` | PROCEED | one concept, one likely file |
 | `/do Sort the screenshots in session-sequence-snapshots` | PROCEED | one concrete object |
 | `/do Update the presentation with Phase 3 results auto` | PROCEED | concrete verb + object |
+| `/do Rename `oldHelper` to `newHelper` across the codebase` | PROCEED | wide-but-settled mechanical change — one concept, many files; width is not depth |
+| `/do Bump the copyright year in all source headers` | PROCEED | one concept applied uniformly; logical-file count is 1 concept regardless of raw file count |
+| `/do Rework auth.js, session.js, db/pool.js, routes/login.js, the CSS, the config, and the build script` | REDIRECT → /draft-plan | enumerates ~7+ distinct files across unrelated concerns — sprawling scope |
 | `/do add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/do improve` | REDIRECT → ask user | vague verb, no object |
 | `/do Fix #853 — auto-route completed plans` | PROCEED | issue-numbered descriptions claim the issue(s) via ISSUE_NUMS and proceed |
@@ -712,10 +738,12 @@ After `$ROUNDS` REVISE cycles → soft-reject (same exit semantics as REJECT).
 
 On APPROVE: print verdict + justification, continue to Phase 0c.
 
-On REJECT and `$FORCE -eq 0`: print verdict, `exit 0`. **No marker is
-written** (no tracking for /do). No worktree, no commits, no cron.
-
-On REJECT and `$FORCE -eq 1`: print override message. Continue to Phase 0c.
+On REJECT: print verdict, `exit 0` — **regardless of `$FORCE`.** A review
+REJECT always HALTS; `--force` only bypasses the Phase 0a triage redirect, not
+the Phase 0b review veto (issue #1118). **No marker is written** (no tracking
+for /do). No worktree, no commits, no cron. To skip the review entirely, use
+`--rounds 0` (which short-circuits this phase before it runs); `--force
+--rounds 0` bypasses both the triage redirect and the review.
 
 Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); code changes in `worktree`/`direct` mode trigger /verify-changes unconditionally after execution (issue #713 — `auto` controls landing, not verification). PR mode (Path A) ALSO runs the same DIFF verification gate before landing: it invokes /verify-changes (Layer-3 validated, STOP-on-fail) at its own Step A6.5 (`skills/do/modes/pr.md`) BEFORE dispatching /land-pr — closing the gap (issue #1014) where /do pr was the only PR-mode caller with no local verification gate and relied solely on CI. CI via /land-pr is the backstop, not the gate.
 
