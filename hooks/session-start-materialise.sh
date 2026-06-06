@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.7
+# zskills-hook-version: 2026.06.8
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -454,7 +454,7 @@ fi
 # guarded with `|| true` because the script runs under `set -euo pipefail` and
 # a Python miss here must not abort. It is the LAST thing before `exit 0`.
 if [ -f "$CONFIG" ] && [ ! -f "$PROJ/.zskills/setup-confirmed" ]; then
-  "$PYTHON" -c 'import json,sys; sys.stdout.write(json.dumps({"systemMessage": "\U0001F44B zskills installed. Run /update-zskills to finish setup and check your environment'"'"'s ready."}))' 2>/dev/null || true
+  "$PYTHON" -c 'import json,sys; sys.stdout.write(json.dumps({"systemMessage": "\U0001F44B zskills installed. Run /update-zskills to finish setup and confirm your environment is ready."}))' 2>/dev/null || true
 fi
 
 exit 0

@@ -31,6 +31,13 @@
         ]
       }
     ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-unmaterialised-skill.sh\"", "timeout": 5 }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit",

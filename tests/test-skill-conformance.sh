@@ -1656,9 +1656,19 @@ check_fixed update-zskills "WI2.2: runtime-read note" \
 # block-bad-cron.sh + block-main-edits.sh; instance 2: #655 missed
 # block-run-plan-unclaimed.sh). Any new hook landing in hooks/block-*.sh
 # without a corresponding /update-zskills install-list reference fails CI.
+#
+# PLUGIN-LANE-ONLY hooks are exempt: they ship ONLY via hooks/hooks.json (no
+# .claude/hooks/ mirror, no .claude/settings.json sibling) because the problem
+# they close is plugin-lane-only, so there is no /update-zskills install-list
+# reference to require. Currently: block-unmaterialised-skill.sh (#1128) — the
+# UserPromptExpansion init-gate that blocks a /zs:<skill> command while the
+# plugin is half-installed.
+PLUGIN_ONLY_HOOKS=" block-unmaterialised-skill.sh "
 for hook_path in "$REPO_ROOT"/hooks/block-*.sh; do
   hook_basename=$(basename "$hook_path")
-  if grep -qF -- "$hook_basename" "$REPO_ROOT/skills/update-zskills/SKILL.md"; then
+  if [[ "$PLUGIN_ONLY_HOOKS" == *" $hook_basename "* ]]; then
+    pass "[update-zskills] #655: $hook_basename is PLUGIN-LANE-ONLY (exempt from /update-zskills install list)"
+  elif grep -qF -- "$hook_basename" "$REPO_ROOT/skills/update-zskills/SKILL.md"; then
     pass "[update-zskills] #655: install-list references $hook_basename"
   else
     fail "[update-zskills] #655: hook $hook_basename not in /update-zskills install list" \

@@ -99,6 +99,7 @@ run_suite() {
 # counts == the monolith's 2384 (no self-registration → net-zero whole-suite
 # change). The monolith is removed (no shim) to avoid double-counting.
 run_suite "test-hooks-block-unsafe.sh" "tests/test-hooks-block-unsafe.sh"
+run_suite "test-block-unmaterialised-skill.sh" "tests/test-block-unmaterialised-skill.sh"
 run_suite "test-hooks-bypass-generic.sh" "tests/test-hooks-bypass-generic.sh"
 run_suite "test-hooks-bypass-project.sh" "tests/test-hooks-bypass-project.sh"
 run_suite "test-hooks-main-protected.sh" "tests/test-hooks-main-protected.sh"
