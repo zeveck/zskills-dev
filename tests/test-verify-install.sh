@@ -15,12 +15,16 @@
 #   - good legacy + UNSET optional config  → 0 FAIL  (#1004 — the renderer's
 #       designed `<!-- TODO -->` placeholders for unset OPTIONAL config must
 #       NOT be flagged; this is the recurrence-proof case PR #1003 missed)
-#   - good legacy + NO zskills_version     → 0 FAIL / 0 WARN  (#1004 — Step F.5
-#       legitimately skips writing it on an untagged source clone)
+#   - good legacy + NO zskills_version     → 0 FAIL + legacy.version-recorded
+#       WARN  (#1124 — after the plugin.json fallback a missing version is
+#       abnormal but not breakage; WARN, never FAIL)
+#   - good legacy + zskills_version present → legacy.version-recorded PASS
 #   - broken legacy (hook file gone)       → FAIL
 #   - broken legacy (raw {{TOKEN}})        → FAIL  (renderer never ran)
 #   - good plugin layout                   → no FAIL
-#   - good plugin + NO zskills_version     → 0 FAIL / 0 WARN  (#1004)
+#   - good plugin + NO zskills_version     → 0 FAIL + plugin.version-recorded
+#       WARN  (#1124)
+#   - good plugin + zskills_version present → plugin.version-recorded PASS
 #   - broken plugin (sentinel dropped)     → FAIL
 #   - broken plugin (artifact dropped)     → FAIL
 #   - dual install                         → FAIL
@@ -224,28 +228,48 @@ else
   pass "3b. valid legacy unset-optional → managed.md check does not FAIL on <!-- TODO --> placeholders"
 fi
 
-# ── LEGACY valid + NO zskills_version (#1004): an untagged source clone ───────
-# legitimately leaves zskills_version unset (Step F.5 skips writing it). This
-# must produce 0 FAIL AND 0 WARN — absence of a version is NOT install
-# breakage, and must not even alarm with a WARN.
+# ── LEGACY valid + NO zskills_version (#1124): after the plugin.json fallback ─
+# a complete clone almost always resolves a version (git tag → .claude-plugin/
+# plugin.json), so a missing zskills_version is abnormal — surfaced as a WARN
+# (never FAIL: it is not install breakage, only the version-skew nudge stays
+# off). So this case must produce 0 FAIL but exactly the legacy.version-recorded
+# WARN.
 LNV="$(make_legacy_good 4)"
 cat > "$LNV/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme" }
 JSON
-# A real legacy install lives in a git repo — init the fixture so the new
-# lane-agnostic env.git-repo check (#1119) PASSes, keeping this case at 0 WARN.
+# A real legacy install lives in a git repo — init the fixture so the
+# lane-agnostic env.git-repo check (#1119) PASSes, isolating the version WARN.
 git_init_fixture "$LNV"
 OUT="$TMP/out-legacy-no-version.txt"
 run_cheap_capture "$LNV" "$OUT"
-if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
-  pass "3c. valid legacy install with NO zskills_version → 0 FAIL / 0 WARN (no version-recorded check)"
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "3c. valid legacy install with NO zskills_version → 0 FAIL (missing version is WARN, never FAIL)"
 else
-  fail "3c. valid legacy no-version" "expected 0 FAIL / 0 WARN; FAIL=$(grep '^FAIL' "$OUT") WARN=$(grep '^WARN' "$OUT")"
+  fail "3c. valid legacy no-version" "expected 0 FAIL; FAIL=$(grep '^FAIL' "$OUT")"
 fi
-if has_warn_id "$OUT" "legacy.version-recorded" || has_fail_id "$OUT" "legacy.version-recorded"; then
-  fail "3d. legacy version-recorded removed" "legacy.version-recorded check still present — should be cut per #1004"
+if has_warn_id "$OUT" "legacy.version-recorded"; then
+  pass "3d. legacy.version-recorded → WARN when zskills_version absent (#1124 plugin.json fallback makes absence abnormal)"
 else
-  pass "3d. legacy.version-recorded check removed (no false-positive WARN on untagged clone)"
+  fail "3d. legacy version-recorded WARN" "expected WARN on legacy.version-recorded; records=$(grep -E '^(WARN|FAIL)' "$OUT")"
+fi
+
+# ── LEGACY valid + zskills_version PRESENT (#1124): the recorded version is ───
+# reported as a PASS on legacy.version-recorded, with NO WARN on that id. Uses
+# the good-install fixture (its config carries zskills_version: 2026.06.0).
+LVV="$(make_legacy_good 4b)"
+git_init_fixture "$LVV"
+OUT="$TMP/out-legacy-version-present.txt"
+run_cheap_capture "$LVV" "$OUT"
+if grep -q '^PASS	legacy.version-recorded	zskills_version recorded: 2026.06.0' "$OUT"; then
+  pass "3d2. legacy.version-recorded → PASS reporting the recorded version when present"
+else
+  fail "3d2. legacy version-recorded PASS" "expected PASS reporting 2026.06.0; records=$(grep version-recorded "$OUT")"
+fi
+if has_warn_id "$OUT" "legacy.version-recorded"; then
+  fail "3d3. legacy version-recorded no WARN when present" "unexpected WARN: $(grep version-recorded "$OUT")"
+else
+  pass "3d3. legacy.version-recorded → no WARN when zskills_version present"
 fi
 
 # ── LEGACY broken (B): a raw, UN-substituted {{TOKEN}} in managed.md → FAIL ───
@@ -399,9 +423,10 @@ else
   fail "4b. good plugin lane detect" "lane.detect not 'plugin': $(grep lane.detect "$OUT")"
 fi
 
-# ── PLUGIN valid + NO zskills_version (#1004): plugin seed config has no tag ──
-# A valid mirror-less plugin install whose seed config carries no zskills_version
-# must produce 0 FAIL AND 0 WARN — same zero-false-positive bar as legacy.
+# ── PLUGIN valid + NO zskills_version (#1124): same as legacy — after the ─────
+# plugin.json fallback, a missing zskills_version is abnormal → WARN (never
+# FAIL). The case must produce 0 FAIL but exactly the plugin.version-recorded
+# WARN.
 PNV="$(make_plugin_good 5)"
 cat > "$PNV/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme" }
@@ -410,15 +435,32 @@ JSON
 git_init_fixture "$PNV"
 OUT="$TMP/out-plugin-no-version.txt"
 run_cheap_capture "$PNV" "$OUT"
-if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
-  pass "4c. valid plugin install with NO zskills_version → 0 FAIL / 0 WARN (no version-recorded check)"
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "4c. valid plugin install with NO zskills_version → 0 FAIL (missing version is WARN, never FAIL)"
 else
-  fail "4c. valid plugin no-version" "expected 0 FAIL / 0 WARN; FAIL=$(grep '^FAIL' "$OUT") WARN=$(grep '^WARN' "$OUT")"
+  fail "4c. valid plugin no-version" "expected 0 FAIL; FAIL=$(grep '^FAIL' "$OUT")"
 fi
-if has_warn_id "$OUT" "plugin.version-recorded" || has_fail_id "$OUT" "plugin.version-recorded"; then
-  fail "4d. plugin version-recorded removed" "plugin.version-recorded check still present — should be cut per #1004"
+if has_warn_id "$OUT" "plugin.version-recorded"; then
+  pass "4d. plugin.version-recorded → WARN when zskills_version absent (#1124)"
 else
-  pass "4d. plugin.version-recorded check removed (no false-positive WARN on untagged seed config)"
+  fail "4d. plugin version-recorded WARN" "expected WARN on plugin.version-recorded; records=$(grep -E '^(WARN|FAIL)' "$OUT")"
+fi
+
+# ── PLUGIN valid + zskills_version PRESENT (#1124): reported as PASS, no WARN. ─
+# Uses the good-plugin fixture (config carries zskills_version: 2026.06.0).
+PVV="$(make_plugin_good 5b)"
+git_init_fixture "$PVV"
+OUT="$TMP/out-plugin-version-present.txt"
+run_cheap_capture "$PVV" "$OUT"
+if grep -q '^PASS	plugin.version-recorded	zskills_version recorded: 2026.06.0' "$OUT"; then
+  pass "4d2. plugin.version-recorded → PASS reporting the recorded version when present"
+else
+  fail "4d2. plugin version-recorded PASS" "expected PASS reporting 2026.06.0; records=$(grep version-recorded "$OUT")"
+fi
+if has_warn_id "$OUT" "plugin.version-recorded"; then
+  fail "4d3. plugin version-recorded no WARN when present" "unexpected WARN: $(grep version-recorded "$OUT")"
+else
+  pass "4d3. plugin.version-recorded → no WARN when zskills_version present"
 fi
 
 # ── PLUGIN broken (A): strip a sentinel from one artifact → FAIL ─────────────

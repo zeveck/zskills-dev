@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.05+f3a28a"
+  version: "2026.06.05+129f56"
 ---
 
 # Update Z Skills Infrastructure
@@ -907,7 +907,10 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-# Repo-level version: latest YYYY.MM.N tag in the source clone.
+# Repo-level version: latest YYYY.MM.N tag in the source clone, falling
+# back to the top-level `version` in .claude-plugin/plugin.json when there
+# is no tag (#1124) — so a tagless-but-complete clone still resolves a
+# version. Empty only when there is neither a tag nor a readable plugin.json.
 current_zskills_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 
 # Installed version: top-level `zskills_version` field in
@@ -944,13 +947,17 @@ consistency; the `Versions:` line is the audit-specific one-liner that
 also includes the per-skill delta count. Both surface the same
 underlying data.
 
-If the source clone has no tags (repo is unversioned): both lines
-still print, just with the `(unversioned)` placeholder. This surfaces
-the state instead of hiding it (CLAUDE.md surface-bugs rule). Same
-applies to a pre-Phase-5 install with no `zskills_version` field —
-print `(none)`; the install/Pull-Latest path will write the field on
-its next run via the mirror-the-tag step (see Step F.5 / Pull Latest
-step 5.7).
+If the source clone has neither a tag nor a readable
+`.claude-plugin/plugin.json` version (genuinely unversioned):
+`current_zskills_ver` is empty and both lines still print with the
+`(unversioned)` placeholder. This surfaces the state instead of hiding it
+(CLAUDE.md surface-bugs rule). Note that a tagless-but-complete clone is
+NOT unversioned — `resolve-repo-version.sh` falls back to the plugin.json
+version (#1124), so `(unversioned)` now appears only when the clone is
+truly missing both signals. Same `(none)` handling applies to a
+pre-Phase-5 install with no `zskills_version` field — print `(none)`; the
+install/Pull-Latest path will write the field on its next run via the
+mirror-the-tag step (see Step F.5 / Pull Latest step 5.7).
 
 If everything is satisfied, end with:
 ```
@@ -2168,10 +2175,14 @@ if [ -n "$new_repo_ver" ]; then
 fi
 ```
 
-If the source clone has no tags (`new_repo_ver` empty), skip silently —
-nothing authoritative to mirror. The audit will print `(unversioned)`
-on the next invocation, which surfaces the state without falsely
-recording a stale tag.
+`resolve-repo-version.sh` resolves the latest tag, falling back to the
+top-level `version` in `.claude-plugin/plugin.json` when there is no tag
+(#1124) — so on a tagless-but-complete clone `new_repo_ver` is now
+populated from plugin.json and `zskills_version` IS written. `new_repo_ver`
+is empty only when the clone has neither a tag nor a readable plugin.json
+version; in that genuinely-unversioned case, skip silently — nothing
+authoritative to mirror, and the audit will print `(unversioned)` on the
+next invocation, surfacing the state without falsely recording a value.
 
 #### Step G — Final report
 
@@ -2224,8 +2235,10 @@ printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
 ```
 
 `Repo version: <new_zskills_ver>` reflects the freshly mirrored
-`zskills_version` from Step F.5 (or `(unversioned)` if the source clone
-had no tags).
+`zskills_version` from Step F.5 (or `(unversioned)` only if the source
+clone had neither a tag nor a readable `.claude-plugin/plugin.json`
+version — a tagless-but-complete clone resolves the plugin.json version,
+so it is no longer `(unversioned)`).
 
 #### Step G.5 — Post-install verification (#999, cheap tier, NON-FATAL)
 
@@ -2235,11 +2248,13 @@ catches the consumer-side of the dogfood-mask (#799/#831): environment-specific
 install breakage that dev-repo tests structurally cannot see (a registered hook
 that resolves to nothing, an un-rendered `managed.md` carrying raw `{{TOKEN}}`
 template placeholders, a dropped artifact/sentinel, an accidental dual-install).
-Per the zero-false-positive bar (#1004) it NEVER flags the renderer's designed
-`<!-- TODO -->` comments for unset OPTIONAL config, nor a missing
-`zskills_version` (an untagged source clone legitimately lacks one) — a FAIL
-always means the install is genuinely broken, never that an optional setting is
-unconfigured.
+Per the zero-false-positive bar (#1004) it NEVER FAILs on the renderer's
+designed `<!-- TODO -->` comments for unset OPTIONAL config — a FAIL always
+means the install is genuinely broken. A missing `zskills_version` is now
+surfaced as a **WARN** (not FAIL): after #1124 `resolve-repo-version.sh`
+falls back to `.claude-plugin/plugin.json`, so a complete clone almost
+always yields a version and its absence is abnormal (but still not install
+breakage — hence WARN, not FAIL); when present, the version is reported.
 
 **NON-FATAL — informative only.** The install already succeeded; this
 verification reports PASS/WARN/FAIL but **does NOT undo or fail the install**.
@@ -2349,7 +2364,11 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    fi
    ```
 
-   Skip silently if the source clone has no tags.
+   `resolve-repo-version.sh` falls back to `.claude-plugin/plugin.json`
+   when there is no tag (#1124), so `new_repo_ver` is populated on a
+   tagless-but-complete clone and `zskills_version` IS written. Skip
+   silently only when the clone has neither a tag nor a readable
+   plugin.json version (`new_repo_ver` empty).
 
 6. **Report.** Replace the prior single-line `Updated: N skills (list)`
    summary with a structured table generated from
@@ -2408,7 +2427,9 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    ```
 
    `(unversioned)` placeholder applies to either side of the `Repo
-   version:` arrow if the corresponding tag is missing.
+   version:` arrow only if the corresponding version is missing — i.e. no
+   tag AND no readable `.claude-plugin/plugin.json` version (#1124); a
+   tagless-but-complete clone resolves the plugin.json version.
 
 7. **Post-install verification (#999, cheap tier, NON-FATAL).** Same as
    install-path **Step G.5**: run the bundled consumer verifier's cheap

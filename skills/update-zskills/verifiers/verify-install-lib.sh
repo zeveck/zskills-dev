@@ -453,11 +453,22 @@ vi_check_legacy() {
     vi_emit FAIL "legacy.config-present" ".claude/zskills-config.json missing"
   fi
 
-  # NOTE (#1004): no `legacy.version-recorded` check. A missing zskills_version
-  # is NOT install breakage — /update-zskills Step F.5 deliberately skips
-  # writing it when the source clone is untagged, so a valid install can
-  # legitimately lack it. Flagging it (even as a WARN) violated the
-  # zero-false-positive bar.
+  # (5) zskills_version recorded (#1124 — WARN, never FAIL). After #1124
+  # resolve-repo-version.sh falls back to .claude-plugin/plugin.json, so a
+  # complete clone almost always yields a version and /update-zskills writes
+  # zskills_version. Its absence is therefore abnormal — but a missing version
+  # is still NOT install breakage (the skills/hooks all work without it; only
+  # the version-skew nudge is affected). So we WARN (the carve-out rationale
+  # from #1004 — "an untagged source clone legitimately lacks one" — no longer
+  # holds now that the plugin.json fallback exists), and report the value when
+  # present. WARN keeps the zero-false-positive bar on FAILs intact.
+  local cver
+  cver="$(vi_config_version "$cfg")"
+  if [ -n "$cver" ]; then
+    vi_emit PASS "legacy.version-recorded" "zskills_version recorded: $cver"
+  else
+    vi_emit WARN "legacy.version-recorded" "zskills_version absent in .claude/zskills-config.json — after #1124 a complete clone resolves a version (git tag → .claude-plugin/plugin.json); re-run /update-zskills to record it (version-skew nudge stays disabled until then)"
+  fi
 }
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -552,8 +563,19 @@ vi_check_plugin() {
     fi
   fi
 
-  # NOTE (#1004): no `plugin.version-recorded` check — same rationale as the
-  # legacy lane: a missing zskills_version is not install breakage.
+  # (4) zskills_version recorded (#1124 — WARN, never FAIL). Same rationale as
+  # the legacy lane: after #1124 resolve-repo-version.sh falls back to
+  # .claude-plugin/plugin.json, so a complete clone almost always yields a
+  # version. Absence is abnormal but not install breakage (only the
+  # version-skew nudge is affected) → WARN, not FAIL. The plugin seed config
+  # lives at the consumer's .claude/zskills-config.json (same path as legacy).
+  local pcver
+  pcver="$(vi_config_version "$claude/zskills-config.json")"
+  if [ -n "$pcver" ]; then
+    vi_emit PASS "plugin.version-recorded" "zskills_version recorded: $pcver"
+  else
+    vi_emit WARN "plugin.version-recorded" "zskills_version absent in .claude/zskills-config.json — after #1124 a complete clone resolves a version (git tag → .claude-plugin/plugin.json); re-run /update-zskills to record it (version-skew nudge stays disabled until then)"
+  fi
 }
 
 # ───────────────────────────────────────────────────────────────────────────
