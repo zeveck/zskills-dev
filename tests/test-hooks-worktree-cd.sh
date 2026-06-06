@@ -258,6 +258,26 @@ setup_project_test_on_main
 expect_project_allow "PR10/XCC14: git -C path diff on main" "git -C /tmp diff"
 teardown_project_test
 
+# XCC15 (#1133) — SPACE-separated multi-arg git GLOBAL flags before a commit
+# must skip the value token so `commit` is recognized as the subcommand → DENY
+# on main. Pre-#1133 the flag-skip loop only knew `-C`/`-c`, so the value was
+# misread as the subcommand and the commit gate never fired. The fused form
+# (XCC12) was always handled; these pin the space form.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC15: git --git-dir <dir> commit on main (#1133)" "git --git-dir /x/.git commit -m msg"
+teardown_project_test
+setup_project_test_on_main
+expect_project_deny "PR10/XCC16: git --work-tree <dir> commit on main (#1133)" "git --work-tree /y commit -m msg"
+teardown_project_test
+setup_project_test_on_main
+expect_project_deny "PR10/XCC17: git --namespace <ns> commit on main (#1133)" "git --namespace foo commit -m msg"
+teardown_project_test
+# XCC18 (#1133) — space-form flag before a NON-mutating subcommand → ALLOW
+# (the value token must not be misread as a mutating subcommand).
+setup_project_test_on_main
+expect_project_allow "PR10/XCC18: git --git-dir <dir> log on main (#1133)" "git --git-dir /x/.git log"
+teardown_project_test
+
 # JSON quote-injection (round-1 DA-H-1): `git "commit" -m "x"` should still
 # DENY — the helper unwraps one quote layer on the subcommand token.
 setup_project_test_on_main

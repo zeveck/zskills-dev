@@ -621,6 +621,31 @@ expect_allow "git -C /tmp/wt push --force-with-lease origin feat/x (worktree —
 expect_allow "git -C /tmp/wt push origin feat/x (worktree — #1037)" "git -C /tmp/wt push origin feat/x"
 expect_allow "cd /tmp/wt && git push --force-with-lease origin feat/x (cd form parity — #1037)" "cd /tmp/wt && git push --force-with-lease origin feat/x"
 
+# Issue #1133: the #1037 fix only taught is_git_subcommand's flag-skip loop
+# about `-C`/`-c`. Every OTHER multi-arg git GLOBAL flag with a SPACE-separated
+# value (`--git-dir <dir>`, `--work-tree <dir>`, `--namespace <ns>`,
+# `--exec-path <path>`, `--super-prefix <pfx>`) still fell through as a 1-token
+# flag, so its value was read as the subcommand and the push gate never fired —
+# a silent bypass of the same class. The `=`-fused form (`--git-dir=DIR`) is a
+# single `-`-prefixed token and was always handled correctly; only the
+# space-separated form bypassed.
+#
+# (a) SECURITY: every space-separated multi-arg flag form pushing to main must
+# DENY (fail-closed, no config = main_protected default). Pre-fix: silently
+# ALLOWED.
+expect_deny "git --git-dir /tmp/wt/.git push origin main (space form — #1133)" "git --git-dir /tmp/wt/.git push origin main"
+expect_deny "git --work-tree /tmp/wt push origin main (space form — #1133)" "git --work-tree /tmp/wt push origin main"
+expect_deny "git --namespace foo push origin main (space form — #1133)" "git --namespace foo push origin main"
+expect_deny "git --exec-path /tmp/wt push origin main (space form — #1133)" "git --exec-path /tmp/wt push origin main"
+expect_deny "git --super-prefix p/ push origin main (space form — #1133)" "git --super-prefix p/ push origin main"
+# The =-fused forms were already denied (single token) — pin that they stay so.
+expect_deny "git --git-dir=/tmp/wt/.git push origin main (fused form — #1133)" "git --git-dir=/tmp/wt/.git push origin main"
+# (b) ALLOWED: the same flags pushing a FEATURE branch must still ALLOW (the
+# value-token consumption must not over-block a legit feature push).
+expect_allow "git --git-dir /tmp/wt/.git push origin feat/x (space form — #1133)" "git --git-dir /tmp/wt/.git push origin feat/x"
+expect_allow "git --work-tree /tmp/wt push origin feat/x (space form — #1133)" "git --work-tree /tmp/wt push origin feat/x"
+expect_allow "git --namespace foo push origin feat/x (space form — #1133)" "git --namespace foo push origin feat/x"
+
 echo ""
 echo "=== Push: main-push block reads execution.main_protected from config ==="
 

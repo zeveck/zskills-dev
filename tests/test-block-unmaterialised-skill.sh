@@ -36,12 +36,17 @@ echo "=== block-unmaterialised-skill.sh (#1128): UserPromptExpansion init-gate =
 
 # Make a temp project dir; if $1=="materialized", stamp a sentinel verifier.md
 # carrying the D20(a) `zskills-materialised:` prefix in its first 3 lines.
+# The sentinel MUST be written to the CANONICAL path the materialiser uses
+# (.claude/agents/verifier.md, session-start-materialise.sh:296) — the path the
+# gate reads. Writing the bare .claude/verifier.md here is what masked #1132:
+# both fixture and (buggy) gate agreed on a path nothing real ever writes, so
+# the suite passed while every real install stayed permanently blocked.
 bm_make_proj() {
   local kind="$1" dir
   dir=$(mktemp -d)
-  mkdir -p "$dir/.claude"
+  mkdir -p "$dir/.claude/agents"
   if [ "$kind" = "materialized" ]; then
-    printf '# zskills-materialised: 2026.06.0\n# verifier.md\n\nbody\n' > "$dir/.claude/verifier.md"
+    printf '# zskills-materialised: 2026.06.0\n# verifier.md\n\nbody\n' > "$dir/.claude/agents/verifier.md"
   fi
   echo "$dir"
 }
@@ -87,6 +92,18 @@ bm_expect_allow "$BM_PROJ_NOTMAT" "zs:update-zskills" "zs:update-zskills (the cu
 
 # ALLOW: a zs:<skill> command when artifacts PRESENT (materialized).
 bm_expect_allow "$BM_PROJ_MAT" "zs:do" "zs:do, materialized"
+
+# DENY (#1132 regression): a sentinel written ONLY at the bare
+# .claude/verifier.md (the path the buggy gate read) with the canonical
+# .claude/agents/verifier.md ABSENT must STILL be treated as NOT materialized.
+# The materialiser only ever writes .claude/agents/verifier.md, so honoring the
+# bare path would let the broken pre-#1132 gate's masking fixture pass while
+# real installs stay blocked. If this case ALLOWs, the path regressed.
+BM_PROJ_WRONGPATH="$(mktemp -d)"
+mkdir -p "$BM_PROJ_WRONGPATH/.claude"
+printf '# zskills-materialised: 2026.06.0\n# verifier.md\n\nbody\n' > "$BM_PROJ_WRONGPATH/.claude/verifier.md"
+bm_expect_deny "$BM_PROJ_WRONGPATH" "zs:do" "zs:do, sentinel at WRONG bare path only (#1132)"
+rm -rf "$BM_PROJ_WRONGPATH"
 
 # ALLOW: a non-zskills command never matches (no ^zs: prefix), even when NOT
 # materialized.

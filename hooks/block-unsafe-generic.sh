@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.3
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -309,7 +309,11 @@ is_git_subcommand() {
   ((i++))
   while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
     case "${TOKENS[$i]}" in
-      -C|-c) ((i+=2)) ;;
+      # Multi-arg git GLOBAL flags taking a SEPARATE-token value: skip flag +
+      # value (2 tokens) so the subcommand isn't misread as the flag's value —
+      # the push/commit gate bypass closed by #1133 (extends the -C-only #1037).
+      # `=`-fused forms (--git-dir=DIR) are one `-`-token -> `*)` 1-token arm.
+      -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--super-prefix) ((i+=2)) ;;
       *)     ((i+=1)) ;;
     esac
   done
