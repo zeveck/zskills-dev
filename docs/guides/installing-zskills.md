@@ -61,10 +61,11 @@ and tune it for your project (see [Configuring zskills](zskills-config.md)). An
 existing config is never overwritten. See
 [`.gitignore` guidance](#gitignore-guidance) for whether to track these files.
 
-By default the plugin install lands work in **`locked-main-pr`** mode
-(`execution.landing: pr`, `main_protected: true`): agents don't commit to
-`main` directly — finished work ships as a pull request from a worktree on a
-feature branch. To change it, see [Landing mode](#landing-mode).
+By default the plugin install lands work in **`direct`** mode
+(`execution.landing: direct`, `main_protected: false`): agents work and commit
+directly on `main`, with no worktree or landing step — the simplest default for
+solo work in a fresh project. To switch to a review workflow (a worktree + pull
+request, with `main` locked), see [Landing mode](#landing-mode).
 
 ## `/update-zskills` install
 
