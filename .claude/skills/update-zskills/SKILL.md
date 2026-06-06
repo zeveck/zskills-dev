@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.05+4e7652"
+  version: "2026.06.05+f3a28a"
 ---
 
 # Update Z Skills Infrastructure
@@ -903,9 +903,9 @@ clone's latest tag (authoritative), plus how many skills have a different
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 # Repo-level version: latest YYYY.MM.N tag in the source clone.
 current_zskills_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
@@ -1060,9 +1060,9 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   ```bash
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+    ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
   else
-    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+    ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
   bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
   ```
@@ -1197,9 +1197,9 @@ touches the hook or the mirror):
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
@@ -1313,7 +1313,7 @@ only removes zskills-rendered lines — never user content).
 
 2. **Render the template** via the canonical renderer (D24 — one
    substitution map, three callers; no LLM-prose substitution). First
-   resolve a working Python 3 (`. "$PORTABLE/scripts/zskills-resolve-config.sh"`
+   resolve a working Python 3 (`ZSKILLS_SKIP_INIT_GATE=1 . "$PORTABLE/scripts/zskills-resolve-config.sh"`
    sets `$PYTHON`; on Windows a bare `python3` is the broken MS Store stub —
    #1083), then run:
    `"$PYTHON" "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
@@ -2122,9 +2122,9 @@ Otherwise:
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
@@ -2157,9 +2157,9 @@ Update Check" read to detect drift on subsequent invocations:
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 if [ -n "$new_repo_ver" ]; then
@@ -2209,9 +2209,9 @@ Same renderer logic as the update-path table (see Pull Latest step 6).
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 show_addons=0
@@ -2318,9 +2318,9 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
    ```
@@ -2338,9 +2338,9 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
    if [ -n "$new_repo_ver" ]; then
@@ -2386,9 +2386,9 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     ZSKILLS_SKIP_INIT_GATE=1 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
    show_addons=0
@@ -2461,7 +2461,7 @@ no preset, no config backfill, no migration. Pure re-render.
 2. Render the template against current config via the canonical
    renderer (the SAME `render-managed-rules.py` invocation as Step B
    step 2 — D24, one substitution map, three callers): resolve a working
-   Python 3 first (`. "$PORTABLE/scripts/zskills-resolve-config.sh"` sets
+   Python 3 first (`ZSKILLS_SKIP_INIT_GATE=1 . "$PORTABLE/scripts/zskills-resolve-config.sh"` sets
    `$PYTHON`; bare `python3` is the broken MS Store stub on Windows, #1083),
    then run
    `"$PYTHON" "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
