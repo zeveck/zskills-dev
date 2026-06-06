@@ -28,6 +28,9 @@
 #          actually exist for consumers;
 #        - build-*.sh release/dogfood tooling STRIPPED;
 #        - hooks/canary*-bad.sh fixtures STRIPPED;
+#        - .github/ dev-only CI workflows + ship-to-prod button STRIPPED
+#          (also fixes the ship-to-prod push, which the prod PAT rejects for
+#          touching workflow files — it lacks the `workflow` scope);
 #        - CANARY*-named plans / fixtures STRIPPED (recursive — #1002);
 #        - MW-EXAMPLE-marked files STRIPPED;
 #        - dev→prod URL rewrite (zeveck.github.io/zskills-dev →

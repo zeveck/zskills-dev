@@ -30,6 +30,11 @@
 #   2. Shared dev-only strip set — files that must NOT ship to consumers:
 #      - scripts/build-*.sh   (release/dogfood tooling)
 #      - hooks/canary*-bad.sh (deliberately-broken regression fixtures)
+#      - .github/             (dev-only CI workflows + the dev→prod ship-to-prod
+#        button; prod Pages is legacy branch-deploy so no workflow is load-
+#        bearing for the site. Stripping it also fixes the ship-to-prod push,
+#        which the prod PAT rejects for touching workflow files: the PAT lacks
+#        the `workflow` scope.)
 #      - any file containing the MW-EXAMPLE marker (dev-only worked examples)
 #      - CANARY-named plans / fixtures ANYWHERE in the tree (recursive) — the
 #        prod consumer doesn't need zskills-dev's regression guards. Unified
@@ -215,6 +220,16 @@ finalize_prod_tree() {
   # canary*-bad.sh deliberately-broken regression fixtures.
   _fpt_log "stripping hooks/canary*-bad.sh fixtures from $tree/hooks/"
   find "$tree/hooks" -maxdepth 1 -type f -name 'canary*-bad.sh' -print -delete 2>/dev/null || true
+
+  # .github/ — dev-only CI workflows (test.yml) + the dev→prod ship-to-prod
+  # button (ship-to-prod.yml, which references a secret). prod's Pages is
+  # legacy branch-deploy, so no workflow file is load-bearing for the site.
+  # Stripping the whole dir also fixes the ship-to-prod push: the prod PAT
+  # lacks the `workflow` scope and the push is rejected for touching any
+  # .github/workflows/ file. Scoped to "$tree" (the BUILT output copy), so the
+  # dev repo's own .github/ is never touched.
+  _fpt_log "stripping dev-only .github/ from $tree"
+  rm -rf "$tree/.github"
 
   # MW-EXAMPLE-marked files (dev-only worked examples). Matched by FILENAME
   # (the documented `MW-EXAMPLE__<name>` tombstone convention, F-R1-13), NOT

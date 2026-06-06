@@ -147,6 +147,19 @@ for tree_label in "BP:$BP_TREE" "PR:$PR_TREE"; do
   fi
 done
 
+# ── Targeted strip assertion: dev-only .github/ stripped from BOTH ────────────
+# The prod tree must not ship .github/ (dev-only CI workflows + the dev→prod
+# ship-to-prod button). Stripping it also fixes the ship-to-prod push, which the
+# prod PAT rejects for touching workflow files (it lacks the `workflow` scope).
+for tree_label in "BP:$BP_TREE" "PR:$PR_TREE"; do
+  label="${tree_label%%:*}"; tree="${tree_label#*:}"
+  if [ -e "$tree/.github" ]; then
+    fail "3.$label: dev-only .github/ survived the strip (must be absent in prod tree)"
+  else
+    pass "3.$label: .github/ stripped from prod tree"
+  fi
+done
+
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"
