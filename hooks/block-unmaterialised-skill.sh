@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # block-unmaterialised-skill.sh — UserPromptExpansion gate (#1128).
 #
 # PLUGIN-LANE-ONLY. Registered solely in hooks/hooks.json under the
@@ -27,10 +27,13 @@
 # as zs:add-block, NOT zsbd:); the zsbd marketplace plugin is delisted, so
 # zsbd: never matches a real consumer.
 #
-# NOT materialized iff $CLAUDE_PROJECT_DIR/.claude/verifier.md is absent OR
-# its first 3 lines lack the D20(a) materialiser sentinel prefix
+# NOT materialized iff $CLAUDE_PROJECT_DIR/.claude/agents/verifier.md is absent
+# OR its first 3 lines lack the D20(a) materialiser sentinel prefix
 # `zskills-materialised:` — the SAME signal the removed PreToolUse gate used /
-# detect-install-state.sh reads.
+# detect-install-state.sh reads. The materialiser writes the sentinel to
+# .claude/agents/verifier.md (session-start-materialise.sh:296), so this gate
+# MUST read that same path; reading the bare .claude/verifier.md made the
+# "materialised -> allow" branch unreachable on a real install (#1132).
 #
 # On block: emit a single-line ASCII reason (no quotes or newlines — they
 # break the JSON envelope), exit 0. Else exit 0 with no output.
@@ -82,7 +85,10 @@ esac
 # in hook subprocesses; fall back to pwd defensively). Windows-portable: no
 # /tmp, paths via $CLAUDE_PROJECT_DIR.
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-ARTIFACT="$PROJ/.claude/verifier.md"
+# Canonical materialiser sentinel path — MUST match the dest the materialiser
+# writes (session-start-materialise.sh:296 -> .claude/agents/verifier.md) and
+# the path detect-install-state.sh reads. See #1132.
+ARTIFACT="$PROJ/.claude/agents/verifier.md"
 if [ -f "$ARTIFACT" ] && head -n 3 "$ARTIFACT" 2>/dev/null | grep -Eq '^(#|<!--)[[:space:]]+zskills-materialised:[[:space:]]'; then
   # Materialized -> allow.
   exit 0
