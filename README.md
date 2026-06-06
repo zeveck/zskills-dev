@@ -15,8 +15,7 @@
 
 **23 core skills that plan, build, test, fix, and ship** — so one
 developer can run a full engineering team. (21 user-facing slash
-commands, 2 internal helpers, three block-diagram add-ons, and a
-battery of safety hooks.)
+commands, 2 internal helpers, and a battery of safety hooks.)
 
 Z Skills encodes hard-won lessons from real agent failures into reusable
 prompt files. Each skill is a `.claude/skills/<name>/SKILL.md` file that
@@ -25,23 +24,15 @@ that prevents the most common AI agent failure modes: skipping
 verification, weakening tests, deferring hard parts, and shipping broken
 code.
 
-The philosophy is **plan-driven development**: a human writes (or drafts
-with `/draft-plan`) a markdown plan, and `/run-plan` executes it phase by
-phase inside an isolated git worktree, verifying each phase with a fresh
-reviewer agent and landing the result to main (cherry-pick, PR, or
-direct — your choice).
-
 ## Docs
 
-- [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
-- [`docs/guides/workflows.md`](docs/guides/workflows.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
-- [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) — install via the plugin marketplace or the `/update-zskills` script.
-- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 21 user-facing skills + 2 helpers.
-- [`docs/guides/inspecting-and-monitoring.md`](docs/guides/inspecting-and-monitoring.md) — observe a running zskills project.
+Read the docs in the **[in-browser docs viewer](https://zeveck.github.io/zskills-dev/docs/#docs/README.md)** or here in the repo.
 
-**[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
-for the architecture, workflow stages, enforcement model, and war
-stories.
+New users may want to explore **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**,
+the **[Workflows guide](https://zeveck.github.io/zskills-dev/docs/#docs/guides/workflows.md)**, or the
+**[Skill reference](https://zeveck.github.io/zskills-dev/docs/#docs/skills/README.md)**.
+
+For a higher level view see **[the ZSkills presentation →](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**.
 
 ## The Skills
 
@@ -53,36 +44,7 @@ stories.
 
 ## Install
 
-zskills ships via **two permanent, first-class install lanes** — pick
-**exactly one**. Running both at once is *not* a supported end-state; it is
-tolerated only transiently while switching lanes (the mirror wins and the
-plugin materialiser defers — run `scripts/switch-install-path.sh` to
-consolidate). The full side-by-side comparison, tradeoff matrix,
-version-pinning idiom, and per-lane `.gitignore` guidance live in
-**[`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md)**.
-
-| | Plugin lane | `/update-zskills` lane |
-|---|---|---|
-| Install | `/plugin marketplace add zeveck/zskills`<br>`/plugin install zs@zskills` | clone + copy skills, then `/update-zskills install` |
-| Slash prefix | `/zs:run-plan`, `/zs:do` | bare `/run-plan`, `/do` |
-| Update | `/plugin marketplace update` | `/update-zskills install` |
-| `claude` CLI required on host | yes | no |
-
-**Default recommendation** (for the indecisive reader — both lanes are
-first-class, this is not a constraint):
-
-- **Interactive workflows: plugin lane** — one-command install/updates,
-  marketplace-native, the slash menu surfaces the `/zs:` prefix.
-- **Headless CI consumers: `/update-zskills` lane** — no `claude` CLI
-  required on runners; install state is plain tracked files you can verify
-  with a file check.
-- **Power users: either** — the difference is cosmetic.
-
-This is **not** a pip/npm package — do not `pip install` or `npm install`
-it. The repo contains prompt files and scripts.
-
-### Plugin lane (quick start)
-
+By default zskills installs as a Claude Code plugin.
 From inside a Claude Code session in your project:
 
 ```
@@ -99,22 +61,36 @@ session start (plugins cannot write at install time). Finally, run:
 ```
 
 to confirm the install and check your environment (it reports whether git,
-Python, and gh are present). `/update-zskills` is the post-install step on
-**every** lane — plugin and `/update-zskills` alike. Until you run it, a one
-line greeting on startup reminds you.
-
-The `zs` plugin bundles the block-diagram add-on skills, so a single install
-gives you everything. (The block-diagram add-on currently ships inside `zs`
-and will move to its own separately-installable plugin in a future repo.) See
-[`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for what gets
-materialised, version pinning, and the bare-slash prose tradeoff.
+Python, and gh are present). Until you run it, a one-line greeting on startup
+reminds you.
 
 > **zskills needs git and bash.** Its worktree, commit, and cherry-pick
 > machinery is built on `git`, and its hooks and helper scripts run under
 > `bash`. `/update-zskills` reports whether git (and gh, for PR-mode landing)
 > are present; bash is assumed by every shipped script.
 
-### `/update-zskills` lane (quick start)
+This is **not** a pip/npm package — do not `pip install` or `npm install` it.
+The repo contains prompt files and scripts.
+
+### Plugin vs. direct install
+
+There's a more flexible **direct install** alternative — instead of the plugin,
+it copies the skill source straight into your repo's `.claude/`. Same skills,
+same behavior; the visible differences are the slash prefix and where the source
+lives. Pick **one** — running both at once isn't a supported end-state (run
+`scripts/switch-install-path.sh` to consolidate).
+
+| | Plugin | `/update-zskills` (direct) |
+|---|---|---|
+| Install | `/plugin marketplace add zeveck/zskills`<br>`/plugin install zs@zskills` | clone + copy skills, then `/update-zskills install` |
+| Update | `/plugin marketplace update` | `/update-zskills install` |
+| Slash prefix | `/zs:run-plan`, `/zs:do` | bare `/run-plan`, `/do` |
+| Skill source in your repo | no (plugin-managed) | yes (copied into `.claude/`) |
+
+For more details see
+**[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**.
+
+### `/update-zskills` install
 
 Tell your agent (copy-paste):
 
@@ -176,31 +152,23 @@ Running `/update-zskills <preset>` on an already-configured project
 safety hook). Every other config field is preserved. See
 [Landing modes](#landing-modes) for what each preset does.
 
-### Add-ons
-
-To include the block-diagram add-on (3 extra skills):
-
-```bash
-/update-zskills install --with-block-diagram-addons
-```
-
 ### Updating
 
-- **`/update-zskills` lane:** run `/update-zskills` anytime — it pulls the
+- **Plugin:** run `/plugin marketplace update`. The SessionStart hook
+  re-materialises the managed `.claude/` artifacts on next session start.
+- **`/update-zskills` (direct):** run `/update-zskills` anytime — it pulls the
   latest from the repo, updates changed skills, and fills any new gaps. If
   you have a config already, it will not re-prompt.
-- **Plugin lane:** run `/plugin marketplace update`. The SessionStart hook
-  re-materialises the managed `.claude/` artifacts on next session start.
 
 See [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for the full
-per-lane update workflow and version-pinning idiom.
+update workflow and version-pinning idiom.
 
 ### Your first plan
 
 Once installed:
 
 ```
-/draft-plan Add a dark-mode toggle to the settings page.
+/draft-plan quiz Let's make an HTML game like Asteroids but with cooler effects.
 /run-plan docs/plans/<generated-file>.md
 ```
 
@@ -225,9 +193,9 @@ reference three install-time knobs:
 
 | Preset | `execution.landing` | `execution.main_protected` | `BLOCK_MAIN_PUSH` | Use when |
 |---|---|---|---|---|
-| `cherry-pick` (default) | `cherry-pick` | `false` | `0` | Solo dev, local main, no CI gate |
+| `cherry-pick` | `cherry-pick` | `false` | `0` | Solo dev, local main, no CI gate |
 | `locked-main-pr` | `pr` | `true` | `1` | Shared repo, PR workflow, branch protection / CI required |
-| `direct` | `direct` | `false` | `0` | Prototypes, single-developer throwaway work |
+| `direct` (default) | `direct` | `false` | `0` | Prototypes, single-developer throwaway work |
 
 - **cherry-pick** — Each phase runs in an auto-named worktree. When it
   passes verification, its squashed commit is cherry-picked to `main`
@@ -512,15 +480,6 @@ by other skills — see Helpers below.
 |-------|---------|
 | `/land-pr` | PR landing helper — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by `/run-plan`, `/commit pr`, `/do pr`, and `/fix-issues`. `user-invocable: false` hides it from the `/` menu. |
 | `/manual-testing` | Playwright-cli UI-verification recipes (real mouse/keyboard events). `user-invocable: false`; dispatched by `/verify-changes`. |
-
-### Block Diagram Add-on (`block-diagram/`)
-
-3 additional skills for block-diagram editors (`/add-block`, `/add-example`,
-`/model-design`). Not part of the core 23 — install if
-your project involves visual block diagrams.
-See [`block-diagram/README.md`](block-diagram/README.md).
-
-![Block Diagram Add-on skills](block-diagram/screenshots/domain-skills.png)
 
 ## What Gets Installed
 
