@@ -254,9 +254,48 @@ cat > "$T3/consumer/.claude/zskills-config.json" <<'EOF'
 EOF
 OUT=$(render_site_a_line "$T3/source" "$T3/consumer")
 if echo "$OUT" | grep -q '(unversioned)'; then
-  pass "Site A (unversioned) for tagless source"
+  pass "Site A (unversioned) for tagless source with NO plugin.json"
 else
   fail "Site A (unversioned)" "got: $OUT"
+fi
+
+# ----------------------------------------------------------------------
+# Test 3b (#1124): tagless source WITH a .claude-plugin/plugin.json →
+# resolve-repo-version.sh falls back to the plugin.json version, so the
+# Repo version is the plugin.json value, NOT (unversioned).
+# ----------------------------------------------------------------------
+echo ""
+echo "=== Test 3b (#1124): tagless source WITH plugin.json → plugin.json version ==="
+T3B=$(mktemp -d /tmp/zskills-test-vsurf-XXXXXX)
+mkdir -p "$T3B/source/skills" "$T3B/source/scripts" "$T3B/source/.claude-plugin"
+cp "$GET_HELPER" "$T3B/source/scripts/frontmatter-get.sh"
+write_skill "$T3B/source/skills/run-plan" run-plan "2026.05.02+aaaaaa"
+cat > "$T3B/source/.claude-plugin/plugin.json" <<'EOF'
+{
+  "name": "zs",
+  "displayName": "Z Skills",
+  "version": "2026.06.0",
+  "hooks": { "version": "nested-must-not-be-picked" }
+}
+EOF
+( cd "$T3B/source" && git init -q && git config user.email t@e && git config user.name t \
+  && git add -A && git commit -q -m init )
+# NO tag created — exercise the plugin.json fallback path.
+mkdir -p "$T3B/consumer/.claude/skills"
+cat > "$T3B/consumer/.claude/zskills-config.json" <<'EOF'
+{ "project_name": "acme" }
+EOF
+RV=$(bash "$RESOLVE" "$T3B/source")
+if [ "$RV" = "2026.06.0" ]; then
+  pass "resolve-repo-version.sh tagless+plugin.json → plugin.json version (2026.06.0), nested key not picked"
+else
+  fail "resolve tagless+plugin.json" "expected 2026.06.0 got '$RV'"
+fi
+OUT=$(render_site_a_line "$T3B/source" "$T3B/consumer")
+if echo "$OUT" | grep -q 'Repo version: (none) → 2026.06.0' && ! echo "$OUT" | grep -q '(unversioned)'; then
+  pass "Site A: tagless-but-complete clone shows plugin.json version, NOT (unversioned)"
+else
+  fail "Site A tagless+plugin.json" "got: $OUT"
 fi
 
 # ----------------------------------------------------------------------
