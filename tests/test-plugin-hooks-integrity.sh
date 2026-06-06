@@ -102,7 +102,10 @@ fi
 #
 #   session-start-materialise.sh — carries its OWN dual-install probe
 #     (detect-install-state.sh) and is NOT a double-fire-prone PreToolUse hook.
-SHIM_EXCLUDE="session-start-materialise.sh"
+#   block-unmaterialised-skill.sh (#1128) — a PLUGIN-ONLY UserPromptExpansion
+#     gate with no same-basename .claude/settings.json sibling, so it cannot
+#     double-fire and legitimately does NOT source the D16(a) shim.
+SHIM_EXCLUDE="session-start-materialise.sh block-unmaterialised-skill.sh"
 
 in_list() {
   # in_list <needle> <space-separated-list>

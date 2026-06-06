@@ -41,6 +41,11 @@ fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 EXCLUDE_BASENAMES=(
   "canary3-bad.sh"
   "session-start-materialise.sh"
+  # block-unmaterialised-skill.sh (#1128) — PLUGIN-LANE-ONLY UserPromptExpansion
+  # gate (registered in hooks/hooks.json, never in .claude/settings.json). The
+  # half-installed state it closes is plugin-lane-only, so there is no
+  # /update-zskills mirror to byte-compare.
+  "block-unmaterialised-skill.sh"
 )
 
 is_excluded() {
