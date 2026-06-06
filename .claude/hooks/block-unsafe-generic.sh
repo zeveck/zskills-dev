@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -52,6 +52,59 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # If extraction fails (malformed JSON), fall back to scanning $INPUT so the
 # hook remains defensive; no false-allows.
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
+
+# ──────────────────────────────────────────────────────────────
+# zskills init-gate (#1121) — hard-block a half-installed plugin
+# ──────────────────────────────────────────────────────────────
+# The faceplant this closes: a user does `/plugin install zs@zskills` ->
+# `/reload-plugins` and the skills + hooks load, but the SessionStart
+# materialiser has NOT run yet (it only fires on `/clear` or a full restart),
+# so the 5 consumer-side artifacts are not on disk. Skills "largely work" in a
+# broken, unreliable way. We catch it at the universal chokepoint every skill
+# passes through — a Bash command that SOURCES `zskills-resolve-config.sh` —
+# and deny with a single prominent restart nudge instead of letting the skill
+# half-execute. (Supersedes the soft nudge-restart-to-materialise.sh hook.)
+#
+# Block condition = NOT materialized ONLY. Readiness = the 5 materialized
+# artifacts present (covers BOTH plugin-materialisation AND the legacy
+# /update-zskills install), detected via the materialiser sentinel
+# `zskills-materialised:` on an artifact (verifier.md) — the SAME signal
+# `vi_has_materialiser_sentinel` / detect-install-state.sh read. No git-repo
+# branch (a casual-friendly default — git is a soft verify-install WARN, never
+# a gate). If artifacts present -> ALLOW.
+#
+# Exemption = the skip token `ZSKILLS_SKIP_INIT_GATE`. /update-zskills is the
+# CURE and must NEVER be blocked; it prefixes every resolver-source with
+# `ZSKILLS_SKIP_INIT_GATE=1`, so the gate allows any resolver-source carrying
+# the token (in any form).
+#
+# Cheap early-exit ordering: bail immediately unless the command (a) carries a
+# REAL resolver SOURCE at a command boundary AND (b) lacks the skip token —
+# only THEN do the (slightly more expensive) artifact-stat. Most Bash calls
+# never mention the resolver and exit at the first test.
+#
+# Detection anchors on a dot-source / `source` at a command boundary
+# (^ / ; / & / |) — NOT a path MENTION in an `if [ -f "..." ]` test line, a
+# `cat`/`grep`, or a comment. The dual-lane prelude's `[ -f "..." ]` test line
+# precedes the real `. "..."` source line; only the latter matches.
+if [[ "$COMMAND" =~ (^|[;\&\|])[[:space:]]*(\.|source)[[:space:]]+\"[^\"]*zskills-resolve-config\.sh\" ]]; then
+  # (b) Skip token present (any form) -> ALLOW (this is /update-zskills, the cure).
+  if [[ "$COMMAND" != *ZSKILLS_SKIP_INIT_GATE* ]]; then
+    # (c) Artifact-stat: materialized iff an artifact carries the materialiser
+    # sentinel. Resolve the project dir the standard way (CLAUDE_PROJECT_DIR is
+    # set in hook subprocesses; fall back to pwd defensively). Scan the first 3
+    # lines of verifier.md for the D20(a) sentinel prefix.
+    _IG_PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+    _IG_ARTIFACT="$_IG_PROJ/.claude/verifier.md"
+    if ! { [ -f "$_IG_ARTIFACT" ] && head -n 3 "$_IG_ARTIFACT" 2>/dev/null | grep -Eq '^(#|<!--)[[:space:]]+zskills-materialised:[[:space:]]'; }; then
+      # NOT materialized -> block with a single-line ASCII reason (no quotes or
+      # newlines — they break the JSON envelope).
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' \
+        "zskills isn't finished installing -- restart Claude Code (or /clear) to finish setup, then run /update-zskills."
+      exit 0
+    fi
+  fi
+fi
 
 # ──────────────────────────────────────────────────────────────
 # Interpreter-stdin re-injection (#772) — sibling of #399/#597

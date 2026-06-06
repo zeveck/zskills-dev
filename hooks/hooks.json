@@ -52,13 +52,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge-restart-to-materialise.sh\"", "timeout": 5 }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
