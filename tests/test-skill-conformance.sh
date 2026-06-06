@@ -3806,6 +3806,133 @@ else
   done
 fi
 
+# ──────────────────────────────────────────────────────────────────────────
+# Config-seed congruence — both fresh-install config seeds must stay in sync
+# ──────────────────────────────────────────────────────────────────────────
+# There are TWO independent places that seed a fresh .claude/zskills-config.json:
+#
+#   1. Plugin lane — the Python `cfg = {...}` dict literal inside the
+#      <<'PY' ... PY heredoc in hooks/session-start-materialise.sh (the
+#      SessionStart materialiser writes it for plugin-lane consumers).
+#   2. Legacy lane — the ```json block in skills/update-zskills/SKILL.md
+#      ("Content to write to `.claude/zskills-config.json`"), which the
+#      /update-zskills install path writes directly.
+#
+# These two seeds drifted: the legacy scaffold OMITTED the `agents` block, so
+# `block-agents.sh` (registered on the legacy lane via .claude/settings.json)
+# fired-but-no-op'd — the never-Haiku floor was silently OFF on fresh legacy
+# installs. This is the exact parallel of #1136 (the safety-critical agents
+# floor must be seeded on EVERY lane). This guard fails closed if either seed
+# drops `agents.min_model` or if their top-level key-sets diverge on anything
+# OTHER than the documented lane-specific allow-list below.
+#
+# ALLOW-LIST of intentionally lane-specific keys (drift here is NOT a failure):
+#   • dev_server.main_repo_path — present in the legacy scaffold, omitted from
+#     the plugin seed by design (casual plugin consumers have no main-repo
+#     concept). Adding an intentional future divergence is a one-line edit to
+#     ALLOWED_DEVSERVER_DIFF / ALLOWED_TOPLEVEL_DIFF in the embedded parser.
+. "$REPO_ROOT/hooks/_lib/resolve-python.sh"
+SEED_PY="$(zskills_resolve_python || true)"
+if [ -z "$SEED_PY" ]; then
+  fail "seed-congruence: Python 3 required to parse config seeds" "zskills_resolve_python"
+else
+  SEED_OUT="$("$SEED_PY" - "$REPO_ROOT/hooks/session-start-materialise.sh" \
+                          "$REPO_ROOT/skills/update-zskills/SKILL.md" <<'PY' 2>&1
+import ast, json, re, sys
+
+materialiser_path, skillmd_path = sys.argv[1], sys.argv[2]
+
+# Intentionally lane-specific keys (NOT drift). One-line additions here when a
+# future divergence is deliberate; everything else must stay congruent.
+ALLOWED_TOPLEVEL_DIFF = set()                 # no top-level keys may differ
+ALLOWED_DEVSERVER_DIFF = {"main_repo_path"}   # legacy-only by design
+
+errors = []
+
+# --- 1. Plugin seed: extract the `cfg = {...}` dict literal from the heredoc.
+mat = open(materialiser_path, encoding="utf-8").read()
+m = re.search(r"^cfg\s*=\s*\{", mat, re.MULTILINE)
+if not m:
+    print("PARSE-FAIL: could not locate `cfg = {` in materialiser", file=sys.stderr)
+    sys.exit(2)
+# Walk braces from the opening { to find the matching close.
+start = mat.index("{", m.start())
+depth, i = 0, start
+while i < len(mat):
+    c = mat[i]
+    if c == "{":
+        depth += 1
+    elif c == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    i += 1
+cfg_src = mat[start:i+1]
+# Neutralize the one runtime expression so ast.literal_eval accepts it.
+cfg_src = cfg_src.replace('os.environ["PROJECT_NAME"]', '"<detected>"')
+try:
+    plugin_seed = ast.literal_eval(cfg_src)
+except Exception as e:
+    print("PARSE-FAIL: plugin cfg literal not parseable: %r" % e, file=sys.stderr)
+    sys.exit(2)
+
+# --- 2. Legacy seed: extract the ```json fence that seeds zskills-config.json.
+skill = open(skillmd_path, encoding="utf-8").read()
+anchor = skill.find("Content to write to")
+if anchor == -1:
+    print("PARSE-FAIL: legacy config-seed anchor not found in SKILL.md", file=sys.stderr)
+    sys.exit(2)
+fence = re.search(r"```json\s*\n(.*?)\n\s*```", skill[anchor:], re.DOTALL)
+if not fence:
+    print("PARSE-FAIL: legacy ```json fence not found after anchor", file=sys.stderr)
+    sys.exit(2)
+raw = fence.group(1)
+# The scaffold carries placeholders that are not valid JSON; sanitize them:
+#   <detected> / <preset.landing> → quoted-string placeholder
+#   <preset.main_protected> → a boolean
+raw = raw.replace("<preset.main_protected>", "false")
+raw = re.sub(r"<[^>]+>", "PLACEHOLDER", raw)
+try:
+    legacy_seed = json.loads(raw)
+except Exception as e:
+    print("PARSE-FAIL: legacy json fence not parseable after sanitize: %r" % e, file=sys.stderr)
+    sys.exit(2)
+
+# --- Assertion 1: both seeds carry the safety-critical agents.min_model key.
+for label, seed in (("plugin", plugin_seed), ("legacy", legacy_seed)):
+    if "min_model" not in seed.get("agents", {}):
+        errors.append("%s seed missing agents.min_model (never-Haiku floor)" % label)
+
+# --- Assertion 2: top-level key-set parity (minus allow-list).
+pk, lk = set(plugin_seed), set(legacy_seed)
+diff = (pk ^ lk) - ALLOWED_TOPLEVEL_DIFF
+if diff:
+    errors.append("top-level key drift (not allow-listed): %s "
+                  "[plugin-only=%s legacy-only=%s]"
+                  % (sorted(diff), sorted(pk - lk), sorted(lk - pk)))
+
+# --- dev_server sub-dict: tolerate ONLY the allow-listed main_repo_path diff.
+pds, lds = set(plugin_seed.get("dev_server", {})), set(legacy_seed.get("dev_server", {}))
+ds_diff = (pds ^ lds) - ALLOWED_DEVSERVER_DIFF
+if ds_diff:
+    errors.append("dev_server key drift (not allow-listed): %s" % sorted(ds_diff))
+
+if errors:
+    for e in errors:
+        print("DRIFT: " + e, file=sys.stderr)
+    sys.exit(1)
+print("OK")
+PY
+)"
+  SEED_RC=$?
+  if [ "$SEED_RC" -eq 0 ]; then
+    pass "seed-congruence: plugin + legacy config seeds carry agents.min_model and stay key-congruent"
+  else
+    fail "seed-congruence: config seeds drifted (parallel of #1136)" "agents.min_model / top-level key parity"
+    echo "$SEED_OUT" | sed 's/^/        /'
+  fi
+fi
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

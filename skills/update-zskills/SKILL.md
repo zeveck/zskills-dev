@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.05+2a1247"
+  version: "2026.06.06+f0f43f"
 ---
 
 # Update Z Skills Infrastructure
@@ -637,6 +637,9 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
      "ci": {
        "auto_fix": true,
        "max_fix_attempts": 2
+     },
+     "agents": {
+       "min_model": "auto"
      },
      "output": {
        "plans_dir": "docs/plans",
