@@ -24,28 +24,14 @@ that prevents the most common AI agent failure modes: skipping
 verification, weakening tests, deferring hard parts, and shipping broken
 code.
 
-The philosophy is **plan-driven development**: a human writes (or drafts
-with `/draft-plan`) a markdown plan, and `/run-plan` executes it phase by
-phase inside an isolated git worktree, verifying each phase with a fresh
-reviewer agent and landing the result to main (cherry-pick, PR, or
-direct — your choice).
-
 ## Docs
 
-Read the docs in the **[in-browser docs viewer](https://zeveck.github.io/zskills-dev/docs/#docs/README.md)** —
-a searchable site rather than raw files. Jump straight to the
-**[Workflows guide](https://zeveck.github.io/zskills-dev/docs/#docs/guides/workflows.md)**
-(end-to-end recipes that chain skills — plan-driven dev, backlog sprints,
-post-merge cleanup), **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**
-(plugin marketplace or the `/update-zskills` script), the
-**[Skill reference](https://zeveck.github.io/zskills-dev/docs/#docs/skills/README.md)**
-(per-skill docs for all 21 user-facing skills + 2 helpers), or
-**[Inspecting &amp; monitoring](https://zeveck.github.io/zskills-dev/docs/#docs/guides/inspecting-and-monitoring.md)**
-(observe a running zskills project).
+Read the docs in the **[in-browser docs viewer](https://zeveck.github.io/zskills-dev/docs/#docs/README.md)** or here in the repo.
+New users may want to explore **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**,
+the **[Workflows guide](https://zeveck.github.io/zskills-dev/docs/#docs/guides/workflows.md)**, or the
+**[Skill reference](https://zeveck.github.io/zskills-dev/docs/#docs/skills/README.md)**.
 
-**[View the full presentation →](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
-for the architecture, workflow stages, enforcement model, and war
-stories.
+For a higher level view see **[the ZSkills presentation →](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**.
 
 ## The Skills
 
@@ -57,8 +43,8 @@ stories.
 
 ## Install
 
-zskills installs as a Claude Code plugin. From inside a Claude Code session in
-your project:
+By default zskills installs as a Claude Code plugin.
+From inside a Claude Code session in your project:
 
 ```
 /plugin marketplace add zeveck/zskills
@@ -87,7 +73,7 @@ The repo contains prompt files and scripts.
 
 ### Plugin vs. direct install
 
-`/update-zskills` is a **direct install** alternative — instead of the plugin,
+There's a more flexible **direct install** alternative — instead of the plugin,
 it copies the skill source straight into your repo's `.claude/`. Same skills,
 same behavior; the visible differences are the slash prefix and where the source
 lives. Pick **one** — running both at once isn't a supported end-state (run
@@ -100,7 +86,7 @@ lives. Pick **one** — running both at once isn't a supported end-state (run
 | Slash prefix | `/zs:run-plan`, `/zs:do` | bare `/run-plan`, `/do` |
 | Skill source in your repo | no (plugin-managed) | yes (copied into `.claude/`) |
 
-For the full comparison, version-pinning, and `.gitignore` guidance, see
+For more details see
 **[Installing zskills](https://zeveck.github.io/zskills-dev/docs/#docs/guides/installing-zskills.md)**.
 
 ### `/update-zskills` install
@@ -181,7 +167,7 @@ update workflow and version-pinning idiom.
 Once installed:
 
 ```
-/draft-plan Add a dark-mode toggle to the settings page.
+/draft-plan quiz Let's make an HTML game like Asteroids but with cooler effects.
 /run-plan docs/plans/<generated-file>.md
 ```
 
@@ -206,9 +192,9 @@ reference three install-time knobs:
 
 | Preset | `execution.landing` | `execution.main_protected` | `BLOCK_MAIN_PUSH` | Use when |
 |---|---|---|---|---|
-| `cherry-pick` (default) | `cherry-pick` | `false` | `0` | Solo dev, local main, no CI gate |
+| `cherry-pick` | `cherry-pick` | `false` | `0` | Solo dev, local main, no CI gate |
 | `locked-main-pr` | `pr` | `true` | `1` | Shared repo, PR workflow, branch protection / CI required |
-| `direct` | `direct` | `false` | `0` | Prototypes, single-developer throwaway work |
+| `direct` (default) | `direct` | `false` | `0` | Prototypes, single-developer throwaway work |
 
 - **cherry-pick** — Each phase runs in an auto-named worktree. When it
   passes verification, its squashed commit is cherry-picked to `main`
