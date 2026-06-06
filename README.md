@@ -90,11 +90,29 @@ From inside a Claude Code session in your project:
 /plugin install zs@zskills
 ```
 
+Then **restart Claude Code (or `/clear`) so we can finish setup** — the
+SessionStart hook materialises zskills' consumer-side artifacts on the next
+session start (plugins cannot write at install time). Finally, run:
+
+```
+/update-zskills
+```
+
+to confirm the install and check your environment (it reports whether git,
+Python, and gh are present). `/update-zskills` is the post-install step on
+**every** lane — plugin and `/update-zskills` alike. Until you run it, a one
+line greeting on startup reminds you.
+
 The `zs` plugin bundles the block-diagram add-on skills, so a single install
 gives you everything. (The block-diagram add-on currently ships inside `zs`
 and will move to its own separately-installable plugin in a future repo.) See
 [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for what gets
 materialised, version pinning, and the bare-slash prose tradeoff.
+
+> **zskills needs git and bash.** Its worktree, commit, and cherry-pick
+> machinery is built on `git`, and its hooks and helper scripts run under
+> `bash`. `/update-zskills` reports whether git (and gh, for PR-mode landing)
+> are present; bash is assumed by every shipped script.
 
 ### `/update-zskills` lane (quick start)
 

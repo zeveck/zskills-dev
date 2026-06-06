@@ -557,15 +557,76 @@ vi_check_plugin() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
+# Environment checks (lane-agnostic — #1119).
+#
+# vi_check_env <project_dir> — REPORT (never gate) the host tooling a zskills
+# consumer needs. Runs unconditionally at the top of vi_run_cheap, regardless
+# of detected lane, so a fresh casual plugin consumer learns their environment
+# is missing git/gh BEFORE the lane-specific structural checks.
+#
+#   git binary present  → FAIL if absent (zskills' worktree/commit/cherry-pick
+#                         machinery is unusable without git).
+#   git repo            → WARN (+ "run git init") if $proj is not a git work
+#                         tree. Reported with `git -C "$proj" rev-parse` so the
+#                         check is anchored to the project dir, not cwd.
+#   gh present          → WARN if absent (PR-mode landing + /fix-issues need it,
+#                         but cherry-pick/direct lanes work without it).
+#   python              → already covered (VI_PY / the resolver). A missing
+#                         interpreter would have FAILed earlier checks; we
+#                         report it here too for a complete env picture.
+# ───────────────────────────────────────────────────────────────────────────
+vi_check_env() {
+  local proj="$1"
+
+  # git binary.
+  if command -v git >/dev/null 2>&1; then
+    vi_emit PASS "env.git-binary" "git is installed"
+  else
+    vi_emit FAIL "env.git-binary" "git not found on PATH — zskills needs git (worktrees, commits, cherry-picks). Install git."
+  fi
+
+  # git repo (project dir is a work tree). Only meaningful when git exists;
+  # use git -C "$proj" so the check is anchored to the project, not cwd.
+  if command -v git >/dev/null 2>&1; then
+    if git -C "$proj" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      vi_emit PASS "env.git-repo" "$proj is a git repository"
+    else
+      vi_emit WARN "env.git-repo" "$proj is not a git repository — run 'git init' here so zskills' commit/worktree machinery works"
+    fi
+  fi
+
+  # gh CLI.
+  if command -v gh >/dev/null 2>&1; then
+    vi_emit PASS "env.gh" "gh (GitHub CLI) is installed"
+  else
+    vi_emit WARN "env.gh" "gh (GitHub CLI) not found — PR-mode landing and /fix-issues need it; cherry-pick/direct lanes do not"
+  fi
+
+  # python (already resolved into VI_PY by the resolver at load time).
+  if [ -n "$VI_PY" ]; then
+    vi_emit PASS "env.python" "Python 3 resolved ($VI_PY)"
+  else
+    vi_emit FAIL "env.python" "no working Python 3 found — zskills hooks/scripts need it (set ZSKILLS_PYTHON)"
+  fi
+}
+
+# ───────────────────────────────────────────────────────────────────────────
 # Dispatch by detected lane.
 #
 # vi_run_cheap <project_dir> — detect the lane and run the cheap structural
 # tier for it. Emits per-check records and leaves VI_PASS/WARN/FAIL populated.
 # A `dual` lane is flagged FAIL (unsupported client state) but still runs the
 # legacy checks so the consumer sees the full picture. `none` is a FAIL.
+#
+# vi_check_env runs FIRST, unconditionally (lane-agnostic), so the host-tooling
+# report (git/gh/python) is always present regardless of detected lane (#1119).
 # ───────────────────────────────────────────────────────────────────────────
 vi_run_cheap() {
   local proj="$1"
+
+  # Lane-agnostic environment report (#1119) — always runs first.
+  vi_check_env "$proj"
+
   local lane
   lane="$(vi_detect_lane "$proj")"
   vi_emit "$([ "$lane" = none ] && echo FAIL || echo PASS)" "lane.detect" "detected lane: $lane"

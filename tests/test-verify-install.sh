@@ -65,6 +65,18 @@ run_cheap_capture() {
   vi_run_cheap "$proj" > "$out"
 }
 
+# git_init_fixture <dir> — make a synthetic fixture a real git repo so the
+# lane-agnostic env check (vi_check_env, #1119) sees a work tree and emits the
+# env.git-repo PASS instead of a WARN. A REAL zskills install always sits in a
+# git repo; the synthetic $TMP fixtures are not repos by default, so the
+# zero-WARN assertions (3c/4c) require this. We do NOT weaken those assertions —
+# we make the fixture match reality.
+git_init_fixture() {
+  git -C "$1" init -q >/dev/null 2>&1
+  git -C "$1" config user.email t@t >/dev/null 2>&1 || true
+  git -C "$1" config user.name t >/dev/null 2>&1 || true
+}
+
 # Count FAIL records in a captured output file.
 count_fail() { grep -c '^FAIL' "$1" 2>/dev/null || echo 0; }
 # Does the captured output contain a FAIL whose id matches $2?
@@ -220,6 +232,9 @@ LNV="$(make_legacy_good 4)"
 cat > "$LNV/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme" }
 JSON
+# A real legacy install lives in a git repo — init the fixture so the new
+# lane-agnostic env.git-repo check (#1119) PASSes, keeping this case at 0 WARN.
+git_init_fixture "$LNV"
 OUT="$TMP/out-legacy-no-version.txt"
 run_cheap_capture "$LNV" "$OUT"
 if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
@@ -391,6 +406,8 @@ PNV="$(make_plugin_good 5)"
 cat > "$PNV/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme" }
 JSON
+# Real plugin install lives in a git repo — init so env.git-repo (#1119) PASSes.
+git_init_fixture "$PNV"
 OUT="$TMP/out-plugin-no-version.txt"
 run_cheap_capture "$PNV" "$OUT"
 if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
@@ -606,6 +623,69 @@ if printf '%s\n' "$DEEP_OUT" | grep -q 'heavy tier' \
 else
   fail "10. --deep opt-in" "expected heavy-tier section + Overall: PASS on a good install"
 fi
+
+# ── vi_check_env (#1119): lane-agnostic environment report ───────────────────
+# Positive coverage for the new env checks. They run unconditionally in
+# vi_run_cheap; here we drive vi_check_env directly with a controlled PATH to
+# assert each branch: git-binary FAIL when git is absent, git-repo WARN on a
+# non-repo dir, gh WARN when gh is absent. Each runs in a `( ... )` subshell so
+# the manipulated PATH and the lib's vi_emit counter mutations are scoped.
+
+# (11a) git binary absent → env.git-binary FAIL. Build a PATH stub dir that
+# carries everything EXCEPT git (so `command -v git` misses but the rest of the
+# check function still works), then re-source the lib so VI_PY re-resolves under
+# the stubbed PATH.
+ENVTMP="$TMP/envcheck"
+mkdir -p "$ENVTMP/proj"
+git_init_fixture "$ENVTMP/proj"
+# 11a — git absent.
+( STUB="$TMP/nogit-bin"; mkdir -p "$STUB"
+  for t in bash sed grep head printf cat dirname basename env python3 gh; do
+    p="$(command -v "$t" 2>/dev/null)"; [ -n "$p" ] && ln -sf "$p" "$STUB/$t"
+  done
+  PATH="$STUB"
+  out11a="$TMP/env-nogit.txt"
+  vi_reset; vi_check_env "$ENVTMP/proj" > "$out11a" 2>/dev/null
+  if grep -q '^FAIL	env.git-binary	' "$out11a"; then
+    pass "11a. vi_check_env: git binary absent → env.git-binary FAIL"
+  else
+    fail "11a. env git absent" "expected env.git-binary FAIL; got $(cat "$out11a")"
+  fi
+)
+
+# (11b) project dir is NOT a git repo → env.git-repo WARN (with git present).
+out11b="$TMP/env-nonrepo.txt"
+NONREPO="$TMP/env-nonrepo-dir"; mkdir -p "$NONREPO"
+vi_reset; vi_check_env "$NONREPO" > "$out11b" 2>/dev/null
+if grep -q '^WARN	env.git-repo	' "$out11b"; then
+  pass "11b. vi_check_env: non-repo project dir → env.git-repo WARN"
+else
+  fail "11b. env non-repo" "expected env.git-repo WARN; got $(cat "$out11b")"
+fi
+# And a real git repo PASSes env.git-repo (the inverse — proves the WARN is
+# conditional, not unconditional).
+out11b2="$TMP/env-repo.txt"
+vi_reset; vi_check_env "$ENVTMP/proj" > "$out11b2" 2>/dev/null
+if grep -q '^PASS	env.git-repo	' "$out11b2"; then
+  pass "11b2. vi_check_env: git-repo project dir → env.git-repo PASS"
+else
+  fail "11b2. env repo" "expected env.git-repo PASS; got $(cat "$out11b2")"
+fi
+
+# (11c) gh absent → env.gh WARN (git still present, so no git FAIL).
+( STUB="$TMP/nogh-bin"; mkdir -p "$STUB"
+  for t in bash sed grep head printf cat dirname basename env python3 git; do
+    p="$(command -v "$t" 2>/dev/null)"; [ -n "$p" ] && ln -sf "$p" "$STUB/$t"
+  done
+  PATH="$STUB"
+  out11c="$TMP/env-nogh.txt"
+  vi_reset; vi_check_env "$ENVTMP/proj" > "$out11c" 2>/dev/null
+  if grep -q '^WARN	env.gh	' "$out11c" && ! grep -q '^FAIL	env.git-binary	' "$out11c"; then
+    pass "11c. vi_check_env: gh absent → env.gh WARN (git still PASSes)"
+  else
+    fail "11c. env gh absent" "expected env.gh WARN + no git-binary FAIL; got $(cat "$out11c")"
+  fi
+)
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

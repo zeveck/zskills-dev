@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.6
+# zskills-hook-version: 2026.06.7
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -314,8 +314,9 @@ done
 # gated on [ -f "$CONFIG" ]. A fresh plugin install therefore used to leave
 # the consumer with NO config and NO managed.md — silently. Seed a default
 # headless config here so the render gate passes and all 5 artifacts
-# materialise. The preset is locked-main-pr (landing=pr, main_protected=true)
-# — the safe default for a fresh consumer.
+# materialise. The seed defaults to landing=direct, main_protected=false —
+# the lowest-friction default for a casual plugin consumer (concurrency-1,
+# fresh container). Sophisticated forks opt into locked-main-pr explicitly.
 #
 # Idempotent: ONLY create when the config is absent. An existing config (any
 # values) is NEVER clobbered. We track whether we seeded this run so the
@@ -332,8 +333,8 @@ cfg = {
     "project_name": os.environ["PROJECT_NAME"],
     "timezone": "UTC",
     "execution": {
-        "landing": "pr",
-        "main_protected": True,
+        "landing": "direct",
+        "main_protected": False,
         "branch_prefix": "feat/",
     },
     "commit": {
@@ -437,8 +438,23 @@ fi
 # consumer to review the generated config (test commands + landing mode).
 if [ "$CONFIG_SEEDED" -eq 1 ] && [ ! -f "$PROJ/.zskills/config-seeded-notice" ]; then
   mkdir -p "$PROJ/.zskills"
-  echo "zskills: created a default .claude/zskills-config.json (locked-main-pr: landing=pr, main_protected=true). Review it — especially testing.unit_cmd/full_cmd and execution.landing — and adjust for this project." >&2
+  echo "zskills: created a default .claude/zskills-config.json (landing=direct, main_protected=false). Review it — especially testing.unit_cmd/full_cmd and execution.landing — and adjust for this project." >&2
   touch "$PROJ/.zskills/config-seeded-notice"
+fi
+
+# ── SessionStart greeting (systemMessage on stdout) ───────────────────────
+# Nudge a fresh plugin consumer toward /update-zskills. We only reach here on
+# the fresh|plugin flow (update-zskills/dual already early-exited, so those
+# lanes stay silent). Emit a JSON `systemMessage` on STDOUT — Claude Code
+# renders it on startup + /clear — when the config exists (so we are past the
+# seed point) AND the .zskills/setup-confirmed marker is ABSENT (they have not
+# run /update-zskills yet). It persists every session until that marker exists.
+#
+# stdout must be ONLY this JSON (stderr stays for diagnostics). The emit is
+# guarded with `|| true` because the script runs under `set -euo pipefail` and
+# a Python miss here must not abort. It is the LAST thing before `exit 0`.
+if [ -f "$CONFIG" ] && [ ! -f "$PROJ/.zskills/setup-confirmed" ]; then
+  "$PYTHON" -c 'import json,sys; sys.stdout.write(json.dumps({"systemMessage": "\U0001F44B zskills installed. Run /update-zskills to finish setup and check your environment'"'"'s ready."}))' 2>/dev/null || true
 fi
 
 exit 0

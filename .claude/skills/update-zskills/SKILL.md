@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.05+bcc9c7"
+  version: "2026.06.05+4e7652"
 ---
 
 # Update Z Skills Infrastructure
@@ -2271,6 +2271,18 @@ Report the verifier's per-check output and overall result as a final block of
 the success message. On WARN-only, note it's informative; on FAIL, tell the
 user the install succeeded but verification flagged an environment issue.
 
+**Write the `setup-confirmed` marker (#1119).** A successful install means the
+consumer has now run `/update-zskills` — record that so the plugin SessionStart
+greeting (`👋 zskills installed. Run /update-zskills …`) goes silent from the
+next session on. Write a one-line ISO timestamp to `.zskills/setup-confirmed`
+(`.zskills/` is gitignored — per-checkout local state). Do this LAST, after the
+verifier ran, so the marker means "install completed AND was verified":
+
+```bash
+mkdir -p "$CLAUDE_PROJECT_DIR/.zskills"
+date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
+```
+
 ### Pull Latest and Update (already-installed path)
 
 1. **Pull latest from upstream.** Find the `zskills/` clone (Step 0) and
@@ -2415,6 +2427,16 @@ user the install succeeded but verification flagged an environment issue.
      bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
        echo "(post-install verification reported a FAIL above — the update still succeeded; review and fix your environment, then re-run /update-zskills to re-verify)"
    fi
+   ```
+
+8. **Write the `setup-confirmed` marker (#1119).** Same as install-path
+   Step G.5: a successful update is also a run of `/update-zskills`, so record
+   it to silence the plugin SessionStart greeting. Write a one-line ISO
+   timestamp to `.zskills/setup-confirmed` (gitignored, per-checkout state):
+
+   ```bash
+   mkdir -p "$CLAUDE_PROJECT_DIR/.zskills"
+   date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    ```
 
 ---
