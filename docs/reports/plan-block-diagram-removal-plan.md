@@ -1,5 +1,22 @@
 # Plan Report — Block-Diagram Add-On Removal
 
+## Phase — 2 Delete the trees + deletion-coupled edits
+
+**Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 30c097d3 (impl+verify, 14 D + 8 M)
+
+### Work Items
+block-diagram/ tree (incl. zsbd manifest + screenshots), docs/skills/block-diagram/, both installed mirrors (model-design had none), 2 smoke suites + run-all registrations deleted; plugin.json skills → ["./skills/"] (no hooks field); .gitignore unignore rules dropped; test-plugin-manifest zs-only rewrite (skills assertion TIGHTENED to exact equality); frontmatter-survival + mirror-parity reworked; conformance mirror-source fallback deleted; CI fatal tier-2 zsbd validate block deleted (comments survive for Phase 3 F).
+
+### Verification
+- Verifier PASS (independent), committed 30c097d3; Layer-3 validate exit 0.
+- Suite: Overall: 7617/7617 passed, 0 failed. Drop −41 vs post-Phase-1 baseline independently recomputed per-suite (smoke −7/−10, manifest −15, conformance −2, survival −1, parity −6) — exact. Weakening audit CLEAN. DocsRegistry byte-identical after regen.
+- Drift: 1 advisory — AC3 grep expects 0 hits but 1 comment-only hit at test.yml:143 is owned by Phase 3 F per the plan itself; self-resolves next phase. Fork note: rescope AC3 to executable lines.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 1 De-reference the test layer
 
 **Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md

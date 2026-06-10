@@ -143,7 +143,7 @@ shifted since inventory.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — De-reference the test layer | ✅ | f4479288 | 19 test files; 7658/7658 passed; floor 6 kept; survivors per plan |
-| 2 — Delete the trees + deletion-coupled edits | ⬚ | | |
+| 2 — Delete the trees + deletion-coupled edits | ✅ | 30c097d3 | 14 deletes + 8 edits; 7617/7617; −41 accounted; AC3 comment-hit → Phase 3 F |
 | 3 — Strip addon machinery (skills, scripts, hooks, CI) | ⬚ | | |
 | 4 — Root docs + counts | ⬚ | | |
 | 5 — Final sweep + verification | ⬚ | | |
