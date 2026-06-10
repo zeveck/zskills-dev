@@ -1,5 +1,27 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 3 Layer-3 relocation (verify-response-validate.sh)
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** d51f79d7 (38 files, +467/−274)
+
+### Work Items
+R100 zero-drift relocation to skills/update-zskills/scripts/ (+ mirror twin; both old copies deleted); 14 call sites across 6 skills → dual-lane $ZSKILLS_SKILLS_ROOT form with canonical preludes; conformance pin → dual-lane + rejection arm; parity suite deleted (subject-removal); unit/canary/agent-install retargets; verify-install VI_PLUGIN_ARTIFACTS hoist (congruence by construction + 0b pin); materialiser shrink 5→4 (stamp 2026.06.10) with its 4 lockstep suites incl. the scenario-D vacuous-pass kill (verifier added a D0 non-vacuity guard); update-zskills SKILL.md multi-site edits (document-as-residue choice adjudicated CONFIRMED); STALE_LIST/script-ownership/tier1-hash registries. 6 skill bumps + mirrors.
+
+### Verification
+- Verifier PASS d51f79d7; Layer-3 exit 0. Suite 7647/7649 pre-commit (2 = committed-state gates, both green post-commit: invariants 119/119, migration 13/13; +4 delta = environmental attended-live-load passes, reconciled). Weakening audit CLEAN — four surfaces STRENGTHENED.
+
+### Fork-portability notes (drift log)
+- hooks-mirror-parity + plugin-self-load are GLOB/enumeration-driven — fork copy should drop "update their lists" items (self-accounting).
+- suite-registry derives from run-all.sh — only the run-all entry exists to remove.
+- Scenario-D retarget needs an explicit non-vacuity guard (D0 style) or the vacuous-pass failure mode just relocates.
+- The relocated script retains its line-2 hook-version stamp (R100 spec) — harmless; Phase 7 tidy candidate.
+- Residue documentation must phrase the old path WITHOUT the contiguous literal (AC grep + rejection arm).
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 2 Plugin-native agents + hooks.json Layer-0 timeout
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md

@@ -314,7 +314,7 @@ a real attended transcript/marker — as a verification FAIL.
 |-------|--------|--------|-------|
 | 1 — Empirical verification → recorded branch selections | ✅ | d592c80a | 1A / T-A(scoped-filter) / R-b; 2 ATTENDED-PENDING (non-gating); evidence preserved |
 | 2 — Plugin-native agents + hooks.json Layer-0 timeout | ✅ | 18a004e2 | 1A+T-A landed; STOP rule live-proven shape (b); 7651/7651 (+37 accounted) |
-| 3 — Layer-3 relocation (verify-response-validate.sh) | ⬚ | | |
+| 3 — Layer-3 relocation (verify-response-validate.sh) | ✅ | d51f79d7 | R100 move; 14 sites dual-lane; materialiser 5→4; post-commit 119/119+13/13 |
 | 4 — Rules de-parameterization + delivery channel | ⬚ | | |
 | 5 — Config cascade (project > user > built-ins) | ⬚ | | |
 | 6a — Explicit init (Step 0.7 rework, residue cleanup, lock-LAST) | ⬚ | | |
