@@ -212,6 +212,25 @@ finalize_prod_tree() {
   done
   shopt -u nullglob
 
+  # ── 1b. 1A — plugin-native root agents/ must ship in every prod tree ─────
+  # INSTALL_REDESIGN Phase 2 (branch 1A): the plugin lane dispatches the
+  # verifier/implementer subagents from the plugin root agents/ dir
+  # (checked-in source, auto-loaded by Claude Code — NEVER a manifest
+  # `agents` field, which is validate-rejected and breaks agent load).
+  # Fail CLOSED if a tree lacks them: a prod tree without root agents/
+  # ships a plugin that cannot dispatch verifier/implementer mirror-lessly.
+  # Both publishers run this same assertion (shared finalizer), so the two
+  # release lanes cannot diverge on agent presence.
+  _fpt_log "1A: asserting plugin-native root agents/ files present"
+  local _agent
+  for _agent in verifier implementer; do
+    if [ ! -f "$tree/agents/$_agent.md" ]; then
+      echo "finalize_prod_tree: ERROR — missing plugin-native agent: $tree/agents/$_agent.md" >&2
+      return 1
+    fi
+  done
+  _fpt_done "1A: agents/verifier.md + agents/implementer.md present"
+
   # ── 2. Shared dev-only strip set ─────────────────────────────────────────
   # build-*.sh release/dogfood tooling. Deleted from <tree>/scripts/ only.
   _fpt_log "stripping build-*.sh release tooling from $tree/scripts/"
@@ -263,11 +282,13 @@ finalize_prod_tree() {
   # the strip steps above are never processed. rewrite_dev_urls is idempotent
   # (grep-guarded) and honors the `zskills-dev-url-allow` marker, so files
   # without a dev URL — or allow-listed prose like CHANGELOG.md — are untouched.
-  _fpt_log "rewriting dev→prod URLs across $tree (docs, skills, .claude mirror, README, CHANGELOG, PRESENTATION, index)"
+  # Root agents/ rides the walk too (INSTALL_REDESIGN Phase 2, 1A) so a dev
+  # URL in an agent body never ships to prod.
+  _fpt_log "rewriting dev→prod URLs across $tree (docs, skills, agents, .claude mirror, README, CHANGELOG, PRESENTATION, index)"
   local _f
   while IFS= read -r -d '' _f; do
     rewrite_dev_urls "$_f"
-  done < <(cd "$tree" && find docs skills .claude README.md CHANGELOG.md PRESENTATION.html index.html \
+  done < <(cd "$tree" && find docs skills agents .claude README.md CHANGELOG.md PRESENTATION.html index.html \
                 \( -name '*.md' -o -name '*.html' -o -name '*.js' -o -name '*.json' \) \
                 -type f -print0 2>/dev/null | while IFS= read -r -d '' rel; do printf '%s\0' "$tree/$rel"; done)
 

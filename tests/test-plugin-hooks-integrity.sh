@@ -318,8 +318,9 @@ rm -f /tmp/.gap2.err
 # 2b — positive coverage: assert the EXPECTED in-tree set is actually being
 # checked (anti-green-by-absence). The 7 in-tree block-*.sh + warn-config-drift
 # + the 2 session-logging hooks (log-session-stop, log-permission-request)
+# + inject-bash-timeout.sh (Layer-0, INSTALL_REDESIGN Phase 2 T-A)
 # must all be present, source the shim, and NOT be on any exclusion list.
-EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh log-session-stop.sh log-permission-request.sh"
+EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh log-session-stop.sh log-permission-request.sh inject-bash-timeout.sh"
 missing_expected=""
 for name in $EXPECTED_IN_TREE_SHIMMED; do
   # Must be registered, exist in-tree, source the shim, and not be excluded.
@@ -331,7 +332,7 @@ for name in $EXPECTED_IN_TREE_SHIMMED; do
   if in_list "$name" "$SHIM_EXCLUDE"; then missing_expected="$missing_expected $name(wrongly-excluded)"; continue; fi
 done
 if [ -z "$missing_expected" ]; then
-  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh + the 2 session-logging hooks are registered, in-tree, shim-sourcing, and asserted (not excluded)"
+  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh + the 2 session-logging hooks + inject-bash-timeout.sh are registered, in-tree, shim-sourcing, and asserted (not excluded)"
 else
   fail "2b. expected shim-sourcing set incomplete:$missing_expected"
 fi
@@ -349,6 +350,58 @@ if [ "$d4_ok" -eq 1 ]; then
 else
   fail "2c. a D4 .template hook does not source the shim"
 fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Layer-0 structural pin — hooks.json inject-bash-timeout entry (T-A) ==="
+
+# INSTALL_REDESIGN Phase 2 (branch T-A): plugin-lane Layer-0 timeout
+# injection is delivered by EXACTLY ONE PreToolUse/Bash hooks.json entry
+# invoking ${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh. Zero entries
+# = plugin consumers' verifier/implementer Bash calls sit at the 120s
+# default (Invariant-7 violation); two+ entries = redundant double-fire
+# registration (idempotent but a registration bug).
+L0_RESULT=$(
+  "$PYTHON" - "$HOOKS_JSON" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+hits = []
+for event_name, event in data.get("hooks", {}).items():
+    if not isinstance(event, list):
+        continue
+    for matcher in event:
+        if not isinstance(matcher, dict):
+            continue
+        for h in matcher.get("hooks", []):
+            cmd = h.get("command", "")
+            if isinstance(cmd, str) and "inject-bash-timeout.sh" in cmd:
+                hits.append((event_name, matcher.get("matcher", ""), cmd))
+print(len(hits))
+for ev, m, cmd in hits:
+    print(f"{ev}\t{m}\t{cmd}")
+PY
+)
+L0_COUNT=$(printf '%s\n' "$L0_RESULT" | head -n1)
+L0_LINE=$(printf '%s\n' "$L0_RESULT" | sed -n '2p')
+if [ "$L0_COUNT" = "1" ]; then
+  pass "L0a. exactly one hooks.json entry references inject-bash-timeout.sh"
+else
+  fail "L0a. expected exactly 1 inject-bash-timeout.sh hooks.json entry, got $L0_COUNT"
+fi
+if [ "$(printf '%s' "$L0_LINE" | cut -f1)" = "PreToolUse" ] \
+   && [ "$(printf '%s' "$L0_LINE" | cut -f2)" = "Bash" ]; then
+  pass "L0b. the entry is registered under PreToolUse with matcher Bash"
+else
+  fail "L0b. inject-bash-timeout.sh entry not under PreToolUse/Bash" ; printf '      got: %s\n' "$L0_LINE"
+fi
+case "$(printf '%s' "$L0_LINE" | cut -f3)" in
+  *'${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh'*)
+    pass "L0c. the entry resolves under \${CLAUDE_PLUGIN_ROOT}/hooks/" ;;
+  *)
+    fail "L0c. the entry does not resolve under \${CLAUDE_PLUGIN_ROOT}/hooks/"
+    printf '      got: %s\n' "$L0_LINE" ;;
+esac
 
 # ──────────────────────────────────────────────────────────────────────────
 echo ""

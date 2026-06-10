@@ -316,6 +316,8 @@ run_suite "test-claim-self-reentry.sh" "tests/test-claim-self-reentry.sh"
 run_suite "test-inflight-batch-guard.sh" "tests/test-inflight-batch-guard.sh"
 run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
+# INSTALL_REDESIGN Phase 2 (1A) — root agents/ vs .claude/agents parity.
+run_suite "test-agents-parity.sh" "tests/test-agents-parity.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-ref-consistency.sh" "tests/test-plugin-ref-consistency.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"

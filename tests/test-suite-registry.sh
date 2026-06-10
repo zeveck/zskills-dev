@@ -94,7 +94,8 @@ for known in \
   tests/test-parse-results.sh \
   tests/test-suite-registry.sh \
   tests/test-plugin-live-load.sh \
-  tests/test-switch-install-path.sh ; do
+  tests/test-switch-install-path.sh \
+  tests/test-agents-parity.sh ; do
   if printf '%s\n' "$SUITES" | grep -qx "$known"; then
     pass "[enum] $known is in the registered set"
   else

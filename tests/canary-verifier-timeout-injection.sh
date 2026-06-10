@@ -92,6 +92,9 @@ fi
 
 # --------------------------------------------------------------------
 # Assertion 4 — verifier agent frontmatter declares the hook
+# (LEGACY-lane Layer-0 delivery: stays pinned to .claude/agents/ — the
+# /update-zskills lane delivers the hook via agent frontmatter. The
+# plugin lane delivers via hooks/hooks.json instead: assertions 4b/4c.)
 # --------------------------------------------------------------------
 if [ ! -f "$VERIFIER_AGENT" ]; then
   fail "verifier agent definition missing" "expected: $VERIFIER_AGENT"
@@ -108,6 +111,44 @@ else
 $FRONTMATTER"
   fi
 fi
+
+# --------------------------------------------------------------------
+# Assertion 4b — PLUGIN-lane Layer-0 delivery (INSTALL_REDESIGN Phase 2,
+# branch T-A): hooks/hooks.json carries a PreToolUse entry invoking
+# ${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh. Without it, plugin
+# consumers' verifier/implementer Bash calls sit at the 120s default
+# (Invariant-7 violation). The structural exactly-one pin lives in
+# test-plugin-hooks-integrity.sh; this is the canary cross-cut.
+# --------------------------------------------------------------------
+HOOKS_JSON="$REPO_ROOT/hooks/hooks.json"
+if [ -f "$HOOKS_JSON" ] \
+   && grep -q 'inject-bash-timeout\.sh' "$HOOKS_JSON"; then
+  pass "plugin lane: hooks/hooks.json registers inject-bash-timeout.sh"
+else
+  fail "plugin lane: hooks/hooks.json missing inject-bash-timeout.sh entry" "path=$HOOKS_JSON"
+fi
+
+# --------------------------------------------------------------------
+# Assertion 4c — branch 1A: the root agents/ plugin-native copies carry
+# NO frontmatter hooks: block (plugin agents IGNORE frontmatter hooks —
+# a hooks: block here would silently mask a missing hooks.json entry;
+# Layer-0 for these agents is the 4b entry). The .claude/agents copies
+# keep theirs (assertion 4 above — legacy lane, Invariant 10).
+# --------------------------------------------------------------------
+for AGENT_NAME in verifier implementer; do
+  ROOT_AGENT="$REPO_ROOT/agents/$AGENT_NAME.md"
+  if [ ! -f "$ROOT_AGENT" ]; then
+    fail "plugin lane: root agents/$AGENT_NAME.md missing" "expected: $ROOT_AGENT"
+  else
+    ROOT_FM=$(awk '/^---$/{c++; if (c==2) exit; next} c==1' "$ROOT_AGENT")
+    if echo "$ROOT_FM" | grep -q '^hooks:'; then
+      fail "plugin lane: agents/$AGENT_NAME.md carries a frontmatter hooks: block (must not — plugin agents ignore it)" "frontmatter:
+$ROOT_FM"
+    else
+      pass "plugin lane: agents/$AGENT_NAME.md carries NO frontmatter hooks: block (Layer-0 via hooks.json)"
+    fi
+  fi
+done
 
 # --------------------------------------------------------------------
 # Behavior smoke — invoke the source hook with synthetic JSON envelopes

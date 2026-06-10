@@ -795,6 +795,42 @@ if grep -qF 'baseline_N' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; th
 else
   fail "[.claude/agents/verifier.md] tally check: baseline comparison" "baseline-comparison guidance missing"
 fi
+
+# INSTALL_REDESIGN Phase 2 (branch 1A) — plugin-native root agents/ twins.
+# Root agents/{verifier,implementer}.md are the checked-in plugin-lane agent
+# sources (auto-loaded from the plugin root — NEVER named in plugin.json:
+# the Phase-1 claim-1 probe confirmed a manifest `agents` field is
+# validate-rejected AND breaks agent load). They are body-identical to the
+# .claude/agents twins modulo the frontmatter hooks: block (parity enforced
+# by tests/test-agents-parity.sh), so the content pins above apply to BOTH
+# copies — EXCEPT the inject-bash-timeout.sh frontmatter-reference pin,
+# which applies ONLY to the .claude/agents copies (plugin agents IGNORE
+# frontmatter hooks; plugin-lane Layer-0 is the hooks/hooks.json PreToolUse
+# entry — pinned in test-plugin-hooks-integrity.sh). Split per location.
+for _root_agent in verifier implementer; do
+  if [ -f "$REPO_ROOT/agents/$_root_agent.md" ]; then
+    pass "[agents/$_root_agent.md] exists (1A plugin-native source)"
+  else
+    fail "[agents/$_root_agent.md] exists (1A plugin-native source)" "missing"
+  fi
+  if grep -q "^name: $_root_agent\$" "$REPO_ROOT/agents/$_root_agent.md" 2>/dev/null; then
+    pass "[agents/$_root_agent.md] name: $_root_agent"
+  else
+    fail "[agents/$_root_agent.md] name: $_root_agent" "frontmatter mismatch"
+  fi
+done
+# Root verifier twin carries the same load-bearing prose as the legacy copy
+# (scope-creep diff guidance #448 + tally check #511) — the parity suite
+# guarantees this transitively, but pin it directly so a parity-suite
+# regression cannot silently strip verifier guidance from the plugin lane.
+for _pin in 'git show HEAD --stat' 'merge-base origin/main HEAD' 'Overall: N/M passed' 'baseline_N'; do
+  if grep -qF "$_pin" "$REPO_ROOT/agents/verifier.md" 2>/dev/null; then
+    pass "[agents/verifier.md] prose pin: $_pin"
+  else
+    fail "[agents/verifier.md] prose pin: $_pin" "missing from root twin"
+  fi
+done
+
 # Issue #575: the same canonical summary-line prose is mirrored into
 # skills/run-plan/modes/execute-phase.md Phase 3 verifier-dispatch prompt.
 # The .claude/agents/verifier.md check above is the agent-file pin; this

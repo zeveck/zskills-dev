@@ -11,6 +11,9 @@
 #   3. Missing timeout field → `updatedInput` with timeout: 600000, command preserved
 #   4. run_in_background:true + insufficient timeout → both preserved AND timeout set
 #   5. Bare tool_input (not wrapped in envelope) → still injects correctly
+#   11-18. T-A agent-identity filter (INSTALL_REDESIGN Phase 2): absent ⇒
+#          EXTEND; basename ∈ {verifier, implementer} (bare AND plugin-scoped
+#          `zs:` forms) ⇒ EXTEND; foreign ⇒ pass through (bare allow).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -208,6 +211,106 @@ else
 fi
 
 rm -rf "$TOOLS_DIR" "$STUB_DIR" "$REAL_DIR"
+
+# --- T-A agent-identity filter (INSTALL_REDESIGN Phase 2) ---
+#
+# Phase-1 Findings (claim 2): the hooks.json PreToolUse stdin envelope carries
+# a top-level `agent_type` on SUBAGENT Bash calls — the bare agent name for
+# project agents ("verifier") but a PLUGIN-SCOPED value ("zs:verifier") under
+# marketplace installs — and NO field on orchestrator main-thread calls.
+# Pinned T-A semantics (hooks/inject-bash-timeout.sh):
+#   absent  ⇒ EXTEND  (legacy frontmatter path + orchestrator widening)
+#   basename ∈ {verifier, implementer} ⇒ EXTEND (bare AND `zs:`-scoped forms)
+#   foreign ⇒ PASS THROUGH (bare allow, no updatedInput)
+
+# Case 11 — agent_type "verifier" (bare) → extends.
+INPUT_11='{"agent_type":"verifier","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_11")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 11: agent_type verifier → extends to 600000"
+else
+  fail "case 11: bare verifier identity should extend" "got: $RESULT"
+fi
+
+# Case 12 — agent_type "implementer" (bare) → extends.
+INPUT_12='{"agent_type":"implementer","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_12")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 12: agent_type implementer → extends to 600000"
+else
+  fail "case 12: bare implementer identity should extend" "got: $RESULT"
+fi
+
+# Case 13 — plugin-scoped agent_type "zs:verifier" (marketplace install form)
+# → extends. The Phase-1 shape-(b) probe recorded scoped values even for
+# bare-name dispatch, so suffix matching is load-bearing, not defensive.
+INPUT_13='{"agent_type":"zs:verifier","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_13")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 13: agent_type zs:verifier (plugin-scoped) → extends to 600000"
+else
+  fail "case 13: plugin-scoped verifier identity should extend" "got: $RESULT"
+fi
+
+# Case 14 — plugin-scoped agent_type "zs:implementer" → extends.
+INPUT_14='{"agent_type":"zs:implementer","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_14")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 14: agent_type zs:implementer (plugin-scoped) → extends to 600000"
+else
+  fail "case 14: plugin-scoped implementer identity should extend" "got: $RESULT"
+fi
+
+# Case 15 — NO agent_type field → EXTENDS. Pins the absent⇒extend rule the
+# identity-less cases 2-10 already imply: the legacy frontmatter path feeds
+# this same script identity-less stdin, and orchestrator main-thread calls
+# carry no agent_type (accepted T-B-equivalent widening, recorded in the
+# Phase-1 claim-2 Findings row).
+INPUT_15='{"tool_name":"Bash","tool_input":{"command":"npm test","timeout":60000}}'
+RESULT=$(run_hook "$INPUT_15")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 15: absent agent_type → EXTENDS (absent⇒extend rule pinned)"
+else
+  fail "case 15: identity-less envelope must still extend" "got: $RESULT"
+fi
+
+# Case 16 — foreign agent_type ("Explore") → pass through: bare allow, NO
+# updatedInput. A foreign subagent keeps its own timeout semantics.
+INPUT_16='{"agent_type":"Explore","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_16")
+if [[ "$RESULT" == *'"permissionDecision":"allow"'* ]] && [[ "$RESULT" != *'updatedInput'* ]]; then
+  pass "case 16: foreign agent_type Explore → pass through (no updatedInput)"
+else
+  fail "case 16: foreign agent should pass through unmodified" "got: $RESULT"
+fi
+
+# Case 17 — foreign plugin-scoped agent_type → pass through.
+INPUT_17='{"agent_type":"zsprobe:zsprobe-agent","tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(run_hook "$INPUT_17")
+if [[ "$RESULT" == *'"permissionDecision":"allow"'* ]] && [[ "$RESULT" != *'updatedInput'* ]]; then
+  pass "case 17: foreign scoped agent_type zsprobe:zsprobe-agent → pass through"
+else
+  fail "case 17: foreign scoped agent should pass through unmodified" "got: $RESULT"
+fi
+
+# Case 18 — identity is parsed from JSON, not regex-matched: an identity-LESS
+# envelope whose command STRING contains a foreign agent_type literal must
+# still EXTEND (a naive regex extraction would false-positive on the command
+# text and wrongly pass through — losing Layer 0 for exactly the verifier
+# runs that test this hook).
+INPUT_18='{"tool_name":"Bash","tool_input":{"command":"printf %s \"{\\\"agent_type\\\":\\\"Explore\\\"}\" | bash hook.sh"}}'
+RESULT=$(run_hook "$INPUT_18")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 18: foreign agent_type literal INSIDE command text → still extends (JSON parse, not regex)"
+else
+  fail "case 18: command-embedded agent_type literal must not confuse the filter" "got: $RESULT"
+fi
 
 echo ""
 echo "---"
