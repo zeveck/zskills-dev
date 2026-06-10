@@ -54,7 +54,7 @@ pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1));
 fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 skip() { printf '\033[33m  SKIP\033[0m %s\n' "$1"; SKIP_COUNT=$((SKIP_COUNT+1)); }
 
-echo "=== plugin live load (zs + zsbd) — Phase 2 ==="
+echo "=== plugin live load (zs) — Phase 2 ==="
 
 # ── SKIP preamble: never FAIL on CLI-absent (this is what CI hits) ─────────
 if ! command -v claude >/dev/null 2>&1; then
@@ -148,7 +148,7 @@ run_isolated_claude() {
 # ── (A1) CI-gateable load assertion: validate exits 0 + "Validation passed" ─
 # Point at the REAL repo via the positional path (read-only — verified: the
 # isolated CLAUDE_CONFIG_DIR captures all writes, the --plugin-dir/path target
-# repo is not mutated). We do NOT grep for the literal zs/zsbd tokens: F4
+# repo is not mutated). We do NOT grep for the literal zs token: F4
 # verified `validate` prints only "✔ Validation passed" and does not name the
 # plugins. `plugin details <name>` would name them but requires the plugin to
 # be INSTALLED (mutating real state) — dropped per F4; exit-0 + banner stands.
@@ -163,20 +163,6 @@ if [ "$VAL_RC" -eq 0 ] && grep -q 'Validation passed' "$VAL_OUT"; then
 else
   fail "(A1) claude plugin validate . (exit=$VAL_RC, expected 0 + 'Validation passed')"
   sed 's/^/      /' "$VAL_OUT"
-fi
-
-# Same for the zsbd plugin manifest directly (covers the addon lane).
-VAL_BD_OUT="$TMP/validate-bd.out"
-if run_isolated_claude plugin validate "$REPO_ROOT/block-diagram" >"$VAL_BD_OUT" 2>&1; then
-  VAL_BD_RC=0
-else
-  VAL_BD_RC=$?
-fi
-if [ "$VAL_BD_RC" -eq 0 ] && grep -q 'Validation passed' "$VAL_BD_OUT"; then
-  pass "(A1) claude plugin validate block-diagram: exit 0 + 'Validation passed' (zsbd manifest)"
-else
-  fail "(A1) claude plugin validate block-diagram (exit=$VAL_BD_RC, expected 0 + 'Validation passed')"
-  sed 's/^/      /' "$VAL_BD_OUT"
 fi
 
 # ── (A2) Graceful degradation (rough edge c — CONFIRM, do not fix) ─────────

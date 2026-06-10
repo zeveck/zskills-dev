@@ -2,12 +2,12 @@
 # tests/test-plugin-self-load.sh
 #
 # W1.6 (D9) — plugin self-load is a real load test, not bash-lint. Three
-# parts, covering BOTH plugins (zs + zsbd):
+# parts, covering the zs plugin:
 #
 #   (a) `claude plugin validate --strict` if the CLI is available, else
 #       SKIP-with-reason. Validates the marketplace manifest (which covers
-#       both plugin entries) AND the zsbd plugin manifest directly.
-#   (b) Python json validation of both plugin.json files (zs + zsbd):
+#       the zs plugin entry).
+#   (b) Python json validation of the zs plugin.json:
 #       parse + required top-level fields.
 #   (c) `bash -n` on every hook + helper script under hooks/, with an
 #       explicit case-branch exclusion for hooks/canary*-bad.sh (the
@@ -30,7 +30,7 @@ pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1));
 fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 skip() { printf '\033[33m  SKIP\033[0m %s\n' "$1"; SKIP_COUNT=$((SKIP_COUNT+1)); }
 
-echo "=== plugin self-load (zs + zsbd) ==="
+echo "=== plugin self-load (zs) ==="
 
 # ── (a) claude plugin validate --strict ──────────────────────────────────
 if command -v claude >/dev/null 2>&1; then
@@ -41,19 +41,12 @@ if command -v claude >/dev/null 2>&1; then
     fail "(a) claude plugin validate --strict: marketplace manifest"
     claude plugin validate "$REPO_ROOT" --strict 2>&1 | sed 's/^/      /'
   fi
-  # zsbd plugin manifest directly.
-  if claude plugin validate "$REPO_ROOT/block-diagram" --strict 2>&1 | grep -q 'Validation passed'; then
-    pass "(a) claude plugin validate --strict: zsbd plugin manifest passes"
-  else
-    fail "(a) claude plugin validate --strict: zsbd plugin manifest"
-    claude plugin validate "$REPO_ROOT/block-diagram" --strict 2>&1 | sed 's/^/      /'
-  fi
 else
   skip "(a) claude plugin validate --strict — claude CLI not on PATH"
 fi
 
-# ── (b) Python json validation of both plugin.json ───────────────────────
-for MANIFEST in ".claude-plugin/plugin.json" "block-diagram/.claude-plugin/plugin.json"; do
+# ── (b) Python json validation of the zs plugin.json ─────────────────────
+for MANIFEST in ".claude-plugin/plugin.json"; do
   if "$PYTHON" - "$MANIFEST" <<'PY'
 import json, sys
 path = sys.argv[1]

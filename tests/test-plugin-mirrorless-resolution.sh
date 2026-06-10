@@ -78,7 +78,7 @@ find "$REL/scripts" -maxdepth 1 -type f -name 'build-*.sh' -delete 2>/dev/null |
 # 5. dev_only:true skills (+ mirrors) and MW-EXAMPLE files. 0 dev_only today,
 #    but stay robust to future ones (drive off the same frontmatter probe the
 #    build script uses).
-for skill_file in "$REL"/skills/*/SKILL.md "$REL"/block-diagram/*/SKILL.md; do
+for skill_file in "$REL"/skills/*/SKILL.md; do
   [ -f "$skill_file" ] || continue
   if awk '
       BEGIN { in_fm = 0 }

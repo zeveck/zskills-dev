@@ -1,14 +1,14 @@
 #!/bin/bash
 # tests/lib/forbidden-literals-scan.sh — the forbidden-literals deny-list
-# scan over skills/**/*.md + block-diagram/**/*.md, extracted as a SINGLE
+# scan over skills/**/*.md, extracted as a SINGLE
 # shared script so the single-source-of-truth guarantee is STRUCTURAL
 # (shared code), not merely a shared fixture (#948).
 #
 # CONSUMERS (both call THIS script, neither re-implements the scan):
 #   - tests/test-skill-conformance.sh — runs it against the REAL
-#     skills/ + block-diagram/ trees for its `.md` deny-list section;
-#     renders the emitted DRIFT lines via its own pass/fail and #458
-#     dual-root regression fixture. Behavior + output unchanged.
+#     skills/ tree for its `.md` deny-list section;
+#     renders the emitted DRIFT lines via its own pass/fail.
+#     Behavior + output unchanged.
 #   - tests/test-hooks.sh — runs it DIRECTLY against a synthetic throwaway
 #     fixture tree (a copy of forbidden-literals.txt with an appended
 #     `__TEST_LITERAL__` + a synthetic SKILL.md containing that literal in
@@ -21,9 +21,9 @@
 # ─────────────────────────────────────────────────────────────────────
 # CONTRACT
 #   run_forbidden_literals_scan <scan-root> [fixture-path]
-#     <scan-root>     directory whose `skills/` and `block-diagram/`
-#                     subtrees are walked for *.md files. (Either subtree
-#                     may be absent; absent subtrees contribute no files.)
+#     <scan-root>     directory whose `skills/` subtree is walked for
+#                     *.md files. (An absent subtree contributes no
+#                     files.)
 #     [fixture-path]  path to the forbidden-literals.txt fixture.
 #                     Defaults to <scan-root>/tests/fixtures/forbidden-literals.txt.
 #
@@ -173,7 +173,7 @@ run_forbidden_literals_scan() {
         fi
       done
     done < "$skill_file"
-  done < <(find "$scan_root/skills" "$scan_root/block-diagram" -name '*.md' 2>/dev/null | sort)
+  done < <(find "$scan_root/skills" -name '*.md' 2>/dev/null | sort)
 
   local h
   for h in "${DRIFT_HITS[@]:-}"; do

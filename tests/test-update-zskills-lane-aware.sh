@@ -277,12 +277,6 @@ if ! refuse_gate install "" "$PR"; then
 else
   fail "AC5b. explicit install should have been refused"
 fi
-# --with-addons, no switch marker → REFUSE
-if ! refuse_gate "" "--with-addons" "$PR"; then
-  pass "AC5c. '--with-addons' on plugin lane → refused"
-else
-  fail "AC5c. --with-addons should have been refused"
-fi
 # bare call (no install/addons) → ALLOWED (not refused)
 if refuse_gate "" "" "$PR"; then
   pass "AC5d. bare call (no install/addons) → not refused"

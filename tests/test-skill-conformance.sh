@@ -32,9 +32,8 @@ fail() { printf '\033[31m  FAIL\033[0m %s — pattern not found: %s\n' "$1" "$2"
 # treated as flags.
 #
 # Slug form (uniform across all 7 helpers): bare `<name>` reroots to
-# `$REPO_ROOT/skills/<name>/`; a slug containing `/` (e.g.
-# `block-diagram/add-block`) reroots to `$REPO_ROOT/<slug>/` so callers
-# can target the block-diagram/ subtree (and future subtrees) without
+# `$REPO_ROOT/skills/<name>/`; a slug containing `/` reroots to
+# `$REPO_ROOT/<slug>/` so callers can target other subtrees without
 # helper churn.
 check() {
   local skill="$1" label="$2" pattern="$3"
@@ -243,8 +242,7 @@ for _art in \
   hooks/hooks.json \
   hooks/_lib/plugin-hook-skip-if-mirrored.sh \
   .claude-plugin/plugin.json \
-  .claude-plugin/marketplace.json \
-  block-diagram/.claude-plugin/plugin.json; do
+  .claude-plugin/marketplace.json; do
   if [ -f "$REPO_ROOT/$_art" ]; then
     pass "[materialiser-presence] $_art exists"
   else
@@ -1927,8 +1925,6 @@ echo "=== ensure-worktree preamble adoption ==="
 check_fixed draft-plan                "ensure-worktree invocation" 'bash "$HELPER"'
 check_fixed refine-plan               "ensure-worktree invocation" 'bash "$HELPER"'
 check_fixed draft-tests               "ensure-worktree invocation" 'bash "$HELPER"'
-check_fixed block-diagram/add-block   "ensure-worktree invocation" 'bash "$HELPER"'
-check_fixed block-diagram/add-example "ensure-worktree invocation" 'bash "$HELPER"'
 check_fixed fix-issues                "ensure-worktree invocation" 'bash "$HELPER"'
 
 echo ""
@@ -1969,17 +1965,15 @@ fi
 echo ""
 echo "=== ensure-worktree.sh caller contract ==="
 # Companion to the create-worktree.sh caller-contract scan above.
-# Every multi-line `bash "$HELPER" \` invocation in skills/ AND
-# block-diagram/ (the preamble HELPER literal form — see "ensure-worktree
-# preamble adoption" above) must include `--pipeline-id` within the next
-# 12 lines. The block-diagram/ subtree is scanned here (but NOT in the
-# create-worktree.sh scan above — post-Phase-3 /add-block has 0
-# create-worktree.sh calls so extending that scan adds no value, DA-12).
+# Every multi-line `bash "$HELPER" \` invocation in skills/ (the
+# preamble HELPER literal form — see "ensure-worktree preamble
+# adoption" above) must include `--pipeline-id` within the next
+# 12 lines.
 #
-# Floor: ≥6 callers (one per adopter: draft-plan, refine-plan,
-# draft-tests, block-diagram/add-block, block-diagram/add-example,
-# fix-issues). If the regex breaks and matches fewer, fail loudly
-# rather than vacuously pass.
+# Floor: ≥6 invocation lines across the 5 adopter skills (draft-plan,
+# refine-plan, draft-tests, fix-report, fix-issues — the last via both
+# its sprint and sync modes). If the regex breaks and matches fewer,
+# fail loudly rather than vacuously pass.
 EW_PIPELINE_ID_CONTRACT_FAIL=0
 EW_PIPELINE_ID_CONTRACT_CALLS=0
 while IFS=: read -r file lineno _; do
@@ -1991,13 +1985,13 @@ while IFS=: read -r file lineno _; do
     fail "ensure-worktree caller missing --pipeline-id" "$file:$lineno"
     EW_PIPELINE_ID_CONTRACT_FAIL=$((EW_PIPELINE_ID_CONTRACT_FAIL + 1))
   fi
-done < <(grep -rn --include='*.md' -E 'bash[[:space:]]+"\$HELPER".*\\$' "$REPO_ROOT/skills/" "$REPO_ROOT/block-diagram/")
+done < <(grep -rn --include='*.md' -E 'bash[[:space:]]+"\$HELPER".*\\$' "$REPO_ROOT/skills/")
 if [ "$EW_PIPELINE_ID_CONTRACT_CALLS" -lt 6 ]; then
   fail "ensure-worktree caller scan found too few invocations (${EW_PIPELINE_ID_CONTRACT_CALLS} < 6) — pattern broken?" "grep regex drift"
   EW_PIPELINE_ID_CONTRACT_FAIL=$((EW_PIPELINE_ID_CONTRACT_FAIL + 1))
 fi
 if [ "$EW_PIPELINE_ID_CONTRACT_FAIL" -eq 0 ]; then
-  pass "every ensure-worktree.sh invocation in skills/+block-diagram/ passes --pipeline-id (scanned ${EW_PIPELINE_ID_CONTRACT_CALLS})"
+  pass "every ensure-worktree.sh invocation in skills/ passes --pipeline-id (scanned ${EW_PIPELINE_ID_CONTRACT_CALLS})"
 fi
 
 echo ""
@@ -2062,7 +2056,7 @@ else
   # Surface 2 probe calls the SAME script directly against a synthetic
   # tree, instead of nesting this whole suite. The scan's matching
   # semantics, output (DRIFT lines), and gate behavior are unchanged — it
-  # still walks the real skills/ + block-diagram/ trees and fails on any
+  # still walks the real skills/ tree and fails on any
   # forbidden literal. (The FIXED_LITERALS / REGEX_PATTERNS arrays parsed
   # above remain in scope for the extended-scope sibling scan further down.)
   # shellcheck source=tests/lib/forbidden-literals-scan.sh
@@ -2078,39 +2072,6 @@ else
     printf '%s\n' "$DRIFT_HITS_OUT" | while IFS= read -r h; do
       [ -n "$h" ] && printf '    %s\n' "$h" >&2
     done
-  fi
-
-  # Regression fixture (#458): the three deny-list/positive-side/coverage
-  # scanner roots MUST cover both skills/ AND block-diagram/. Without this,
-  # the #454 sweep's regression mode (re-injecting TZ=America/New_York or
-  # `npm run test:all` into a block-diagram SKILL.md) silently passes
-  # conformance. Inspect the live scanner source for the dual-root find
-  # invocation. Fails closed if a future edit drops `block-diagram` from
-  # any of the three sites.
-  #
-  # As of #948 the .md deny-list scan's dual-root find lives in the shared
-  # script tests/lib/forbidden-literals-scan.sh (it scans $scan_root/skills
-  # + $scan_root/block-diagram), NOT inline in this suite. Count both files
-  # so the #458 guarantee survives the relocation.
-  SELF="$REPO_ROOT/tests/test-skill-conformance.sh"
-  SCAN_LIB="$REPO_ROOT/tests/lib/forbidden-literals-scan.sh"
-  # Prose-imperative coverage scan (still inline) + extended-scope are in $SELF.
-  bd_root_hits=$(grep -cE 'find "\$REPO_ROOT/skills" "\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
-  # The deny-list scan's dual-root find now lives in the shared script,
-  # parameterised on $scan_root.
-  bd_lib_hits=$(grep -cE 'find "\$scan_root/skills" "\$scan_root/block-diagram"' "$SCAN_LIB" 2>/dev/null || echo 0)
-  # Also count the positive-side scanner's `extra_root` plumbing (a 4th-arg
-  # variant that passes the second root through the helper function).
-  bd_extra_root_hits=$(grep -cE 'scan_positive_side "\$REPO_ROOT/skills".*"\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
-  # Expected: 1 dual-root find in the shared deny-list script + 1 dual-root
-  # find inline for prose-imperative coverage + 1 scan_positive_side with
-  # extra_root (real-tree case). Total >= 3 references to block-diagram
-  # across the three scanner-root sites.
-  bd_total=$((bd_root_hits + bd_lib_hits + bd_extra_root_hits))
-  if [ "$bd_total" -ge 3 ]; then
-    pass "deny-list/positive-side/coverage scanners all scope block-diagram/ (#458 regression fixture: found $bd_total of 3 expected block-diagram scan-root references)"
-  else
-    fail "deny-list scanner scope regression" "expected 3 block-diagram scan-root references (1 dual-root find in $SCAN_LIB + 1 dual-root find + 1 scan_positive_side extra_root in $SELF), got $bd_total — at least one of the three scanner roots has regressed to skills/-only (#458)"
   fi
 fi
 
@@ -2129,7 +2090,7 @@ echo "=== Inline-prose resolve-via uses lane-portable wording (#832/#833) ==="
 # references/canonical-config-prelude.md §1.
 #
 # Fence-awareness is implemented in PYTHON (repo convention — no jq): walk each
-# skills/**/*.md + block-diagram/**/*.md, toggle fenced-block state on ```/~~~
+# skills/**/*.md, toggle fenced-block state on ```/~~~
 # fence-openers, and flag the literal ONLY when it appears inside an inline
 # code-span (`...`) on a NON-fenced line. The `else` fallback line inside the
 # dual-lane prelude lives in a bash fence and is therefore NEVER flagged. An
@@ -2143,7 +2104,7 @@ repo = os.environ["ZS_REPO_ROOT"]
 LIT = '. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"'
 INLINE = "`" + LIT + "`"          # the literal wrapped in a single-backtick code-span
 MARKER_FRAG = "allow-hardcoded:"  # an allow-hardcoded marker (verbatim or naming this literal) exempts the next prose line
-roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+roots = [os.path.join(repo, "skills")]
 files = []
 for root in roots:
     for dirpath, _dirs, fns in os.walk(root):
@@ -2203,7 +2164,7 @@ TRACK_GUARD_FAIL=0
 TRACK_GUARD_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}" <<'PYEOF'
 import os, re, sys
 repo = os.environ["ZS_REPO_ROOT"]
-roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+roots = [os.path.join(repo, "skills")]
 files = []
 for root in roots:
     for dirpath, _dirs, fns in os.walk(root):
@@ -2271,8 +2232,8 @@ echo "=== No executable bare python3 in skill fenced-bash (#1083) ==="
 # `python3` in a skill .md fenced-bash block, so the Windows regression can't
 # creep back in.
 #
-# Fence-aware (PYTHON, repo convention — no jq): walk skills/**/*.md +
-# block-diagram/**/*.md, toggle fenced-block state on ```/~~~ openers, and flag
+# Fence-aware (PYTHON, repo convention — no jq): walk skills/**/*.md,
+# toggle fenced-block state on ```/~~~ openers, and flag
 # ONLY lines INSIDE a fence where `python3` appears at a COMMAND POSITION
 # (line-start after optional whitespace, or immediately after a shell
 # command-separator: | ( { ; & or a $( / <( command-substitution opener)
@@ -2290,7 +2251,7 @@ PY3_FENCE_FAIL=0
 PY3_FENCE_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}" <<'PYEOF'
 import os, re, sys
 repo = os.environ["ZS_REPO_ROOT"]
-roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+roots = [os.path.join(repo, "skills")]
 files = []
 for root in roots:
     for dirpath, _dirs, fns in os.walk(root):
@@ -2449,7 +2410,6 @@ echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py)
 #   - hooks/*.sh, hooks/*.sh.template       (hook source)
 #   - scripts/*.sh                          (release tooling + skill-version stage check)
 #   - skills/**/scripts/*.py                (Python helpers under skills)
-#   - block-diagram/**/scripts/*.py         (Python helpers under block-diagram add-on skills)
 #
 # Same forbidden-literals fixture as the .md scanner. Allowlist marker
 # uses a bash/Python `#` comment instead of HTML:
@@ -2480,7 +2440,6 @@ if [ -r "$FORBIDDEN_FIXTURE" ]; then
       find "$REPO_ROOT/hooks" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.sh.template' \) 2>/dev/null
       find "$REPO_ROOT/scripts" -maxdepth 1 -type f -name '*.sh' 2>/dev/null
       find "$REPO_ROOT/skills" -type f -path '*/scripts/*.py' 2>/dev/null
-      find "$REPO_ROOT/block-diagram" -type f -path '*/scripts/*.py' 2>/dev/null
     } | sort
   )
 
@@ -2809,14 +2768,11 @@ fi
 
 rm -rf "$POS_FIXTURE_DIR"
 
-# Real-tree case: scan current skills/ AND block-diagram/ — expect 0 drift
-# after Phase 2 migration. block-diagram/ added under #458 closure (the
-# companion deny-list scanner above already extends to block-diagram/; the
-# positive-side scanner extends here for symmetry — same surface PR #454
-# swept).
+# Real-tree case: scan current skills/ — expect 0 drift
+# after Phase 2 migration (same surface PR #454 swept).
 REAL_POS_FAIL=0
 REAL_POS_HITS=()
-scan_positive_side "$REPO_ROOT/skills" REAL_POS_FAIL REAL_POS_HITS "$REPO_ROOT/block-diagram"
+scan_positive_side "$REPO_ROOT/skills" REAL_POS_FAIL REAL_POS_HITS
 if [ "$REAL_POS_FAIL" -eq 0 ]; then
   pass "positive-side real-tree: every fence using a config-var also sources zskills-resolve-config.sh"
 else
@@ -2850,7 +2806,7 @@ fi
 #           skill fences never run under `set -u`, so this is safe — this
 #           assertion is the guardrail that keeps it so.
 #
-# SCOPE: skill `.md` SOURCE ONLY (skills/**, block-diagram/**). Deliberately
+# SCOPE: skill `.md` SOURCE ONLY (skills/**). Deliberately
 # NOT `.sh` scripts (verify-install.sh etc. legitimately keep `:-` defaults)
 # and NOT hooks/** (hooks legitimately branch on `${CLAUDE_PLUGIN_ROOT:-}`).
 #
@@ -3020,9 +2976,9 @@ rm -rf "$RF_FIXTURE_DIR"
 # invariant against future regression.
 REAL_RF_FAIL=0
 REAL_RF_HITS=()
-scan_resolution_fence_forms "$REPO_ROOT/skills" REAL_RF_FAIL REAL_RF_HITS "$REPO_ROOT/block-diagram"
+scan_resolution_fence_forms "$REPO_ROOT/skills" REAL_RF_FAIL REAL_RF_HITS
 if [ "$REAL_RF_FAIL" -eq 0 ]; then
-  pass "resolution-fence-form real-tree: no \`:-\`-guarded/\`:-\`-default resolution fences and no \`set -u\` above any resolution fence (skills/** + block-diagram/**)"
+  pass "resolution-fence-form real-tree: no \`:-\`-guarded/\`:-\`-default resolution fences and no \`set -u\` above any resolution fence (skills/**)"
 else
   fail "resolution-fence-form real-tree: ${#REAL_RF_HITS[@]} broken resolution-fence form(s)" "see hits below"
   for h in "${REAL_RF_HITS[@]}"; do
@@ -3092,7 +3048,7 @@ done
 
 echo ""
 echo "=== Skill-dir cleanliness ==="
-for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
+for skill_dir in "$REPO_ROOT/skills"/*/; do
   [ -d "$skill_dir" ] || continue
   name=$(basename "$skill_dir")
   skill_rel="${skill_dir#$REPO_ROOT/}"
@@ -3164,7 +3120,7 @@ fi
 
 echo ""
 echo "=== Per-skill version frontmatter ==="
-for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
+for skill_dir in "$REPO_ROOT/skills"/*/; do
   skill_md="${skill_dir}SKILL.md"
   [ -f "$skill_md" ] || continue
   name=$(basename "$skill_dir")
@@ -3339,7 +3295,7 @@ while IFS= read -r skill_file; do
       fi
     fi
   done
-done < <(find "$REPO_ROOT/skills" "$REPO_ROOT/block-diagram" -name '*.md' | sort)
+done < <(find "$REPO_ROOT/skills" -name '*.md' | sort)
 
 # Guard against vacuous pass: if zero sites were detected, the regex broke.
 # Plan enumerates 9 PROSE-IMPERATIVE sites (8 test-cmd + 1 dev-server).

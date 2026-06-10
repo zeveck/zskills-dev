@@ -88,8 +88,7 @@ BASE_ASSIGN = re.compile(
 def producer_files():
     roots = []
     skills_root = os.path.join(repo, "skills")
-    bd_root = os.path.join(repo, "block-diagram")
-    for base in (skills_root, bd_root):
+    for base in (skills_root,):
         if not os.path.isdir(base):
             continue
         for dirpath, _dirs, files in os.walk(base):
@@ -202,7 +201,7 @@ repo = sys.argv[1]
 BASE_ASSIGN = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)="?\$\{?TMPDIR(?::-/tmp)?\}?"?\s*$')
 def files():
     out=[]
-    for base in (os.path.join(repo,"skills"), os.path.join(repo,"block-diagram")):
+    for base in (os.path.join(repo,"skills"),):
         if not os.path.isdir(base): continue
         for dp,_d,fs in os.walk(base):
             if os.path.basename(dp)!="scripts": continue

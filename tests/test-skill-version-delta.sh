@@ -8,8 +8,6 @@
 #   - new (installed missing)
 #   - malformed (source SKILL.md present but no metadata.version)
 #   - unchanged (both equal)
-#   - addon enumeration (block-diagram/<name>/SKILL.md surfaces with kind=addon)
-#   - addon row STILL emitted when not installed (renderer hides; script doesn't)
 #
 # Run from repo root: bash tests/test-skill-version-delta.sh
 
@@ -34,11 +32,11 @@ if [ ! -f "$HELPER" ]; then
 fi
 
 # Build a synthetic two-tree workspace: $FIXT/skills/<name>/SKILL.md (source)
-# and $FIXT/.claude/skills/<name>/SKILL.md (installed). Plus block-diagram/.
+# and $FIXT/.claude/skills/<name>/SKILL.md (installed).
 FIXT=$(mktemp -d /tmp/zskills-svd-XXXXXX)
 trap 'rm -rf "$FIXT"' EXIT
 
-mkdir -p "$FIXT/skills" "$FIXT/.claude/skills" "$FIXT/block-diagram" "$FIXT/scripts"
+mkdir -p "$FIXT/skills" "$FIXT/.claude/skills" "$FIXT/scripts"
 
 # Provide frontmatter-get.sh in the fixture so the helper finds it via
 # the fallback ($ZSKILLS_PATH/scripts/frontmatter-get.sh).
@@ -90,14 +88,6 @@ write_skill "$FIXT/.claude/skills/malformed" malformed "2026.04.01+ddddddd"
 write_skill "$FIXT/skills/same-version" same-version "2026.05.02+eeeeee"
 write_skill "$FIXT/.claude/skills/same-version" same-version "2026.05.02+eeeeee"
 
-# - addon-installed: addon source present AND installed (kind=addon, unchanged)
-write_skill "$FIXT/block-diagram/addon-installed" addon-installed "2026.05.02+ff1111"
-write_skill "$FIXT/.claude/skills/addon-installed" addon-installed "2026.05.02+ff1111"
-
-# - addon-not-installed: addon source present, NOT installed
-#   (kind=addon, status=new — script still emits the row; renderer hides)
-write_skill "$FIXT/block-diagram/addon-not-installed" addon-not-installed "2026.05.02+ff2222"
-
 CLAUDE_PROJECT_DIR="$FIXT" bash "$HELPER" "$FIXT" > "$FIXT/out.tsv" 2>"$FIXT/err.txt"
 RC=$?
 if [ "$RC" -eq 0 ]; then
@@ -125,15 +115,13 @@ assert_row bumped-older       core  "2026.04.01+aaaaaa"  "2026.05.02+bbbbbb"  bu
 assert_row newcomer           core  "2026.05.02+cccccc"  ""                   new
 assert_row malformed          core  ""                   "2026.04.01+ddddddd" malformed
 assert_row same-version       core  "2026.05.02+eeeeee"  "2026.05.02+eeeeee"  unchanged
-assert_row addon-installed    addon "2026.05.02+ff1111"  "2026.05.02+ff1111"  unchanged
-assert_row addon-not-installed addon "2026.05.02+ff2222"  ""                   new
 
-# Total row count = 5 core + 2 addon = 7
+# Total row count = 5 core
 LINE_COUNT=$(wc -l < "$FIXT/out.tsv")
-if [ "$LINE_COUNT" = "7" ]; then
-  pass "row count = 7 (5 core + 2 addon)"
+if [ "$LINE_COUNT" = "5" ]; then
+  pass "row count = 5 (5 core)"
 else
-  fail "row count" "expected 7 got $LINE_COUNT; full output:
+  fail "row count" "expected 5 got $LINE_COUNT; full output:
 $(cat "$FIXT/out.tsv")"
 fi
 
@@ -146,27 +134,25 @@ else
 fi
 
 # Real-repo smoke check: run against the actual REPO_ROOT and assert the
-# row count is at least 23 core + 3 addon = 26.
+# row count is at least 23 core.
 CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$HELPER" "$REPO_ROOT" > "$FIXT/real.tsv" 2>"$FIXT/real-err.txt"
 REAL_RC=$?
 if [ "$REAL_RC" -ne 0 ]; then
   fail "real-repo smoke: helper exit code 0" "rc=$REAL_RC stderr=$(cat "$FIXT/real-err.txt")"
 else
   REAL_LINES=$(wc -l < "$FIXT/real.tsv")
-  if [ "$REAL_LINES" -ge 26 ]; then
-    pass "real-repo smoke: $REAL_LINES rows (≥ 23 core + 3 addon = 26)"
+  if [ "$REAL_LINES" -ge 23 ]; then
+    pass "real-repo smoke: $REAL_LINES rows (≥ 23 core)"
   else
-    fail "real-repo smoke row count" "expected ≥26 got $REAL_LINES"
+    fail "real-repo smoke row count" "expected ≥23 got $REAL_LINES"
   fi
   CORE_COUNT=$(awk -F'\t' '$2 == "core"' "$FIXT/real.tsv" | wc -l)
-  ADDON_COUNT=$(awk -F'\t' '$2 == "addon"' "$FIXT/real.tsv" | wc -l)
-  # Issue #584: review-feedback was historically moved from skills/ (core)
-  # to block-diagram/ (addon); later removed entirely. The /doc and /quickfix
-  # skills were removed too — kind split now 23 core + 3 addon.
-  if [ "$CORE_COUNT" -ge 23 ] && [ "$ADDON_COUNT" -ge 3 ]; then
-    pass "real-repo smoke: core=$CORE_COUNT (≥23) addon=$ADDON_COUNT (≥3)"
+  # Issue #584: review-feedback was historically a core skill; it and the
+  # /doc and /quickfix skills were removed — core count now 23.
+  if [ "$CORE_COUNT" -ge 23 ]; then
+    pass "real-repo smoke: core=$CORE_COUNT (≥23)"
   else
-    fail "real-repo smoke: kind split" "core=$CORE_COUNT addon=$ADDON_COUNT"
+    fail "real-repo smoke: kind split" "core=$CORE_COUNT"
   fi
 fi
 

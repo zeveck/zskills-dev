@@ -151,7 +151,6 @@ else
 fi
 
 # Internal/optional dirs must be excluded — this is an onboarding viewer.
-# block-diagram is an optional add-on, not part of the core set.
 for dir in plans reports evals issues tracking; do
   if grep -q "\"docs/$dir/" "$REGISTRY"; then
     fail "catalog includes docs/$dir/ entries (must be excluded — internal artifacts)"
@@ -159,11 +158,6 @@ for dir in plans reports evals issues tracking; do
     pass "catalog excludes docs/$dir/"
   fi
 done
-if grep -q '"docs/skills/block-diagram/' "$REGISTRY"; then
-  fail "catalog includes block-diagram add-on entries (must be excluded for v1)"
-else
-  pass "catalog excludes docs/skills/block-diagram/"
-fi
 
 # Phase 5 dependency.
 if grep -q '"docs/guides/inspecting-and-monitoring.md"' "$REGISTRY"; then
