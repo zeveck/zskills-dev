@@ -1,8 +1,8 @@
 # Skill description budget
 
 Project-internal budget for the total length of `description:` fields
-across all source `SKILL.md` files in this repo (skills/*/SKILL.md and
-block-diagram/*/SKILL.md). Enforced as a permanent conformance test;
+across all source `SKILL.md` files in this repo (skills/*/SKILL.md).
+Enforced as a permanent conformance test;
 see [How the budget is enforced](#5-how-the-budget-is-enforced).
 
 ## 1. Why a budget at all

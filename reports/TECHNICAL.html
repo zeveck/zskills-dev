@@ -162,7 +162,7 @@
   <p>How much code, how many tests, how many commits.</p>
   <p style="font-size: 0.95em;"><strong>All counts come straight from the repo:</strong> <code>find</code>/<code>wc</code> for LOC, <code>git log</code> for commits, <code>gh</code> for issues. Reproducible from a clean checkout of <code>main</code>; commands listed in the methodology section.</p>
   <p style="font-size: 0.95em;"><strong>Companion reports: <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a></strong></p>
-  <p style="font-size: 0.9em;">As of <strong>2026-06-05</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>composition</em>.</p>
+  <p style="font-size: 0.9em;">As of <strong>2026-06-10</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>composition</em>.</p>
 </section>
 
 <section id="numbers" class="fade-in">
@@ -170,9 +170,9 @@
 
   <h4>Codebase</h4>
   <div class="stat-grid">
-    <div class="stat"><div class="val">13 + 10</div><div class="label">Skills</div><div class="sub">13 user-facing (model-invokable) + 10 internal helpers (slash-invoke-only via <code>disable-model-invocation</code> or <code>user-invocable: false</code>); 23 source skills + 3 block-diagram add-ons = <strong>26 total</strong>.</div></div>
-    <div class="stat green"><div class="val">53,483</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
-    <div class="stat"><div class="val">17,648</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 SKILL.md bodies (23 source + 3 add-ons). Down from 18,040 in the 2026-06-01 snapshot &mdash; primarily the <code>/quickfix</code> (869 lines) and <code>/doc</code> removals in PRs #1073 and #1061 respectively, partly offset by ongoing growth in surviving skills.</div></div>
+    <div class="stat"><div class="val">13 + 10</div><div class="label">Skills</div><div class="sub">13 user-facing (model-invokable) + 10 internal helpers (slash-invoke-only via <code>disable-model-invocation</code> or <code>user-invocable: false</code>) = <strong>23 total</strong>.</div></div>
+    <div class="stat green"><div class="val">52,163</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code></div></div>
+    <div class="stat"><div class="val">16,214</div><div class="label">Lines of SKILL.md prose</div><div class="sub">23 SKILL.md bodies. Down from 18,040 in the 2026-06-01 snapshot &mdash; primarily the <code>/quickfix</code> (869 lines) and <code>/doc</code> removals in PRs #1073 and #1061 respectively, partly offset by ongoing growth in surviving skills.</div></div>
   </div>
 
   <h4>Tests &amp; Hooks</h4>
@@ -196,8 +196,8 @@
 
   <table>
     <tr><th>Surface</th><th>LOC</th><th>Files</th><th>What it is</th></tr>
-    <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>53,483</td><td>128</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>17,648</td><td>26</td><td>Top-level skill bodies (23 source + 3 add-on)</td></tr>
+    <tr><td><code>skills/</code></td><td>52,163</td><td>124</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>16,214</td><td>23</td><td>Top-level skill bodies (23)</td></tr>
     <tr><td><code>tests/</code></td><td>82,641</td><td>237</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
     <tr><td><code>hooks/</code></td><td>8,798</td><td>17 + 6 lib</td><td>PreToolUse blockers, Bash timeout extension, response validation</td></tr>
     <tr><td><code>scripts/</code></td><td>3,100</td><td>20</td><td>Release tooling, frontmatter mutators, version stage-checks</td></tr>
@@ -208,16 +208,16 @@
   <p style="color: var(--text-dim); font-size: 0.9em;">Top-10 source skills by SKILL.md size &mdash; a rough proxy for workflow complexity. The biggest ones orchestrate multi-phase pipelines; the smallest are thin wrappers. <code>/update-zskills</code> remains #1 and grew further (+65 vs 2026-06-04); <code>/zskills-dashboard</code> jumped from #10 (635) to #8 (836, +201) as it picked up monitor / static-server functionality; <code>/quickfix</code> (formerly #8 at 869 lines) was removed entirely.</p>
   <table>
     <tr><th>Skill</th><th>SKILL.md lines</th><th style="width: 40%;">Relative</th></tr>
-    <tr><td><code>/update-zskills</code></td><td>2,504</td><td><span class="bar" style="width: 95%;"></span></td></tr>
+    <tr><td><code>/update-zskills</code></td><td>2,503</td><td><span class="bar" style="width: 95%;"></span></td></tr>
+    <tr><td><code>/do</code></td><td>1,293</td><td><span class="bar" style="width: 49%;"></span></td></tr>
     <tr><td><code>/run-plan</code></td><td>1,289</td><td><span class="bar" style="width: 49%;"></span></td></tr>
-    <tr><td><code>/do</code></td><td>1,266</td><td><span class="bar" style="width: 48%;"></span></td></tr>
     <tr><td><code>/land-pr</code></td><td>1,220</td><td><span class="bar" style="width: 46%; background: var(--text-dim);"></span></td></tr>
     <tr><td><code>/draft-plan</code></td><td>1,063</td><td><span class="bar" style="width: 40%;"></span></td></tr>
-    <tr><td><code>/add-block</code> (block-diagram)</td><td>959</td><td><span class="bar" style="width: 36%;"></span></td></tr>
+    <tr><td><code>/cleanup-merged</code></td><td>1,001</td><td><span class="bar" style="width: 38%;"></span></td></tr>
     <tr><td><code>/refine-plan</code></td><td>895</td><td><span class="bar" style="width: 34%;"></span></td></tr>
     <tr><td><code>/zskills-dashboard</code></td><td>836</td><td><span class="bar" style="width: 32%; background: var(--text-dim);"></span></td></tr>
-    <tr><td><code>/cleanup-merged</code></td><td>806</td><td><span class="bar" style="width: 31%;"></span></td></tr>
     <tr><td><code>/verify-changes</code></td><td>792</td><td><span class="bar" style="width: 30%;"></span></td></tr>
+    <tr><td><code>/work-on-plans</code></td><td>612</td><td><span class="bar" style="width: 23%; background: var(--text-dim);"></span></td></tr>
   </table>
 </section>
 
@@ -226,7 +226,7 @@
 
   <h3>Code/test/commit counts</h3>
   <p>All reproducible from a clean checkout of <code>main</code> (HEAD as of 2026-06-05):</p>
-<pre><code>find skills block-diagram -type f \( -name "*.md" -o -name "*.sh" -o -name "*.py" \) -exec cat {} + | wc -l
+<pre><code>find skills -type f \( -name "*.md" -o -name "*.sh" -o -name "*.py" \) -exec cat {} + | wc -l
 find tests -type f -name "*.sh" -exec cat {} + | wc -l
 find hooks -type f \( -name "*.sh" -o -name "*.json" \) -exec cat {} + | wc -l
 git rev-list --count main
@@ -243,9 +243,9 @@ gh issue list --state all --limit 2000 --json number | python3 -c 'import json,s
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (13 user-facing + 10 helpers + 3 add-ons), 1,044 commits / 739 merged PRs, 237 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>23 skills (13 user-facing + 10 helpers), 1,044 commits / 739 merged PRs, 237 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
   <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-06-05. Built with Claude Code (Claude Opus 4.6 / 4.7 / 4.8).</p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-06-10. Built with Claude Code (Claude Opus 4.6 / 4.7 / 4.8).</p>
 </section>
 
 </div>

@@ -152,7 +152,7 @@ A bump is NOT required when the projection is byte-identical (the canonical proj
 ## 1.4 — Per-skill enforcement — three-point combination
 
 **Chosen.**
-1. **Edit-time warn (`hooks/warn-config-drift.sh` extension).** Non-blocking. Fires on Edit/Write of any regular file under `(skills|block-diagram)/<name>/` (the parent SKILL.md, child mode/reference files, scripts, fixtures, stubs — anything in the projection scope per §1.1). Compares the on-disk parent skill's projection hash to HEAD's `metadata.version` hash; if different and the version line has not been bumped, emits `WARN`. **Fires only when the file is staged** (`git diff --cached --name-only | grep -Fqx "$FILE_PATH_REL"` — fixed-string match, NOT regex; see §F-DA-R2-5 below) — this folds Round-1 finding F-DA7 (hook noise during WIP) into Phase 4.1 itself, not a deferred follow-up.
+1. **Edit-time warn (`hooks/warn-config-drift.sh` extension).** Non-blocking. Fires on Edit/Write of any regular file under `skills/<name>/` (the parent SKILL.md, child mode/reference files, scripts, fixtures, stubs — anything in the projection scope per §1.1). Compares the on-disk parent skill's projection hash to HEAD's `metadata.version` hash; if different and the version line has not been bumped, emits `WARN`. **Fires only when the file is staged** (`git diff --cached --name-only | grep -Fqx "$FILE_PATH_REL"` — fixed-string match, NOT regex; see §F-DA-R2-5 below) — this folds Round-1 finding F-DA7 (hook noise during WIP) into Phase 4.1 itself, not a deferred follow-up.
 2. **Commit-time hard stop (`/commit` Phase 5 step 2.5).** Inserted between Phase 5's step 2 (run tests) and step 3 (dispatch reviewer) — see Phase 4.3 for the exact insertion point. When `/commit` runs, the helper script `scripts/skill-version-stage-check.sh` (extracted from the inline pseudocode for testability — see Phase 4.3) computes per-skill projection hashes for every staged skill file's parent skill, compares to the staged version line and to HEAD. STOP if mismatch.
 3. **CI gate (`tests/test-skill-conformance.sh` extension).** Adds `=== Per-skill version frontmatter ===` section. Iterates skill dirs, asserts each `SKILL.md` contains `metadata.version: "YYYY.MM.DD+HHHHHH"` matching the strict regex `^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\+[0-9a-f]{6}$`. ALSO asserts the hash matches the freshly-computed projection (`bash scripts/skill-content-hash.sh skills/<name>` outputs the same 6-char value). Fails CI on missing, malformed, or stale hash.
 
@@ -187,13 +187,15 @@ A bump is NOT required when the projection is byte-identical (the canonical proj
 
 `tests/test-skill-file-drift.sh` tests `zskills-resolve-config.sh` resolution; unrelated to skill content.
 
-**Mirror-only skills (out of scope).** `.claude/skills/` and `skills/` differ by exactly two directories: `playwright-cli` and `social-seo` live ONLY in `.claude/skills/` (pre-source/mirror-split vendor bundle); every other entry in `.claude/skills/` has a `skills/<name>/` source counterpart. These are out of scope for Phase 3 migration: do NOT add `metadata.version` to them. Phase 3.6 conformance enumeration filters via `for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/` (source roots only). A separate plan can fold these in if/when they get a source representation. (Round-1 finding F-R6.)
+**Mirror-only skills (out of scope).** `.claude/skills/` and `skills/` differ by exactly two directories: `playwright-cli` and `social-seo` live ONLY in `.claude/skills/` (pre-source/mirror-split vendor bundle); every other entry in `.claude/skills/` has a `skills/<name>/` source counterpart. These are out of scope for Phase 3 migration: do NOT add `metadata.version` to them. Phase 3.6 conformance enumeration filters via `for skill_dir in "$REPO_ROOT/skills"/*/` (source root only). A separate plan can fold these in if/when they get a source representation. (Round-1 finding F-R6.)
 
 **Trade-offs considered:**
 - **Extend the mirror script's allow-list to recognize the new key.** Rejected. The script is byte-faithful via `cp -a`; no allow-list exists to extend, and adding one would create a drift surface the new field doesn't need.
 - **Migrate the two mirror-only skills now.** Rejected. They have no `skills/<name>/` source counterpart to author against; a separate plan covers source-ifying them.
 
 ## 1.7 — Block-diagram add-ons — same scheme, applied uniformly to 3 skills
+
+> **Historical design record** — the block-diagram add-ons were removed 2026-06; this section is retained for history and intentionally not updated.
 
 **Chosen.** All 3 block-diagram add-on skills (`add-block`, `add-example`, `model-design`) carry `metadata.version: "YYYY.MM.DD+HHHHHH"` using the same rule. `block-diagram/screenshots/` does NOT contain a `SKILL.md` (it holds image assets only — verified by `ls block-diagram/screenshots/`); it is excluded from migration and conformance enumeration. (Original Round-1 finding F-R1 cited "25 + 3 = 28"; that figure was correct at plan-write 2026-04-30 but stale once PR #159 added `skills/land-pr/` on 2026-05-01 — current is 26 + 3 = 29. The number is derivation-driven from `find ... -exec test -f '{}/SKILL.md' \; -print` enumeration, NOT pinned. See refine-plan Drift Log.)
 
@@ -226,6 +228,8 @@ Where `<Type>` is one of `Added`, `Updated`, `Fixed`, `Removed`. The annotation 
 - **Per-skill `CHANGELOG.md` files.** Rejected. ~30 files multiplies maintenance for no consumer benefit.
 
 ## 1.9 — Migration / seeding — uniform initial date, per-skill computed hash
+
+> **Historical design record** — the **Chosen.** paragraph below names the block-diagram add-ons (removed 2026-06) in its migration enumeration; retained verbatim for history.
 
 **Chosen.** Every core skill under `skills/<name>/SKILL.md` and every block-diagram add-on under `block-diagram/<name>/SKILL.md` receives `metadata.version: "YYYY.MM.DD+HHHHHH"` set to **the date Phase 3 lands** (`TZ="$TIMEZONE" date +%Y.%m.%d` at migration commit time) PLUS a per-skill hash freshly computed from each skill's content projection. The set of skills is derived at migration time via the Phase 3.2 enumeration (`find ... -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print`) — NOT pinned to a literal count, since the number drifts as new skills land.
 
@@ -390,6 +394,6 @@ Example version: 2026.04.30+a1b2c3
 
 This is **formally documented as a supported escape valve**, not implicit. The behavior is intentional: the deny-list is for executable-shape fences where a stale literal is a real config-drift hazard; non-exec fences are illustrative by definition. Choose the marker for "I want to show a real bash incantation that legitimately contains a literal version" (rare); choose the `text` fence for "I'm showing the format itself in a non-exec context" (common). Both are first-class.
 
-**Audit (issue #179 follow-up):** as of #179 landing the audit `grep -rEn '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' skills/ block-diagram/` finds only legitimate `metadata.version: "..."` frontmatter lines (which Appendix C explicitly exempts — the scanner enters at the body, after the closing `---`). No bare-fence body literals exist in any skill SKILL.md.
+**Audit (issue #179 follow-up):** as of #179 landing the audit `grep -rEn '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' skills/` finds only legitimate `metadata.version: "..."` frontmatter lines (which Appendix C explicitly exempts — the scanner enters at the body, after the closing `---`). No bare-fence body literals exist in any skill SKILL.md.
 
 This file (`references/skill-versioning.md`) lives OUTSIDE the deny-list scope (it's not under `skills/`), so its multiple example values render without markers. A skill whose body legitimately needs a literal version example (rare) can use the marker above.
