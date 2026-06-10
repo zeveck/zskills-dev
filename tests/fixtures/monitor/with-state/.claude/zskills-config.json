@@ -1,0 +1,8 @@
+{
+  "_comment": "Pins this fixture's legacy on-disk layout explicitly (INSTALL_REDESIGN Phase 5: the no-config built-in defaults are now docs/{plans,issues,reports}, but these fixtures keep their plan files under plans/).",
+  "output": {
+    "plans_dir": "plans",
+    "issues_dir": "plans",
+    "reports_dir": ".zskills/audit"
+  }
+}

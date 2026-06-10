@@ -324,8 +324,11 @@ echo "=== Phase 5 AC: read endpoints ==="
 # Restart Phase-1 server with a plan fixture for /api/plan tests.
 MR5="$TMP_ROOT/mr5"
 mkdir -p "$MR5/.claude" "$MR5/plans"
+# output.plans_dir pinned: this fixture keeps its plan files under plans/,
+# and the INSTALL_REDESIGN Phase 5 no-config built-in default is docs/plans.
 cat >"$MR5/.claude/zskills-config.json" <<EOF
-{ "dev_server": { "default_port": $(( BASE_PORT + 3 )) } }
+{ "dev_server": { "default_port": $(( BASE_PORT + 3 )) },
+  "output": { "plans_dir": "plans", "issues_dir": "plans" } }
 EOF
 cat >"$MR5/plans/SAMPLE_PLAN.md" <<'EOF'
 ---

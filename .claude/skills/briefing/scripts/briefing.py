@@ -45,8 +45,50 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
+def _read_json_dict(path):
+    """Load a JSON file expected to hold an object. {} on any failure."""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def load_zskills_config(main_path):
+    """Config cascade (INSTALL_REDESIGN Phase 5): project > user > built-ins.
+
+    Per-key SHALLOW merge at the top level: built-in defaults loaded from
+    the canonical skills/update-zskills/scripts/zskills-defaults.json
+    (always LOADED, never a copied dict), overlaid by the user tier
+    (~/.claude/zskills-config.json), overlaid by the project tier
+    (<main_path>/.claude/zskills-config.json). `execution.*` is
+    PROJECT-TIER-ONLY across the whole cascade (safety carve-out — a
+    user-level file must not weaken a project's repo discipline), so the
+    user tier's `execution` key is dropped before merging. Missing or
+    malformed tiers contribute nothing (fail-open), matching the bash
+    resolver family.
+
+    SYNC NOTE: intentionally duplicated as `_load_zskills_config` in
+    zskills-dashboard/scripts/zskills_monitor/{collect.py,server.py}
+    (separate processes, no shared module) — keep the three in sync.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    defaults_path = os.path.join(
+        here, '..', '..', 'update-zskills', 'scripts', 'zskills-defaults.json')
+    merged = {k: v for k, v in _read_json_dict(defaults_path).items()
+              if k != '_comment'}
+    user = _read_json_dict(os.path.expanduser(
+        os.path.join('~', '.claude', 'zskills-config.json')))
+    user.pop('execution', None)
+    merged.update(user)
+    merged.update(_read_json_dict(
+        os.path.join(main_path, '.claude', 'zskills-config.json')))
+    return merged
+
+
 def read_zskills_paths(main_path):
-    """Read .claude/zskills-config.json and resolve audit/plans/issues dirs.
+    """Resolve audit/plans/issues dirs through the Phase 5 config cascade.
 
     Mirrors the bash helper at
     .claude/skills/update-zskills/scripts/zskills-paths.sh.
@@ -55,31 +97,29 @@ def read_zskills_paths(main_path):
     All other forms (including `..foo`) are joined with main_path. Mirrors
     bash helper semantics (Locked Decision 1).
 
-    Missing/malformed config -> silent empty fallback.
+    No config at either tier -> built-in defaults (docs/plans | docs/issues
+    | docs/reports via zskills-defaults.json). The leaf-level `or` literals
+    below only fire for a PARTIAL output block surviving the shallow merge
+    (or a missing defaults JSON) and match zskills-defaults.json output.*.
     """
-    cfg_path = os.path.join(main_path, '.claude', 'zskills-config.json')
-    cfg = {}
-    try:
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
-    except (OSError, ValueError):
-        pass
+    cfg = load_zskills_config(main_path)
     output = (cfg.get('output') if isinstance(cfg, dict) else None) or {}
-    plans_rel = output.get('plans_dir') or 'plans'
-    issues_rel = output.get('issues_dir') or 'plans'
-    reports_rel = output.get('reports_dir')  # absent → legacy fallback
+    if not isinstance(output, dict):
+        output = {}
+    plans_rel = output.get('plans_dir') or 'docs/plans'
+    issues_rel = output.get('issues_dir') or 'docs/issues'
+    reports_rel = output.get('reports_dir') or 'docs/reports'
 
     def _resolve(rel):
         return rel if os.path.isabs(rel) else os.path.join(main_path, rel)
 
     audit_dir = os.path.join(main_path, '.zskills', 'audit')
-    reports_dir = _resolve(reports_rel) if reports_rel else audit_dir
 
     return {
         'plans_dir': _resolve(plans_rel),
         'issues_dir': _resolve(issues_rel),
         'audit_dir': audit_dir,
-        'reports_dir': reports_dir,
+        'reports_dir': _resolve(reports_rel),
     }
 
 # ---------------------------------------------------------------------------

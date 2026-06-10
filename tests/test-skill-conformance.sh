@@ -2376,9 +2376,11 @@ echo ""
 echo "=== Fresh-config scaffold: both lanes seed output.{plans,issues,reports}_dir = docs/ ==="
 # A FRESH config scaffold must default the output path keys to the documented
 # docs/ layout so a brand-new consumer's dashboard + plan-skills find plans in
-# docs/plans out of the box (resolver falls back to legacy plans/ only when the
-# output block is ABSENT — proven separately in tests/test-zskills-paths.sh
-# Case 1). Both scaffold sites must write the SAME output block:
+# docs/plans out of the box. (Since INSTALL_REDESIGN Phase 5 the resolver's
+# OWN built-in defaults are docs/{plans,issues,reports} too — pinned to
+# zskills-defaults.json by the congruence section below and proven in
+# tests/test-zskills-paths.sh Case 1.) Both scaffold sites must write the
+# SAME output block:
 #   - plugin lane: hooks/session-start-materialise.sh seed dict
 #   - /update-zskills lane: skills/update-zskills/SKILL.md install scaffold JSON
 # This tightens the prior invariant (the seed used to carry NO output block).
@@ -2449,6 +2451,121 @@ if [ -z "$SCAFFOLD_HITS" ]; then
 else
   fail "fresh-config scaffold output block (both-lanes symmetry)" "$SCAFFOLD_HITS"
   printf '%s\n' "$SCAFFOLD_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+fi
+
+echo ""
+echo "=== Config-cascade built-in defaults congruence (INSTALL_REDESIGN Phase 5) ==="
+# The canonical defaults artifact is skills/update-zskills/scripts/
+# zskills-defaults.json (Phase 4). Two arms keep every copy congruent while
+# it exists:
+#   (i)  bash family-1/2 inline defaults (zskills-resolve-config.sh +
+#        zskills-paths.sh) ≡ the JSON values. Convention: a marker line
+#          # zskills-defaults-congruence: <json.dotted.path>
+#        names the JSON key; the first ASSIGNED double-quoted literal
+#        (`="<value>"`) on the NEXT line must equal the JSON value.
+#        Exactly 5 markers are pinned
+#        (timezone + testing.output_file in resolve-config; the three
+#        output.*_dir in paths) so the net cannot silently shrink.
+#   (ii) the materialiser seed-dict ≡ the JSON for every defaults key
+#        (seed-only $schema/project_name are dynamic and ignored). Phase 7
+#        deletes this arm with the materialiser (subject-removal); arm (i)
+#        survives unchanged.
+CASCADE_CONGRUENCE_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "$SCAFFOLD_PY" <<'PYEOF'
+import json, os, re, sys
+
+repo = os.environ["ZS_REPO_ROOT"]
+errs = []
+
+defaults_path = os.path.join(
+    repo, "skills", "update-zskills", "scripts", "zskills-defaults.json")
+try:
+    defaults = json.load(open(defaults_path, encoding="utf-8"))
+except Exception as e:  # noqa: BLE001
+    print("cannot load canonical zskills-defaults.json: %r" % (e,))
+    sys.exit(0)
+
+
+def lookup(dotted):
+    cur = defaults
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+# --- Arm (i): bash family-1/2 inline defaults --------------------------------
+marker_re = re.compile(r"#\s*zskills-defaults-congruence:\s*([A-Za-z0-9_.]+)\s*$")
+value_re = re.compile(r'=\s*"([^"]*)"')
+marker_count = 0
+for rel in ("skills/update-zskills/scripts/zskills-resolve-config.sh",
+            "skills/update-zskills/scripts/zskills-paths.sh"):
+    lines = open(os.path.join(repo, rel), encoding="utf-8").read().splitlines()
+    for i, line in enumerate(lines):
+        m = marker_re.search(line)
+        if not m:
+            continue
+        marker_count += 1
+        dotted = m.group(1)
+        expected = lookup(dotted)
+        if expected is None:
+            errs.append("%s:%d: congruence marker names %r, absent from "
+                        "zskills-defaults.json" % (rel, i + 1, dotted))
+            continue
+        if i + 1 >= len(lines):
+            errs.append("%s:%d: congruence marker has no following line"
+                        % (rel, i + 1))
+            continue
+        vm = value_re.search(lines[i + 1])
+        if not vm:
+            errs.append("%s:%d: no assigned double-quoted literal on the "
+                        "line after the congruence marker" % (rel, i + 2))
+            continue
+        if vm.group(1) != str(expected):
+            errs.append("%s:%d: inline default %r != zskills-defaults.json "
+                        "%s = %r" % (rel, i + 2, vm.group(1), dotted, expected))
+if marker_count != 5:
+    errs.append("expected exactly 5 zskills-defaults-congruence markers "
+                "across family-1/2 scripts, found %d" % marker_count)
+
+# --- Arm (ii): materialiser seed-dict ≡ defaults JSON (overlapping keys) -----
+# Reuses the seed-dict extraction idiom from the fresh-config scaffold
+# section above; that extraction hard-fails on absence by design (Phase 7
+# deletes this arm in lockstep with the materialiser).
+mat = os.path.join(repo, "hooks", "session-start-materialise.sh")
+src = open(mat, encoding="utf-8").read()
+m = re.search(r"\ncfg = (\{.*?\n\})\n", src, re.DOTALL)
+if not m:
+    errs.append("could not locate `cfg = {...}` dict in session-start-materialise.sh")
+else:
+    ns = {"os": type("O", (), {"environ": {"PROJECT_NAME": "x"}})()}
+    seed = None
+    try:
+        seed = eval(m.group(1), {"__builtins__": {}, "True": True, "False": False}, ns)
+    except Exception as e:  # noqa: BLE001
+        errs.append("failed to eval plugin seed cfg dict: %r" % (e,))
+    if isinstance(seed, dict):
+        for key, dval in defaults.items():
+            if key == "_comment":
+                continue
+            if key not in seed:
+                errs.append("materialiser seed-dict missing defaults key %r" % (key,))
+            elif seed[key] != dval:
+                errs.append("materialiser seed-dict[%r] = %r != "
+                            "zskills-defaults.json %r" % (key, seed[key], dval))
+
+for e in errs:
+    print(e)
+sys.exit(0)
+PYEOF
+)"
+if [ -z "$CASCADE_CONGRUENCE_HITS" ]; then
+  pass "config-cascade defaults congruence: bash inline defaults + materialiser seed ≡ zskills-defaults.json"
+else
+  fail "config-cascade defaults congruence" "$CASCADE_CONGRUENCE_HITS"
+  printf '%s\n' "$CASCADE_CONGRUENCE_HITS" | while IFS= read -r h; do
     [ -n "$h" ] && printf '    %s\n' "$h" >&2
   done
 fi

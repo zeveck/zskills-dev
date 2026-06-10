@@ -476,10 +476,14 @@ PORT="$BASE_PORT"
 
 MR="$TMP_ROOT/mr"
 mkdir -p "$MR/.claude" "$MR/plans" "$MR/reports"
+# output.* pinned explicitly: this fixture keeps its plan files under
+# plans/ + reports/, and the Phase 5 no-config built-in defaults are now
+# docs/{plans,issues,reports}.
 cat >"$MR/.claude/zskills-config.json" <<EOF
 {
   "dev_server": { "default_port": $PORT },
-  "execution": { "landing": "pr" }
+  "execution": { "landing": "pr" },
+  "output": { "plans_dir": "plans", "issues_dir": "plans", "reports_dir": "reports" }
 }
 EOF
 # Plan with one phase having a non-null commit and another null — used by

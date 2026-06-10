@@ -502,14 +502,15 @@ expect_script_exit \
   bash -c "cd \"$i5a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug canary-5 --plan-file \"\""
 
 # Negative case: create the report, assert rc=0.
-# Path-config migration (Phase 3.11, interpretation A): post-migration
-# the script resolves REPORT_PATH to $ZSKILLS_AUDIT_DIR/plan-<slug>.md,
-# which the helper resolves to .zskills/audit/. The fixture moves to
-# match the new canonical location — this is NOT weakening the test,
-# it's tracking the spec change.
+# Path-config migration (Phase 3.11, interpretation A): the script
+# resolves REPORT_PATH to $ZSKILLS_REPORTS_DIR/plan-<slug>.md. Since
+# INSTALL_REDESIGN Phase 5 the no-config built-in default for
+# reports_dir is docs/reports (was the legacy .zskills/audit), so this
+# fixture (whose config is `{}`) creates the report there — this is NOT
+# weakening the test, it's tracking the Phase 5 spec change.
 i5b_primary=$(setup_fixture_repo)
-mkdir -p "$i5b_primary/.zskills/audit"
-touch "$i5b_primary/.zskills/audit/plan-canary-5.md"
+mkdir -p "$i5b_primary/docs/reports"
+touch "$i5b_primary/docs/reports/plan-canary-5.md"
 i5b_out=$(cd "$i5b_primary" && bash "$INVARIANTS_SCRIPT" \
   --worktree "" --branch "" --landed-status "" \
   --plan-slug canary-5 --plan-file "" 2>&1); i5b_rc=$?

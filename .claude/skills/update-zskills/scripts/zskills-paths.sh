@@ -13,8 +13,19 @@
 # Contract:
 #   - Project root: prefer $ZSKILLS_PATHS_ROOT, else $CLAUDE_PROJECT_DIR.
 #     If both unset, helper fails loud (non-zero, stderr naming both vars).
-#   - Empty / missing config keys → fall back to LEGACY <root>/plans for
-#     PLANS_DIR and ISSUES_DIR. Audit dir is always <root>/.zskills/audit.
+#   - Config cascade (INSTALL_REDESIGN Phase 5): PROJECT
+#     <root>/.claude/zskills-config.json > USER
+#     $HOME/.claude/zskills-config.json > built-in defaults. Two-pass read
+#     (user body first, then project body); a key whose regex MATCHES in the
+#     project body wins, so a present-but-EMPTY project value falls through
+#     to the built-in default even when the user tier set one. Note the user
+#     tier is always $HOME — $ZSKILLS_PATHS_ROOT only overrides the PROJECT
+#     root (worktree anchor), never the user tier.
+#   - Empty / missing config keys at both tiers → built-in defaults
+#     docs/plans | docs/issues | docs/reports (PINNED ≡ zskills-defaults.json
+#     by the congruence check in tests/test-skill-conformance.sh; the prior
+#     legacy plans/ + .zskills/audit fallbacks were re-specced by Phase 5).
+#     Audit dir is always <root>/.zskills/audit.
 #   - Resolved values are absolute. Relative paths in config are JOINED
 #     with <root> (including paths starting with "../" — they resolve
 #     against <root>, NOT the caller's cwd). Absolute paths (starting
@@ -65,38 +76,64 @@ ZSKILLS_AUDIT_DIR=""
 ZSKILLS_REPORTS_DIR=""
 
 _ZSK_PATHS_CFG="$_ZSK_PATHS_ROOT/.claude/zskills-config.json"
+_ZSK_PATHS_USER_CFG="${HOME:-}/.claude/zskills-config.json"
 _ZSK_PATHS_PLANS_RAW=""
 _ZSK_PATHS_ISSUES_RAW=""
 _ZSK_PATHS_REPORTS_RAW=""
 
-if [ -f "$_ZSK_PATHS_CFG" ]; then
-  _ZSK_PATHS_BODY=$(cat "$_ZSK_PATHS_CFG" 2>/dev/null) || _ZSK_PATHS_BODY=""
-  # Nested-key scoping per zskills-resolve-config.sh idiom (BASH_REMATCH).
-  # Trailing `[^}]*\}` closing-brace anchor (round-3 reviewer F6): a
-  # malformed input like `{"output":{"plans_dir":"DROP"}` (missing outer
-  # `}`) used to match because `[^}]*` greedily consumed past the value;
-  # the trailing `\}` requires a real close, so unbalanced JSON falls
-  # back to legacy plans/ instead of yielding a path-shaped string.
-  if [[ "$_ZSK_PATHS_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+# Extract the three output.* keys from one config body (any tier). Each
+# key's regex is an independent presence test: a match OVERWRITES the RAW
+# var, so calling this on the user body first, then the project body,
+# implements "project match wins; user fills project-absent keys"
+# (INSTALL_REDESIGN Phase 5 two-pass cascade).
+#
+# Nested-key scoping per zskills-resolve-config.sh idiom (BASH_REMATCH).
+# Trailing `[^}]*\}` closing-brace anchor (round-3 reviewer F6): a
+# malformed input like `{"output":{"plans_dir":"DROP"}` (missing outer
+# `}`) used to match because `[^}]*` greedily consumed past the value;
+# the trailing `\}` requires a real close, so unbalanced JSON falls
+# back to the built-in defaults instead of yielding a path-shaped string.
+_zsk_paths_extract_keys() {
+  local _zsk_paths_body="$1"
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
     _ZSK_PATHS_PLANS_RAW="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_ZSK_PATHS_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"issues_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"issues_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
     _ZSK_PATHS_ISSUES_RAW="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_ZSK_PATHS_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
     _ZSK_PATHS_REPORTS_RAW="${BASH_REMATCH[1]}"
   fi
-  unset _ZSK_PATHS_BODY
+}
+
+# Pass 1: USER tier ($HOME — independent of the project-root override).
+if [ -n "${HOME:-}" ] && [ -f "$_ZSK_PATHS_USER_CFG" ]; then
+  _ZSK_PATHS_USER_BODY=$(cat "$_ZSK_PATHS_USER_CFG" 2>/dev/null) || _ZSK_PATHS_USER_BODY=""
+  _zsk_paths_extract_keys "$_ZSK_PATHS_USER_BODY"
+  unset _ZSK_PATHS_USER_BODY
 fi
 
-# Empty config (or empty-string value) → LEGACY plans/ for plans_dir +
-# issues_dir; LEGACY .zskills/audit for reports_dir (silent back-compat —
-# pre-migration consumers wrote work-trail reports there, so their existing
-# .zskills/audit/plan-*.md writes continue working unchanged when the
-# config key is absent or empty).
-[ -z "$_ZSK_PATHS_PLANS_RAW" ]   && _ZSK_PATHS_PLANS_RAW="plans"
-[ -z "$_ZSK_PATHS_ISSUES_RAW" ]  && _ZSK_PATHS_ISSUES_RAW="plans"
-[ -z "$_ZSK_PATHS_REPORTS_RAW" ] && _ZSK_PATHS_REPORTS_RAW=".zskills/audit"
+# Pass 2: PROJECT tier (a project match wins over the user tier).
+if [ -f "$_ZSK_PATHS_CFG" ]; then
+  _ZSK_PATHS_BODY=$(cat "$_ZSK_PATHS_CFG" 2>/dev/null) || _ZSK_PATHS_BODY=""
+  _zsk_paths_extract_keys "$_ZSK_PATHS_BODY"
+  unset _ZSK_PATHS_BODY
+fi
+unset -f _zsk_paths_extract_keys
+
+# Both tiers empty (or empty-string value) → built-in defaults (cascade
+# tier 3). Values are PINNED ≡ skills/update-zskills/scripts/
+# zskills-defaults.json by the congruence check in
+# tests/test-skill-conformance.sh; the marker line names the JSON key path.
+# (Phase 5 re-spec: the prior legacy fallbacks — plans/ for plans+issues,
+# .zskills/audit for reports — are replaced by the canonical docs/ layout
+# so zero-config consumers get the documented defaults.)
+# zskills-defaults-congruence: output.plans_dir
+[ -z "$_ZSK_PATHS_PLANS_RAW" ]   && _ZSK_PATHS_PLANS_RAW="docs/plans"
+# zskills-defaults-congruence: output.issues_dir
+[ -z "$_ZSK_PATHS_ISSUES_RAW" ]  && _ZSK_PATHS_ISSUES_RAW="docs/issues"
+# zskills-defaults-congruence: output.reports_dir
+[ -z "$_ZSK_PATHS_REPORTS_RAW" ] && _ZSK_PATHS_REPORTS_RAW="docs/reports"
 
 # Resolve absolute. Only "/" prefix is treated as already-absolute. All
 # other forms (including "..", "../..", "../foo") are JOINED with <root>;
@@ -117,4 +154,4 @@ case "$_ZSK_PATHS_REPORTS_RAW" in
   *)  ZSKILLS_REPORTS_DIR="$_ZSK_PATHS_ROOT/$_ZSK_PATHS_REPORTS_RAW" ;;
 esac
 
-unset _ZSK_PATHS_ROOT _ZSK_PATHS_CFG _ZSK_PATHS_PLANS_RAW _ZSK_PATHS_ISSUES_RAW _ZSK_PATHS_REPORTS_RAW
+unset _ZSK_PATHS_ROOT _ZSK_PATHS_CFG _ZSK_PATHS_USER_CFG _ZSK_PATHS_PLANS_RAW _ZSK_PATHS_ISSUES_RAW _ZSK_PATHS_REPORTS_RAW

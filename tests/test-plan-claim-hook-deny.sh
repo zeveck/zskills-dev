@@ -96,8 +96,11 @@ setup_fixture() {
   mkdir -p "$root/plans"
   # Synthetic plan file so the slug-is-real-plan-file gate passes.
   printf '%s\n' "# Synthetic plan for $slug" > "$root/plans/$slug.md"
-  # Config with branch_prefix=feat/ (default).
-  printf '%s\n' '{"execution":{"branch_prefix":"feat/"}}' > "$root/.claude/zskills-config.json"
+  # Config with branch_prefix=feat/ (default) + output.plans_dir pinned to
+  # this fixture's plans/ layout (INSTALL_REDESIGN Phase 5: the no-config
+  # built-in default is now docs/plans, which would miss the plan file and
+  # turn every DENY case into a pass-through ALLOW).
+  printf '%s\n' '{"execution":{"branch_prefix":"feat/"},"output":{"plans_dir":"plans"}}' > "$root/.claude/zskills-config.json"
   # Init git so MAIN_ROOT resolves.
   (cd "$root" && git init -q && git config user.email "t@t" && git config user.name "t" \
     && git commit --allow-empty -q -m "init") || return 1
@@ -200,7 +203,10 @@ mkdir -p "$neg_root/plans"  # empty plans dir — no <slug>.md
 mkdir -p "$neg_root/skills/update-zskills/scripts"
 cp "$REPO_ROOT/skills/update-zskills/scripts/zskills-paths.sh" \
   "$neg_root/skills/update-zskills/scripts/zskills-paths.sh"
-printf '%s\n' '{"execution":{"branch_prefix":"feat/"}}' > "$neg_root/.claude/zskills-config.json"
+# output.plans_dir pinned to the fixture layout (Phase 5 cascade default
+# is docs/plans) so the negative control exercises "empty plans dir", not
+# "wrong dir".
+printf '%s\n' '{"execution":{"branch_prefix":"feat/"},"output":{"plans_dir":"plans"}}' > "$neg_root/.claude/zskills-config.json"
 (cd "$neg_root" && git init -q && git config user.email "t@t" && git config user.name "t" \
   && git commit --allow-empty -q -m "init") >/dev/null 2>&1 || true
 

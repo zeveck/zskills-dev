@@ -2370,6 +2370,63 @@ rm -rf "$LB_TMP"
 echo ""
 
 # ---------------------------------------------------------------------------
+# _load_zskills_config — Phase 5 config cascade (project > user > built-ins)
+# ---------------------------------------------------------------------------
+echo "=== _load_zskills_config: cascade merge (INSTALL_REDESIGN Phase 5) ==="
+
+CC_TMP=$(mktemp -d -t zskills-collect-cascade-XXXXXX)
+mkdir -p "$CC_TMP/home/.claude" "$CC_TMP/proj/.claude"
+cat > "$CC_TMP/home/.claude/zskills-config.json" <<'UCFG'
+{
+  "timezone": "Asia/Tokyo",
+  "cleanup": { "protected_branches": ["user-branch"] },
+  "execution": { "dashboard_completed_limit": 7 }
+}
+UCFG
+cat > "$CC_TMP/proj/.claude/zskills-config.json" <<'PCFG'
+{
+  "timezone": "Europe/London"
+}
+PCFG
+CC_OUT=$(HOME="$CC_TMP/home" PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib
+import zskills_monitor.collect as c
+proj = pathlib.Path("'"$CC_TMP"'/proj")
+cfg = c._load_zskills_config(proj)
+print("tz=" + str(cfg.get("timezone")))                       # project wins
+print("prot=" + ",".join(sorted(c._read_protected_branches(proj))))  # user fills
+print("completed=%s,%s" % c._read_dashboard_completed_config(proj))  # user execution DROPPED
+out = cfg.get("output") or {}
+print("plans_default=" + str(out.get("plans_dir")))           # built-in default survives
+paths = c._resolve_paths(proj)
+print("plans_path=" + str(paths["plans_dir"]))
+' 2>&1)
+if printf '%s\n' "$CC_OUT" | grep -q "^tz=Europe/London$"; then
+  pass "_load_zskills_config: project tier wins over user tier per key"
+else
+  fail "_load_zskills_config precedence: got '$CC_OUT'"
+fi
+if printf '%s\n' "$CC_OUT" | grep -q "^prot=user-branch$"; then
+  pass "_load_zskills_config: user tier fills project-absent keys (cleanup.protected_branches)"
+else
+  fail "_load_zskills_config user-fill: got '$CC_OUT'"
+fi
+if printf '%s\n' "$CC_OUT" | grep -q "^completed=14,500$"; then
+  pass "_load_zskills_config: user-tier execution.* DROPPED (project-tier-only carve-out)"
+else
+  fail "_load_zskills_config execution carve-out: expected completed=14,500, got '$CC_OUT'"
+fi
+if printf '%s\n' "$CC_OUT" | grep -q "^plans_default=docs/plans$" \
+  && printf '%s\n' "$CC_OUT" | grep -q "plans_path=.*proj/docs/plans$"; then
+  pass "_load_zskills_config: built-in defaults loaded from canonical zskills-defaults.json (output.plans_dir)"
+else
+  fail "_load_zskills_config defaults: got '$CC_OUT'"
+fi
+rm -rf "$CC_TMP"
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
