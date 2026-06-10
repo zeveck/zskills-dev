@@ -1,5 +1,26 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 6b Gate retarget + verify-install rework
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** a37e87b6 (9 files, +974/−493)
+
+### Work Items
+Gate re-keyed to init-done (sourced from init-state.sh): cure-first → allow-list {briefing, manual-testing, plans, session-report, update-zskills} → legacy-mirror allow (detect CALL) → predicate → friendly ASCII block message. Conformance tripwire: every skills/<name> in exactly one gate list. verify-install plugin checks reworked; VI_PRE_LOCK knob resolves the A6↔lock-LAST paradox (pinned 5e/5f/5g); A6 hard gate (9a/9b/9c). Gate suite 7→16; verify-install 44→53; init 49→51; conformance +24.
+
+### Verification
+- Verifier PASS a37e87b6; Layer-3 exit 0. Suite 7796/7796 (+44 exact). #1132 grep clean. Weakening: none.
+- LIVE both-branch validation (headless, real sessions): BLOCK (transcript reason byte-identical to hook), CURE (real init: A1.5 removals, hard gate "12 PASS / 0 FAIL" live, lock-LAST markers), ALLOW (0 block records, skill executed). ATTENDED-PENDING #5: shape-(b) marketplace re-run → Phase 9 DEV-QUAL.
+
+### Fork-portability notes (drift log)
+- A6 hard-gate flip NEEDS the VI_PRE_LOCK design — bake into fork 6b spec.
+- Block envelope must be single-line ASCII — fix the plan's quoted message.
+- Gate live validation dischargeable headless via `claude -p '/zs:...'` — spec shape (b) explicitly.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 6a Explicit init (Step 0.7 rework, residue cleanup, lock-LAST)
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
