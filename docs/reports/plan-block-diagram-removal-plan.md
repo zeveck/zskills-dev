@@ -1,5 +1,28 @@
 # Plan Report — Block-Diagram Add-On Removal
 
+## Phase — 3 Strip addon machinery (skills, scripts, hooks, CI)
+
+**Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 6b09c4ba (impl+verify, 56 files +175/−392)
+
+### Work Items
+All four lockstep sets in one commit: delta kind-column drop (script 5→4 fields + ALL FOUR SKILL.md awk consumers + delta test + version-surface oracles); W6.1 rewritten (bare-install refusal + carve-out intact) + refuse_gate two-arg; mirror-skill arm + Test 9; stage-check regex + case 19. Plus 9 other skills' prose, hooks (warn-config-drift regexes + stamps; block-unmaterialised comment, no mirror), build scripts, CI comments/banners (incl. fixing the stale `|| true` claim). 10 skill version bumps + byte-clean mirrors. Tier-1 hash registry updated for briefing.py (suite-forced, same commit).
+
+### Verification
+- Verifier PASS, committed 6b09c4ba; Layer-3 exit 0.
+- Suite: pre-commit `7612/7614 passed, 2 failed` — both failures are committed-state-only pre-flights; post-commit re-runs: invariants 119/119, migration 13/13. Count −3 pinned (mirror-skill 9→8, enforcement 28→27, delta 10→9). Weakening audit CLEAN.
+- Both plan-literal regex edits were inconsistent with capture-group plumbing; adaptations (`^skills/([^/]+)/` re-key; Branch-3 BASH_REMATCH re-index) independently traced as behavior-identical.
+
+### Fork-portability notes (drift log)
+- FORK FIX 1: stage-check regex item — spec the adaptation, not the literal: `^skills/([^/]+)/` + key `skills/${BASH_REMATCH[1]}`.
+- FORK FIX 2: warn-config-drift Branch 3 — spec the BASH_REMATCH re-index (name group 3→2, hardcode skills/ root).
+- FORK FIX 3: add a work item: editing briefing.py (Tier-1) requires appending its new blob hash to skills/update-zskills/references/tier1-shipped-hashes.txt in the same commit (+ re-bump update-zskills).
+- The 2 dirty-tree pre-flight failures are EXPECTED pre-commit; fork plan should note "verifier commits, then re-runs those two suites".
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 2 Delete the trees + deletion-coupled edits
 
 **Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
