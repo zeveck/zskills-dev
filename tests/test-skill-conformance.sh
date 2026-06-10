@@ -3159,20 +3159,14 @@ for mirror_dir in "$REPO_ROOT/.claude/skills"/*/; do
   name=$(basename "$mirror_dir")
   src_dir="$REPO_ROOT/skills/$name"
   if [ ! -f "$src_dir/SKILL.md" ]; then
-    # Phase 1b: block-diagram/<name>/ is also an accepted source root
-    # (mirrored via `bash scripts/mirror-skill.sh block-diagram/<name>`).
-    if [ -f "$REPO_ROOT/block-diagram/$name/SKILL.md" ]; then
-      src_dir="$REPO_ROOT/block-diagram/$name"
-    else
-      # No source — must be on the allow-list.
-      if [[ " $MIRROR_ONLY_OK " == *" $name "* ]]; then
-        pass "skill $name: mirror-only (allow-listed, skipped)"
-        continue
-      fi
-      fail "mirrored skill $name: no source counterpart and not on MIRROR_ONLY_OK allow-list" \
-        "orphaned mirror — delete .claude/skills/$name or add a source dir"
+    # No source — must be on the allow-list.
+    if [[ " $MIRROR_ONLY_OK " == *" $name "* ]]; then
+      pass "skill $name: mirror-only (allow-listed, skipped)"
       continue
     fi
+    fail "mirrored skill $name: no source counterpart and not on MIRROR_ONLY_OK allow-list" \
+      "orphaned mirror — delete .claude/skills/$name or add a source dir"
+    continue
   fi
   mirror_ver=$(bash "$REPO_ROOT/scripts/frontmatter-get.sh" "$mirror_md" metadata.version) || {
     fail "mirrored skill $name: metadata.version missing or unreadable" "from $mirror_md"

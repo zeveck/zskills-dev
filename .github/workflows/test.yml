@@ -204,10 +204,6 @@ jobs:
               echo "::warning::claude plugin validate --strict . returned non-zero."
               exit 1
             }
-            claude plugin validate --strict ./block-diagram || {
-              echo "::warning::claude plugin validate --strict ./block-diagram returned non-zero."
-              exit 1
-            }
           else
             echo "::notice::SKIP tier 2 — no \`claude\` CLI on the runner (no stable public install URL pinned). Tier 1 remains the gating floor. See .github/workflows/test.yml plugin-mode comment + PLUGIN_DISTRIBUTION.md Phase 5."
           fi

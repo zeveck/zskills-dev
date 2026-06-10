@@ -1,24 +1,18 @@
 #!/bin/bash
 # tests/test-plugin-manifest.sh
 #
-# W1.5 (D8 / D2) — validates the two plugin manifests:
-#   .claude-plugin/plugin.json                 (the `zs` plugin)
-#   block-diagram/.claude-plugin/plugin.json   (the `zsbd` addon plugin)
+# W1.5 (D8 / D2) — validates the plugin manifest:
+#   .claude-plugin/plugin.json   (the `zs` plugin)
 #
 # Uses Python JSONSchema-style validation (no jq — per `## Python is
 # required`). Asserts:
-#   - both manifests parse as JSON and carry the required top-level fields;
-#   - plugin names are exactly `zs` / `zsbd`;
-#   - `dependencies` is PRESENT on zsbd (declares {name: zs}) and ABSENT on
-#     zs (D2 / F-DA2-1 orphan-install closure);
-#   - the zsbd `skills` field is `["./"]` and the zsbd skill roster on disk
-#     enumerates exactly the 4 SKILL.md-bearing block-diagram dirs
-#     (RE-DERIVED at run time via find — NOT a frozen list, per D2);
-#   - the zs `skills` field references both ./skills/ and ./block-diagram/
-#     and there is NO `hooks` field (the standard hooks/hooks.json is
-#     auto-loaded by Claude Code from the plugin root — a manifest `hooks`
-#     reference to it causes a duplicate-hooks load error); NO `agents`
-#     field on either.
+#   - the manifest parses as JSON and carries the required top-level fields;
+#   - the plugin name is exactly `zs`;
+#   - `dependencies` is ABSENT (D2 / F-DA2-1 orphan-install closure);
+#   - the zs `skills` field is exactly ["./skills/"] and there is NO `hooks`
+#     field (the standard hooks/hooks.json is auto-loaded by Claude Code from
+#     the plugin root — a manifest `hooks` reference to it causes a
+#     duplicate-hooks load error); NO `agents` field.
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,22 +27,18 @@ FAIL_COUNT=0
 pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 
-echo "=== plugin manifest validation (zs + zsbd) ==="
-
-# Re-derive the expected zsbd skill roster from disk (D2: not a frozen list).
-EXPECTED_BD_SKILLS=$(find block-diagram -mindepth 2 -name SKILL.md -printf '%h\n' | sed 's#^block-diagram/##' | sort | tr '\n' ',' )
+echo "=== plugin manifest validation (zs) ==="
 
 # Run all structural assertions in one Python pass; emit PASS/FAIL lines the
 # shell tallies.
-RESULT=$(EXPECTED_BD_SKILLS="$EXPECTED_BD_SKILLS" "$PYTHON" - <<'PY'
-import json, os, sys
+RESULT=$("$PYTHON" - <<'PY'
+import json, sys
 
 def out(ok, label, detail=""):
     tag = "PASS" if ok else "FAIL"
     print(f"{tag}\t{label}\t{detail}")
 
 ZS = ".claude-plugin/plugin.json"
-ZSBD = "block-diagram/.claude-plugin/plugin.json"
 
 # ---- load + parse ----
 def load(path):
@@ -60,8 +50,6 @@ def load(path):
 
 zs, zs_err = load(ZS)
 out(zs is not None, f"{ZS} parses as JSON", zs_err or "")
-zsbd, zsbd_err = load(ZSBD)
-out(zsbd is not None, f"{ZSBD} parses as JSON", zsbd_err or "")
 
 # Minimal JSONSchema-style validator (required keys + types). No external
 # deps — per `## Python is required`, json stdlib only.
@@ -78,51 +66,25 @@ def check_required(doc, label):
             out(isinstance(doc[k], t), f"{label}: field '{k}' is {t.__name__}")
 
 check_required(zs, "zs")
-check_required(zsbd, "zsbd")
 
-# ---- names ----
+# ---- name ----
 if zs is not None:
     out(zs.get("name") == "zs", "zs: name == 'zs'", repr(zs.get("name")))
-if zsbd is not None:
-    out(zsbd.get("name") == "zsbd", "zsbd: name == 'zsbd'", repr(zsbd.get("name")))
 
-# ---- dependencies: present on zsbd, absent on zs ----
-if zsbd is not None:
-    deps = zsbd.get("dependencies")
-    ok = isinstance(deps, list) and any(
-        isinstance(d, dict) and d.get("name") == "zs" for d in deps
-    )
-    out(ok, "zsbd: dependencies present and declares {name: zs}", repr(deps))
+# ---- dependencies: absent ----
 if zs is not None:
     out("dependencies" not in zs, "zs: dependencies ABSENT", repr(zs.get("dependencies")))
 
-# ---- agents field absent on both (D11) ----
+# ---- agents field absent (D11) ----
 if zs is not None:
     out("agents" not in zs, "zs: no 'agents' field (D11)")
-if zsbd is not None:
-    out("agents" not in zsbd, "zsbd: no 'agents' field (D11)")
 
 # ---- zs skills + hooks ----
 if zs is not None:
-    skills = zs.get("skills")
-    out(isinstance(skills, list) and "./skills/" in skills and "./block-diagram/" in skills,
-        "zs: skills references ./skills/ and ./block-diagram/", repr(skills))
+    out(zs.get("skills") == ["./skills/"],
+        "zs: skills == ['./skills/']", repr(zs.get("skills")))
     out("hooks" not in zs,
         "zs: no 'hooks' field (standard hooks/hooks.json auto-loaded)", repr(zs.get("hooks")))
-
-# ---- zsbd skills field + roster re-derivation ----
-if zsbd is not None:
-    out(zsbd.get("skills") == ["./"], "zsbd: skills == ['./']", repr(zsbd.get("skills")))
-    out("hooks" not in zsbd, "zsbd: no 'hooks' field (rides with zs)", repr(zsbd.get("hooks")))
-
-# zsbd roster: re-derived list passed in via env must be exactly the 3
-# block-diagram SKILL.md-bearing dirs.
-expected = [s for s in os.environ.get("EXPECTED_BD_SKILLS", "").split(",") if s]
-expected_set = set(expected)
-canonical = {"add-block", "add-example", "model-design"}
-out(expected_set == canonical,
-    "zsbd roster: disk has exactly add-block/add-example/model-design",
-    repr(sorted(expected_set)))
 PY
 )
 

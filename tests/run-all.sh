@@ -195,8 +195,6 @@ run_suite "test-research-and-go-args-smoke.sh" "tests/test-research-and-go-args-
 # guards + allow-list parse), plus the refine-plan `## Argument parser` fence.
 run_suite "test-draft-plan-phase6-fences.sh" "tests/test-draft-plan-phase6-fences.sh"
 run_suite "test-refine-plan.sh" "tests/test-refine-plan.sh"
-run_suite "test-add-example-smoke.sh" "tests/test-add-example-smoke.sh"
-run_suite "test-add-block-smoke.sh" "tests/test-add-block-smoke.sh"
 # Opt-in race-isolation test for the #594 fix pattern. Adds ~2-3 min
 # to run-all.sh (20+5 conformance invocations), and the value is
 # documentation-of-bug-class rather than direct regression coverage —
