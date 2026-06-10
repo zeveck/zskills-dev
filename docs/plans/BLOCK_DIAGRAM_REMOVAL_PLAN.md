@@ -1,7 +1,8 @@
 ---
 title: Remove the block-diagram Add-Ons Entirely
 created: 2026-06-10
-status: active
+status: "complete"
+completed: "2026-06-10T18:02:48Z"
 ---
 
 # Plan: Remove the block-diagram Add-Ons Entirely
