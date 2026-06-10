@@ -142,7 +142,7 @@ shifted since inventory.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — De-reference the test layer | ⬚ | | |
+| 1 — De-reference the test layer | ✅ | f4479288 | 19 test files; 7658/7658 passed; floor 6 kept; survivors per plan |
 | 2 — Delete the trees + deletion-coupled edits | ⬚ | | |
 | 3 — Strip addon machinery (skills, scripts, hooks, CI) | ⬚ | | |
 | 4 — Root docs + counts | ⬚ | | |
