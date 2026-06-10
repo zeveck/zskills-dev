@@ -312,7 +312,7 @@ a real attended transcript/marker — as a verification FAIL.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Empirical verification → recorded branch selections | ⬚ | | |
+| 1 — Empirical verification → recorded branch selections | ✅ | | 1A / T-A(scoped-filter) / R-b; 2 ATTENDED-PENDING (non-gating); evidence preserved |
 | 2 — Plugin-native agents + hooks.json Layer-0 timeout | ⬚ | | |
 | 3 — Layer-3 relocation (verify-response-validate.sh) | ⬚ | | |
 | 4 — Rules de-parameterization + delivery channel | ⬚ | | |
@@ -537,14 +537,16 @@ execute the BD plan from here.
 
 | Claim | Shape (a) `--plugin-dir` | Shape (b) marketplace install | Selected branch | Evidence |
 |---|---|---|---|---|
-| 1 — agents/ bare dispatch | | | 1A / 1B | |
-| 2 — hooks.json PreToolUse in subagents + identity | | | (feeds T) | |
-| 3 — SessionStart additionalContext (15KB, /clear) | | | (feeds R) | |
-| 4 — ~/.claude/rules auto-load + precedence | | | (feeds R) | |
-| 5 — ${CLAUDE_PLUGIN_ROOT} in skill fences | | | note only | |
-| 6 — updatedInput from hooks.json | | | T-A / T-B / T-C | |
+| 1 — agents/ bare dispatch | PASS — bare AND scoped both dispatch (markers). Manifest `agents` field: `validate` REJECTS (rc=1 "agents: Invalid input") AND breaks agent load — never add it (auto-load dir only; #1062-class trap confirmed). Project twin SHADOWS plugin agent on bare dispatch (A1.5 stale-agents hazard proven live). | PASS — bare dispatch works on a real user-scope marketplace install (marker) | **1A** — ship root `agents/`; dispatch sites unchanged | phase1-evidence/claim1-*.txt |
+| 2 — hooks.json PreToolUse in subagents + identity | PASS — fires on subagent Bash (capture rec); `agent_type`+`agent_id` PRESENT on subagent calls (value = bare agent name for project agents); ABSENT on orchestrator main-thread calls (recorded fact: T-A absent⇒EXTEND covers orchestrator = accepted T-B-equivalent widening for identity-less calls) | PASS — subagent capture fired; **`agent_type` value is PLUGIN-SCOPED (`zsprobe:zsprobe-agent`) even for bare dispatch** → Phase 2's T-A filter MUST match `{verifier, implementer}` by suffix/basename (accept `zs:verifier` and `verifier`) | feeds **T-A** | phase1-evidence/claim2-*.jsonl |
+| 3 — SessionStart additionalContext (15KB, /clear) | PASS — 16,423-byte envelope delivered; token verbatim; re-injection per fresh session proven by construction | PASS — delivered under marketplace install; **enablement-scope fact: user-scope install (the CLI default) fires the hook in EVERY project incl. unrelated ones** (proj3 probe) — factual basis for the Phase 4 scope-acceptance statement. ATTENDED-PENDING ×2 (conservative fallbacks documented): combined-envelope `systemMessage` co-delivery rendering (headless-unobservable; if unproven Phase 7 keeps two SessionStart entries); literal interactive `/clear` arm (functionally covered by fresh-session evidence) | **R-b viable → SELECTED** (first in R-b, R-c order) | phase1-evidence/claim3-*.txt |
+| 4 — ~/.claude/rules auto-load + precedence | (config-level, shape-independent) PASS — user-level rules auto-load; project rules load; PROJECT wins conflicts (COLOR=RED in proj, BLUE elsewhere); user-level file loads in EVERY project (proj2 probe) — R-a's scope hazard is factual | n/a | R-a demotion CONFIRMED (selectable only by plan amendment) | phase1-evidence/claim4-*.txt |
+| 5 — ${CLAUDE_PLUGIN_ROOT} in skill fences | PASS — TEXT SUBSTITUTION before the model sees the body: even single-quoted `'${CLAUDE_PLUGIN_ROOT}'` arrived resolved; plugin-root script invocation ran (marker) | (substitution is render-time, shape-independent; shape (b) skill load exercised via claims 1/2/6 plugins) | note: direct plugin-root refs are safe in skill bodies; existing bare-token idiom remains valid (no migration forced) | phase1-evidence/claim5.txt |
+| 6 — updatedInput from hooks.json | PASS — rewrite discriminator: marker PRESENT with hook (model faithfully reported its echo's stdout vanished = executed command was the hook's rewrite); marker ABSENT in no-hook negative control | PASS — rewrite marker present under marketplace install | **T-A** (claims 2+6 both pass with identity). Composition: sibling hooks in the same event see the ORIGINAL tool_input (updatedInput is execution-level, not hook-chain-level); real inject-bash-timeout.sh emits `timeout: 600000` envelope in plugin context (standalone check) — Phase 2's live STOP check uses the REWRITE discriminator, not capture-composition | phase1-evidence/claim6-*.txt/.jsonl |
 
-**Selected:** agents = ___ ; timeout = ___ ; rules = ___ ; couplings noted = ___
+**Selected:** agents = **1A** ; timeout = **T-A** (filter must accept plugin-scoped `agent_type` values, e.g. `zs:verifier`; absent⇒EXTEND covers orchestrator + legacy frontmatter) ; rules = **R-b** ; couplings noted = **none forced (T-C not selected); NEW Phase-2 input: scoped-agent_type filter; A1.5 twin-shadowing hazard confirmed live; manifest `agents` field FORBIDDEN**
+
+**Probe integrity:** all probes ran in an `env -i` sandbox `CLAUDE_CONFIG_DIR` (mktemp); real `~/.claude/.credentials.json` md5 byte-identical before/after (`80f4c8d6…`); sandbox marketplace removed post-run (`plugin marketplace list` → none); evidence preserved at `/tmp/zskills-tests/zskills-pr-install-redesign-plan/phase1-evidence/`.
 
 ---
 
