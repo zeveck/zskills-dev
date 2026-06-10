@@ -1,5 +1,26 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 5 Config cascade (project > user > built-ins)
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 6afc555b (43 files, +1517/−358)
+
+### Work Items
+Two-pass cascade in zskills-resolve-config.sh + zskills-paths.sh (user tier limited to the 6 cascadable string keys; execution.*/zskills_version provably project-only); Python helper ×3 (briefing.py, collect.py, server.py — server forced by LOCKSTEP NOTE) loading the canonical defaults JSON; Family-3 hooks carve-out documented comment-only (stamps bumped, behavior blob-identical); Family-5 inline-reader rule recorded; defaults re-spec plans→docs/plans etc.; conformance congruence section (arm i: 5 marker pins; arm ii: seed≡JSON, Phase-7 deletion note); resolver/paths test re-specs (plan-authorized) + cascade cases; 11 fixture configs pinning legacy layouts; ZSKILLS_VERSION init-done fallback w/ #1132 temporary-note. 3 skill bumps + mirrors + tier1 hashes.
+
+### Verification
+- Verifier PASS 6afc555b; Layer-3 exit 0. Cascade sandbox-proven independently (precedence, empty-wins-then-default, malformed fail-open, execution.* immunity, init-done fallback). Suite 7690/7692 pre-commit (2 committed-state gates); post-commit invariants 119/119, migration 13/13. +30 accounting verified. Weakening: none (re-specs gained specificity; fixture pins keep DENY paths reachable).
+
+### Fork-portability notes (drift log)
+- server.py must be in the Family-4 list (collect.py's LOCKSTEP NOTE mandates it).
+- MERGE-SEMANTICS NUANCE: bash merges per LEAF key; Python shallow-merges TOP-LEVEL blocks — divergent on partial nested user blocks. Both per plan text; Phase 9 docs must state ONE user-facing rule (recommend documenting "top-level blocks merge whole" and aligning bash, or documenting the per-family nuance).
+- Migration case 6d passes pre-commit (git add writes blobs) — fork plan's predicted-failures list should name only invariants-Tier-1 + 6c.
+- The Family-2 default flip ripples into ~5 fixture suites — fork copy should enumerate the fixture-pin collateral up front.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 4 Rules de-parameterization + delivery channel (R-b)
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md

@@ -316,7 +316,7 @@ a real attended transcript/marker — as a verification FAIL.
 | 2 — Plugin-native agents + hooks.json Layer-0 timeout | ✅ | 18a004e2 | 1A+T-A landed; STOP rule live-proven shape (b); 7651/7651 (+37 accounted) |
 | 3 — Layer-3 relocation (verify-response-validate.sh) | ✅ | d51f79d7 | R100 move; 14 sites dual-lane; materialiser 5→4; post-commit 119/119+13/13 |
 | 4 — Rules de-parameterization + delivery channel | ✅ | 3f54ddc8 | 10 tokens out; R-b hook live; 7662/7662; 1 ATTENDED-PENDING → Phase 9 DEV-QUAL |
-| 5 — Config cascade (project > user > built-ins) | ⬚ | | |
+| 5 — Config cascade (project > user > built-ins) | ✅ | 6afc555b | 2-pass bash + Python helper ×3; carve-outs documented; congruence pinned; post-commit 119/119+13/13 |
 | 6a — Explicit init (Step 0.7 rework, residue cleanup, lock-LAST) | ⬚ | | |
 | 6b — Gate retarget + verify-install rework | ⬚ | | |
 | 7 — Deletions: materialiser, switch complex, sentinels | ⬚ | | |
