@@ -1,5 +1,28 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 6a Explicit init (Step 0.7 rework, residue cleanup, lock-LAST)
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 5e80c4eb (12 files; one commit, adjudicated vs the plan's optional two-commit shape)
+
+### Work Items
+init-state.sh (single path definition: init-done/setup-confirmed paths, atomic lock-LAST writer, 0-byte heal, FROZEN legacy-residue constants incl. the literal seed dict, A1.5 mechanical helpers w/ excluded-keys compare); A0 resolver retarget; Step 0.7 bare-call arm → full init sequence (A1.5 both arms → route → gitignore-first w/ check-ignore STOP → lane-scoped interview w/ non-interactive arm + seeded-config cure + skip-after-cure both arms → schema/stamp when-config → A6 report-only → markers LAST); legacy lane: A2 umbrella carve-out + setup-confirmed fences source init-state.sh; 49-case oracle suite + triplet; lane-aware +9 (incl. discipline + ordering pins); hook-helper-drift consumer registration.
+
+### Verification
+- Verifier PASS 5e80c4eb; Layer-3 exit 0. Discipline grep independent: zero new frozen-literal carriers (table in verifier report). W6.1/carve-out/#1080/preset BYTE-identical. check-ignore STOP semantics empirically probed (negation cases). Suite 7752/7752 (+60 exact: 49+9+1+1); post-commit gates 119/119 + 13/13. Weakening: none.
+- ATTENDED-PENDING #4 (proceed-safe): live scratch shape-(b) install init transcript + delta-scoped footprint (before/after porcelain + find; delta = umbrella + 2 markers + optional config/schema + expected A1.5 removals) — discharge at Phase 9 DEV-QUAL.
+
+### Fork-portability notes (drift log)
+- Plugin-lane UPDATE arm never re-checks gitignore (per plan; flagged for Phase 9 sweep adjudication).
+- Frozen seed-shape covers ONE shape (current pre-redesign seed); older key-subset seeds conservatively kept — fork plan should state this explicitly.
+- A2 negative-override: spec the verify-fails STOP branch as the mechanism (gitignore is last-match-wins, append self-heals pre-existing negations; only uncurable cases STOP).
+- CHANGELOG items must ride the release process (Invariant-11 conflict in the plan text — fix in fork copy).
+- Commit-shape latitude ("may be 2-3 commits") should explicitly authorize one staged set when lockstep pairs are co-staged.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 5 Config cascade (project > user > built-ins)
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
