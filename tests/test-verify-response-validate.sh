@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for hooks/verify-response-validate.sh
+# Tests for skills/update-zskills/scripts/verify-response-validate.sh
+# (skill-bundled as of INSTALL_REDESIGN Phase 3 — formerly a hook).
 # Run from repo root: bash tests/test-verify-response-validate.sh
 #
 # VERIFIER_AGENT_FIX (D'' rework). Layer 3 universal failure-protocol
@@ -19,7 +20,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$REPO_ROOT/hooks/verify-response-validate.sh"
+HOOK="$REPO_ROOT/skills/update-zskills/scripts/verify-response-validate.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0

@@ -95,14 +95,23 @@ else
 fi
 
 # ── Scenario D: a zskills-sentinelled file whose body matches canonical is
-#    left mtime-stable (idempotent, no needless rewrite). ───────────────────
+#    left mtime-stable (idempotent, no needless rewrite). Probes a
+#    still-materialised artifact (inject-bash-timeout.sh) — the former probe
+#    target verify-response-validate.sh is no longer materialised
+#    (skill-bundled, INSTALL_REDESIGN Phase 3), so stat-ing it would make
+#    this scenario a vacuous ""="" pass. ───────────────────────────────────
 PD="$TMP/d"
 make_fixture "$PD"
 run_mat "$PD"
-before="$(stat -c %Y "$PD/.claude/hooks/verify-response-validate.sh")"
+# Non-vacuity guard: the probe artifact must actually have been materialised,
+# otherwise both stat substitutions come back empty and ""="" passes without
+# testing anything (the exact failure mode the Phase 3 retarget killed).
+[ -f "$PD/.claude/hooks/inject-bash-timeout.sh" ] \
+  || fail "D0. probe artifact inject-bash-timeout.sh was NOT materialised — scenario D would be vacuous"
+before="$(stat -c %Y "$PD/.claude/hooks/inject-bash-timeout.sh")"
 sleep 1
 run_mat "$PD"
-after="$(stat -c %Y "$PD/.claude/hooks/verify-response-validate.sh")"
+after="$(stat -c %Y "$PD/.claude/hooks/inject-bash-timeout.sh")"
 if [ "$before" = "$after" ]; then
   pass "D. unchanged sentinelled artifact keeps its mtime (idempotent)"
 else

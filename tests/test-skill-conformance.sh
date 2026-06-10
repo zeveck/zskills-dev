@@ -361,7 +361,22 @@ check_fixed verify-changes "test-cmd: skipped report text"  'Tests: skipped — 
 # the Layer 3 invocation reverts the fix and re-exposes the bg+Monitor
 # recovery reflex that PR #185/#186 surfaced.
 check_fixed run-plan "verifier subagent dispatch"     'subagent_type: "verifier"'
-check_fixed run-plan "Layer 3 invocation"             'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"'
+# Layer 3 invocation — dual-lane form (INSTALL_REDESIGN Phase 3): the
+# validator is skill-bundled at skills/update-zskills/scripts/ and resolved
+# via $ZSKILLS_SKILLS_ROOT (exported by the canonical dual-lane prelude),
+# correct on BOTH the mirror-less plugin lane and the legacy mirror —
+# modeled on the clear-tracking #865 dual-lane pin below.
+check_fixed run-plan "Layer 3 invocation (dual-lane)" 'bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"'
+# Rejection arm: the retired materialised-hook literal must NOT reappear at
+# any call site in skills/ — that path no longer exists on either lane.
+# (The old literal appears exactly once here, assembled in this variable.)
+OLD_VRV_LITERAL='.claude/hooks/verify-response-validate.sh'
+if grep -rn --include='*.md' -F "$OLD_VRV_LITERAL" "$REPO_ROOT/skills/" > /dev/null 2>&1; then
+  fail "skills/ reintroduces the retired Layer-3 hook path" "use bash \"\$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh\" (skill-bundled — INSTALL_REDESIGN Phase 3)"
+  grep -rn --include='*.md' -F "$OLD_VRV_LITERAL" "$REPO_ROOT/skills/" >&2
+else
+  pass "no retired Layer-3 hook path in skills/ (validator is skill-bundled, dual-lane)"
+fi
 check_fixed run-plan "Failure Protocol STOP message"  'STOP: verifier returned without meaningful results'
 check_fixed run-plan "dispatcher attribution clarifier" 'Dispatcher: the orchestrator (top-level `/run-plan`), not the verifier subagent'
 

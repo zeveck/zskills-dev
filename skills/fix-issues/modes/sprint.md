@@ -2531,12 +2531,20 @@ worktree` in its worktree. Do NOT run verification yourself — you wrote
 the dispatch prompts, so you have implementer bias. The verification agent
 must be a fresh agent with no memory of the implementation.
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP that issue's flow and surface to the user. Per Anthropic's documented design, the verifier cannot dispatch sub-subagents — for the per-issue case this is fine: each verifier handles one issue's worktree. If a verification reveals a fix is needed, surface to the user (or to `/run-plan` if dispatched by it); the orchestrator dispatches any fix agent.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`; on exit 1 STOP that issue's flow and surface to the user. Per Anthropic's documented design, the verifier cannot dispatch sub-subagents — for the per-issue case this is fine: each verifier handles one issue's worktree. If a verification reveals a fix is needed, surface to the user (or to `/run-plan` if dispatched by it); the orchestrator dispatches any fix agent.
 
 **Layer 3 — verifier response validation.** Immediately after each verification dispatch returns:
 
 ```bash
-printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+# Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane prelude,
+# references/canonical-config-prelude.md §1.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
 VALIDATE_EXIT=$?
 ```
 

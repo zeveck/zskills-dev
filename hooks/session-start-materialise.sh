@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.8
+# zskills-hook-version: 2026.06.10
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
 # and a plugin-root CLAUDE.md is NOT loaded as context (research §12). So the
-# five artifacts the /update-zskills lane installs into a consumer's
+# four artifacts the /update-zskills lane installs into a consumer's
 # `.claude/` must be materialised at runtime by this SessionStart hook:
 #
 #   1. .claude/agents/verifier.md
 #   2. .claude/agents/implementer.md
 #   3. .claude/hooks/inject-bash-timeout.sh
-#   4. .claude/hooks/verify-response-validate.sh
-#   5. .claude/rules/zskills/managed.md   (RENDERED via render-managed-rules.py)
+#   4. .claude/rules/zskills/managed.md   (RENDERED via render-managed-rules.py)
+#
+# (verify-response-validate.sh — formerly the 4th artifact — is skill-bundled
+# at skills/update-zskills/scripts/ as of INSTALL_REDESIGN Phase 3: plugin
+# consumers get Layer 3 from the plugin skills tree, so it is never
+# materialised.)
 #
 # D27 — the dual-install detection probe runs FIRST (before any write). On
 # lane=update-zskills or lane=dual the materialiser emits the documented
@@ -289,7 +293,7 @@ materialise_artifact() {
   rm -f "$inj_tmp"
 }
 
-# ── Materialise the 4 static artifacts ────────────────────────────────────
+# ── Materialise the 3 static artifacts ────────────────────────────────────
 # Agents (frontmatter .md).
 for agent in verifier implementer; do
   if src="$(resolve_src "agents/$agent.md" ".claude/agents/$agent.md")"; then
@@ -298,10 +302,12 @@ for agent in verifier implementer; do
   fi
 done
 
-# Hooks (*.sh — shell-comment on line 2). The materialised copies must be
+# Hooks (*.sh — shell-comment on line 2). The materialised copy must be
 # executable so the verifier/implementer frontmatter `hooks:` reference
 # (`bash $CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh`) resolves.
-for hook in inject-bash-timeout verify-response-validate; do
+# (verify-response-validate.sh is no longer materialised — skill-bundled,
+# INSTALL_REDESIGN Phase 3.)
+for hook in inject-bash-timeout; do
   if src="$(resolve_src "hooks/$hook.sh" "hooks/$hook.sh")"; then
     dest="$PROJ/.claude/hooks/$hook.sh"
     materialise_artifact sh "$src" "$dest" || true
@@ -313,7 +319,7 @@ done
 # Plugins cannot write at install time, and the managed.md render below is
 # gated on [ -f "$CONFIG" ]. A fresh plugin install therefore used to leave
 # the consumer with NO config and NO managed.md — silently. Seed a default
-# headless config here so the render gate passes and all 5 artifacts
+# headless config here so the render gate passes and all 4 artifacts
 # materialise. The seed defaults to landing=direct, main_protected=false —
 # the lowest-friction default for a casual plugin consumer (concurrency-1,
 # fresh container). Sophisticated forks opt into locked-main-pr explicitly.

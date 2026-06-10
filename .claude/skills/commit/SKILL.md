@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.06.10+7b65f8"
+  version: "2026.06.10+58ac8a"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -322,7 +322,7 @@ For every file classified as "related":
    you have selection bias. A fresh agent catches files you missed or
    included by mistake.
 
-   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The dispatch prompt MUST include the verbatim preamble: `"You are reviewing the staged diff. Read-only review — do NOT git stash, checkout, restore, reset, add, rm, commit, push, merge, rebase, cherry-pick, revert, tag, or branch -D. Do NOT edit, write, or delete any file. Read the diff, run any read-only checks (git diff, git log, git show), and report concerns or approve."` After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP without committing.
+   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The dispatch prompt MUST include the verbatim preamble: `"You are reviewing the staged diff. Read-only review — do NOT git stash, checkout, restore, reset, add, rm, commit, push, merge, rebase, cherry-pick, revert, tag, or branch -D. Do NOT edit, write, or delete any file. Read the diff, run any read-only checks (git diff, git log, git show), and report concerns or approve."` After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`; on exit 1 STOP without committing.
 
    **The reviewer is READ-ONLY.** Include this verbatim in the dispatch prompt (defense-in-depth, preserved alongside the Dispatch-shape preamble above):
 
@@ -337,7 +337,15 @@ For every file classified as "related":
    **Layer 3 — verifier response validation.** Immediately after the dispatch returns:
 
    ```bash
-   printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+   # Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane
+   # prelude, references/canonical-config-prelude.md §1.
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
    VALIDATE_EXIT=$?
    ```
 

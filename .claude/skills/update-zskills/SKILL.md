@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+ed1439"
+  version: "2026.06.10+c45f49"
 ---
 
 # Update Z Skills Infrastructure
@@ -1436,13 +1436,14 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   frontmatter `hooks.PreToolUse` declaration (Layer 0 timeout-injection
   for verifier subagent Bash calls). Auto-discovered when the agent
   definition is loaded at session start.
-- For `verify-response-validate.sh`: copy to
-  `.claude/hooks/verify-response-validate.sh`. **No `settings.json`
-  entry** — this hook is invoked directly from dispatcher SKILL.md
-  files (Layer 3 universal verifier-response failure-protocol
-  primitive). Standard executable shell script, called as
-  `bash .claude/hooks/verify-response-validate.sh ...` from skill
-  prose.
+- `verify-response-validate.sh` (Layer 3 universal verifier-response
+  failure-protocol primitive) is NOT a hook and is NOT copied here: it
+  ships skill-bundled at `skills/update-zskills/scripts/` and arrives
+  via the skills mirror (Step A), resolved by dispatcher skills as
+  `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`.
+  A stale pre-relocation copy of it left under `.claude/hooks/` by an
+  earlier install is harmless dead residue — nothing references that
+  path anymore; leave it alone.
 - For `block-stale-skill-version.sh`: copy as-is from `$PORTABLE/hooks/` to `.claude/hooks/`.
 - For `block-bad-cron.sh`: copy as-is from `$PORTABLE/hooks/` to
   `.claude/hooks/`. Wired into `settings.json` as PreToolUse on the
@@ -1485,12 +1486,12 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   Step 0.5 mapping table go through the template-render path (Step B),
   not the hook path.
 
-The `inject-bash-timeout.sh` and `verify-response-validate.sh` hooks
-have NO entries in the canonical zskills-owned triples table below
-(they are not registered via `settings.json`). They are loaded via the
-`.claude/agents/verifier.md` frontmatter PreToolUse declaration AND
-via direct skill invocation in dispatcher SKILL.md files. Copy them to
-`.claude/hooks/` only — do not register them.
+The `inject-bash-timeout.sh` hook has NO entry in the canonical
+zskills-owned triples table below (it is not registered via
+`settings.json`). It is loaded via the `.claude/agents/verifier.md`
+frontmatter PreToolUse declaration. Copy it to `.claude/hooks/` only —
+do not register it. (`verify-response-validate.sh` is skill-bundled —
+see its bullet above — and never touches `.claude/hooks/`.)
 
 **Refresh changed verbatim-owned hooks (#1060).** The copy steps above
 only fill *missing* hooks. To propagate a hook fix shipped after a
@@ -1505,8 +1506,8 @@ step — hooks are higher-stakes than agents (which do not back up).
 
 The verbatim-owned hook set is an EXPLICIT, CLOSED list — these are the
 zskills-owned hooks that Step C copies as-is (the registered
-`settings.json` triples that ship verbatim, plus the two frontmatter /
-direct-invocation hooks, plus the two session-logging hooks). It MUST NOT
+`settings.json` triples that ship verbatim, plus the frontmatter-loaded
+`inject-bash-timeout.sh`, plus the two session-logging hooks). It MUST NOT
 include the consumer-customizable `.template`-derived hooks
 (`block-unsafe-project.sh`, `block-agents.sh`) or any Tier-2 stub under
 `scripts/` — those stay governed by Key Rule 2 (never overwritten):
@@ -1526,7 +1527,6 @@ VERBATIM_OWNED_HOOKS=(
   block-main-edits.sh
   warn-config-drift.sh
   inject-bash-timeout.sh
-  verify-response-validate.sh
   log-session-stop.sh
   log-permission-request.sh
 )
@@ -1762,7 +1762,7 @@ from a template):
    >
    > Installed hook scripts (D'' structural defense):
    > - .claude/hooks/inject-bash-timeout.sh (Layer 0 — auto-extends Bash timeout to 600000 ms for verifier subagent)
-   > - .claude/hooks/verify-response-validate.sh (Layer 3 — universal verifier-response failure-protocol primitive)
+   > - .claude/skills/update-zskills/scripts/verify-response-validate.sh (Layer 3 — universal verifier-response failure-protocol primitive; delivered via the skills mirror, not .claude/hooks/)
    >
    > Drift check: each .md is byte-equivalent to source.
    > Drift check: each hook script is byte-equivalent to source.
@@ -1973,6 +1973,7 @@ STALE_LIST=(
   statusline.sh
   sync-pr-body-progress.sh
   verify-completed-checksums.sh
+  verify-response-validate.sh
   worktree-add-safe.sh
   write-landed.sh
   zskills-paths.sh
@@ -1990,6 +1991,13 @@ pre-refactor experiments. Defensive migration: matches → MIGRATED;
 user-modified → KEPT. Expect this entry to be a no-op for most
 consumers (the live install at `~/.claude/statusline-command.sh` is
 separate and unaffected).
+
+Note: `verify-response-validate.sh` is likewise a defensive entry. It
+was relocated from `hooks/` (INSTALL_REDESIGN Phase 3) and never lived
+at a consumer-side `scripts/verify-response-validate.sh`, so this entry
+is expected to be a no-op for every consumer; it exists only to keep
+`STALE_LIST` in strict sync with the Tier-1 table in
+`references/script-ownership.md` (case 6a drift gate).
 
 (Note: `build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`
 are NOT in `STALE_LIST` — they are Tier-2 per

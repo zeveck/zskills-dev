@@ -533,7 +533,7 @@ are the most common source of time waste.
 
 ### Delegate mode verification
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"` (same agent definition as worktree mode — `.claude/agents/verifier.md`). The Layer 3 invocation block (`### Failure Protocol — verifier response validation` below) applies identically: pipe the verifier's response through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"` immediately after the dispatch returns; on `VALIDATE_EXIT=1` OR 45-min timeout, emit the verbatim STOP message and halt the pipeline.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"` (same agent definition as worktree mode — `.claude/agents/verifier.md`). The Layer 3 invocation block (`### Failure Protocol — verifier response validation` below) applies identically: pipe the verifier's response through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"` immediately after the dispatch returns; on `VALIDATE_EXIT=1` OR 45-min timeout, emit the verbatim STOP message and halt the pipeline.
 
 If this phase used delegate execution, verification runs on **main**:
 
@@ -738,11 +738,19 @@ Include this VERBATIM in the verifier dispatch prompt:
 **Detection runs immediately after the verifier `Agent` dispatch returns**, before any tracker write or commit:
 
 ```bash
-printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+# Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane prelude,
+# references/canonical-config-prelude.md §1.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
 VALIDATE_EXIT=$?
 ```
 
-The script (sourced from `hooks/verify-response-validate.sh` at zskills source; installed by `/update-zskills` Step C) checks:
+The script (skill-bundled at `skills/update-zskills/scripts/verify-response-validate.sh` in the zskills source; delivered via the skills tree on both lanes and resolved through `$ZSKILLS_SKILLS_ROOT`) checks:
 - **Stalled-string trigger** — case-insensitive substring match of any of 7 whitelisted phrases against the LAST 10 LINES of the response (`let me wait for the monitor`, `tests are running. let me wait`, `monitor will signal`, `monitor to signal`, `still searching. let me wait`, `waiting on bashoutput`, `polling bashoutput`).
 - **Min-byte threshold** — response < 200 bytes is treated as empty/stub.
 

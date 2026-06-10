@@ -54,13 +54,14 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `sync-pr-body-progress.sh`   | 1      | `run-plan`                   |
 | `test-all.sh`                | 2      | already a partial template (`{{E2E_TEST_CMD}}` placeholders); customized by consumer with their own test commands. **Note:** full conversion to a formal failing stub is deferred to the same follow-up plan. |
 | `verify-completed-checksums.sh` | 1   | `draft-tests`                |
+| `verify-response-validate.sh` | 1     | `update-zskills` (Layer 3 verifier-response validator — relocated from `hooks/` by INSTALL_REDESIGN Phase 3. It never lived at a consumer `scripts/`, so its STALE_LIST entry — required by the case-6a Tier-1↔STALE_LIST sync gate — is defensive and an expected no-op for every consumer; dispatcher skills invoke it via `$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/`) |
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
 | `zskills-paths.sh`           | 1      | sourceable helper setting $ZSKILLS_PLANS_DIR / $ZSKILLS_ISSUES_DIR / $ZSKILLS_AUDIT_DIR; sibling to zskills-resolve-config.sh; vars are NOT exported (callers spawning child processes export explicitly) |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 | `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
-Total: 33 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+Total: 34 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
 `create-worktree`, `defer-backoff-decide`, `detect-language`,
@@ -71,6 +72,7 @@ Total: 33 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `re-invocation-detect`, `review-loop`, `sanitize-pipeline-id`,
 `session-logs`,
 `statusline`, `sync-pr-body-progress`, `verify-completed-checksums`,
+`verify-response-validate`,
 `worktree-add-safe`, `write-landed`, `zskills-paths`, `zskills-stub-lib`);
 4 Tier 2 (`build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
 

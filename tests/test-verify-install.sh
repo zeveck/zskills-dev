@@ -60,6 +60,19 @@ fi
 . "$LIB"
 pass "0. verify-install-lib.sh sourceable"
 
+# ── Congruence pin (INSTALL_REDESIGN Phase 3): the lib's VI_PLUGIN_ARTIFACTS
+# is the SINGLE definition of the plugin-lane materialised artifact set. The
+# plugin fixture builder below DERIVES its fabricated set from it (congruence
+# by construction); this pin additionally locks the 5→4 shrink — exactly 4
+# entries, and verify-response-validate.sh (skill-bundled, never materialised)
+# must NOT be among them — so a vacuous/drifted derivation fails loudly.
+if [ "${#VI_PLUGIN_ARTIFACTS[@]}" -eq 4 ] \
+   && ! printf '%s\n' "${VI_PLUGIN_ARTIFACTS[@]}" | grep -q 'verify-response-validate'; then
+  pass "0b. VI_PLUGIN_ARTIFACTS is the 4-artifact set (no verify-response-validate.sh) — fixtures derive from it"
+else
+  fail "0b. VI_PLUGIN_ARTIFACTS congruence" "expected 4 entries without verify-response-validate.sh; got: ${VI_PLUGIN_ARTIFACTS[*]}"
+fi
+
 # ── Result helpers ──────────────────────────────────────────────────────────
 # Run vi_run_cheap in THIS shell (no subshell) so VI_PASS/WARN/FAIL accumulate,
 # capturing the records to a file for content assertions.
@@ -137,25 +150,34 @@ JSON
 }
 
 # ── Synthetic PLUGIN install builder ────────────────────────────────────────
-# Produces a consumer dir with the 5 materialised artifacts, each carrying a
+# Produces a consumer dir with the materialised artifacts, each carrying a
 # `zskills-materialised:` sentinel, and NO .claude/skills/ mirror (mirror-less).
+# The artifact set is DERIVED from the lib's VI_PLUGIN_ARTIFACTS (the single
+# definition vi_check_plugin iterates — see the 0b congruence pin above), with
+# kind-appropriate sentinel placement selected by path pattern. The fixture and
+# the lib therefore cannot drift.
 make_plugin_good() {
   local c="$TMP/plugin-good-$1"
   rm -rf -- "$c"
-  mkdir -p "$c/.claude/agents" "$c/.claude/hooks" "$c/.claude/rules/zskills"
-  # frontmatter .md artifacts — sentinel as YAML-comment first line in ---.
-  for ag in verifier implementer; do
-    printf '%s\n' '---' '# zskills-materialised: 2026.06.0' "name: $ag" '---' "# $ag" \
-      > "$c/.claude/agents/$ag.md"
+  local a base
+  for a in "${VI_PLUGIN_ARTIFACTS[@]}"; do
+    mkdir -p "$c/.claude/$(dirname "$a")"
+    base="$(basename "$a" .md)"
+    case "$a" in
+      agents/*.md)
+        # frontmatter .md — sentinel as YAML-comment first line in ---.
+        printf '%s\n' '---' '# zskills-materialised: 2026.06.0' "name: $base" '---' "# $base" \
+          > "$c/.claude/$a" ;;
+      *.sh)
+        # *.sh — sentinel as shell-comment on line 2.
+        printf '%s\n' '#!/usr/bin/env bash' '# zskills-materialised: 2026.06.0' 'exit 0' \
+          > "$c/.claude/$a" ;;
+      *.md)
+        # plain .md — sentinel as HTML-comment first line.
+        printf '%s\n' '<!-- zskills-materialised: 2026.06.0 -->' '# rules' \
+          > "$c/.claude/$a" ;;
+    esac
   done
-  # *.sh artifacts — sentinel as shell-comment on line 2.
-  for h in inject-bash-timeout verify-response-validate; do
-    printf '%s\n' '#!/usr/bin/env bash' '# zskills-materialised: 2026.06.0' 'exit 0' \
-      > "$c/.claude/hooks/$h.sh"
-  done
-  # plain .md managed.md — sentinel as HTML-comment first line.
-  printf '%s\n' '<!-- zskills-materialised: 2026.06.0 -->' '# rules' \
-    > "$c/.claude/rules/zskills/managed.md"
   cat > "$c/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme", "zskills_version": "2026.06.0" }
 JSON
@@ -413,7 +435,7 @@ printf '{ "version": "2026.06.0" }\n' > "$CLAUDE_PLUGIN_ROOT/.claude-plugin/plug
 printf '{ "hooks": {} }\n' > "$CLAUDE_PLUGIN_ROOT/hooks/hooks.json"
 run_cheap_capture "$PG" "$OUT"
 if [ "$VI_FAIL" -eq 0 ]; then
-  pass "4. good plugin layout → 0 FAIL (5 sentinelled artifacts, mirror-less)"
+  pass "4. good plugin layout → 0 FAIL (4 sentinelled artifacts, mirror-less)"
 else
   fail "4. good plugin layout" "expected 0 FAIL, got $(grep '^FAIL' "$OUT")"
 fi

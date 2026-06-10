@@ -380,7 +380,10 @@ run_suite "test-verify-install.sh" "tests/test-verify-install.sh"
 run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"
 run_suite "test-managed-md-renderer-equivalence.sh" "tests/test-managed-md-renderer-equivalence.sh"
 run_suite "test-inject-bash-timeout-parity.sh" "tests/test-inject-bash-timeout-parity.sh"
-run_suite "test-verify-response-validate-parity.sh" "tests/test-verify-response-validate-parity.sh"
+# test-verify-response-validate-parity.sh DELETED (INSTALL_REDESIGN Phase 3,
+# subject-removal): the hooks/ + .claude/hooks/ copies it compared no longer
+# exist — the script is skill-bundled at skills/update-zskills/scripts/, and
+# its source↔mirror parity is owned by test-skills-mirror-parity.sh.
 run_suite "test-hook-template-sibling.sh" "tests/test-hook-template-sibling.sh"
 # Phase 3 — dual-path recognition + cron-fire path-aware rules + frontmatter survival.
 run_suite "test-cron-prefix-or-match.sh" "tests/test-cron-prefix-or-match.sh"

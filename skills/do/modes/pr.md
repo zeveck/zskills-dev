@@ -282,13 +282,21 @@ Phase 3 applies it):
   `/verify-changes` in `$WORKTREE_PATH`.
 
 In BOTH cases, after the dispatch returns, pipe `$VERIFIER_RESPONSE`
-through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`;
+through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`;
 on exit 1 STOP — do NOT push and do NOT dispatch `/land-pr`.
 
 **Layer 3 — verifier response validation:**
 
 ```bash
-printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+# Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane prelude,
+# references/canonical-config-prelude.md §1.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
 VALIDATE_EXIT=$?
 ```
 

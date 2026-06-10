@@ -73,7 +73,7 @@ got="$(detect_install_state "$P1")"
 [ "$got" = fresh ] && pass "1a. lane=fresh detected" || fail "1a. expected fresh, got $got"
 err1="$TMP/err1"; run_mat "$P1" "$err1"
 if [ -f "$P1/.claude/rules/zskills/managed.md" ]; then
-  pass "1b. fresh: materialiser writes the 5 artifacts"
+  pass "1b. fresh: materialiser writes the 4 artifacts"
 else
   fail "1b. fresh: materialiser did not write"
 fi
@@ -97,9 +97,11 @@ fi
 #    A plugin-materialised install (sentinelled artifacts) PLUS a consumer's
 #    own non-zskills `.claude/skills/social-seo/SKILL.md` (un-sentinelled).
 #    The consumer skill must NOT count as /update-zskills evidence, so the
-#    install must classify `plugin` AND the materialiser must write all 5
-#    artifacts. (Before the #1064 fix the bare-wildcard SKILL.md loop matched
-#    social-seo → classified update-zskills → materialiser refused.)
+#    install must classify `plugin` AND the materialiser must write all 4
+#    artifacts (verify-response-validate.sh is skill-bundled as of
+#    INSTALL_REDESIGN Phase 3, no longer materialised). (Before the #1064 fix
+#    the bare-wildcard SKILL.md loop matched social-seo → classified
+#    update-zskills → materialiser refused.)
 P2b="$TMP/plugin-consumer-skill"
 base_fixture "$P2b"
 write_sentinelled_hook "$P2b/.claude/hooks/inject-bash-timeout.sh"
@@ -109,15 +111,14 @@ got="$(detect_install_state "$P2b")"
 [ "$got" = plugin ] && pass "2'a. plugin + consumer's own skill → still detected plugin (#1064)" \
   || fail "2'a. expected plugin, got $got (consumer skill mis-counted as legacy evidence)"
 err2b="$TMP/err2b"; run_mat "$P2b" "$err2b"
-# Plugin lane → materialiser must write all 5 artifacts.
+# Plugin lane → materialiser must write all 4 artifacts.
 if [ -f "$P2b/.claude/agents/verifier.md" ] \
    && [ -f "$P2b/.claude/agents/implementer.md" ] \
    && [ -f "$P2b/.claude/hooks/inject-bash-timeout.sh" ] \
-   && [ -f "$P2b/.claude/hooks/verify-response-validate.sh" ] \
    && [ -f "$P2b/.claude/rules/zskills/managed.md" ]; then
-  pass "2'b. plugin + consumer skill: materialiser writes all 5 artifacts (#1064)"
+  pass "2'b. plugin + consumer skill: materialiser writes all 4 artifacts (#1064)"
 else
-  fail "2'b. plugin + consumer skill: materialiser did NOT write all 5 artifacts"
+  fail "2'b. plugin + consumer skill: materialiser did NOT write all 4 artifacts"
   sed 's/^/      /' "$err2b"
 fi
 

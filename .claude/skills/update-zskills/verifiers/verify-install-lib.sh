@@ -74,6 +74,24 @@ vi_emit() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
+# The plugin-lane materialised artifact set — SINGLE definition (Phase 3,
+# INSTALL_REDESIGN_PLAN). Shrunk 5→4: verify-response-validate.sh is no
+# longer materialised — it ships skill-bundled at
+# skills/update-zskills/scripts/ and resolves via $ZSKILLS_SKILLS_ROOT on
+# both lanes. vi_detect_lane and vi_check_plugin both iterate THIS array,
+# and the dev test's plugin fixture builder
+# (tests/test-verify-install.sh make_plugin_good) derives its fabricated
+# artifact set from it — congruence by construction, the fixture and the
+# lib cannot drift.
+# ───────────────────────────────────────────────────────────────────────────
+VI_PLUGIN_ARTIFACTS=(
+  "agents/verifier.md"
+  "agents/implementer.md"
+  "hooks/inject-bash-timeout.sh"
+  "rules/zskills/managed.md"
+)
+
+# ───────────────────────────────────────────────────────────────────────────
 # Lane detection (self-contained — no dependency on detect-install-state.sh).
 #
 # vi_detect_lane <project_dir> → prints one of: plugin | legacy | dual | none
@@ -84,7 +102,7 @@ vi_emit() {
 #   neither                              → none (no install detected)
 #
 # F2 (#1026): the plugin signal is keyed on the CONSUMER project dir's on-disk
-# MATERIALISED SENTINELS — the 5 artifacts the plugin SessionStart materialiser
+# MATERIALISED SENTINELS — the artifacts the plugin SessionStart materialiser
 # writes into $proj/.claude (each carrying a `zskills-materialised:` sentinel) —
 # NOT on the ${CLAUDE_PLUGIN_ROOT} environment variable. On a real mirror-less
 # plugin consumer the verifier runs as a launched/sourced script whose env does
@@ -100,16 +118,16 @@ vi_detect_lane() {
   local proj="$1"
   local plugin_sig=0 legacy_sig=0
 
-  # Plugin signal: at least one of the 5 materialised artifacts present in the
+  # Plugin signal: at least one of the materialised artifacts
+  # (VI_PLUGIN_ARTIFACTS — the single definition above) present in the
   # consumer dir carrying a `zskills-materialised:` sentinel. Reuses the exact
-  # sentinel detection (vi_has_materialiser_sentinel) the plugin-lane checks use.
+  # sentinel detection (vi_has_materialiser_sentinel) the plugin-lane checks
+  # use. Mid-window note: an upgraded consumer may still carry a sentinelled
+  # verify-response-validate.sh under .claude/hooks/ from a pre-relocation
+  # release — that residue is harmless and detection does not need it (any
+  # materialiser-era consumer also carries the 4 artifacts listed here).
   local art
-  for art in \
-    "agents/verifier.md" \
-    "agents/implementer.md" \
-    "hooks/inject-bash-timeout.sh" \
-    "hooks/verify-response-validate.sh" \
-    "rules/zskills/managed.md"; do
+  for art in "${VI_PLUGIN_ARTIFACTS[@]}"; do
     if vi_has_materialiser_sentinel "$proj/.claude/$art"; then
       plugin_sig=1
       break
@@ -216,7 +234,7 @@ vi_resolve_hook_path() {
 
 # vi_is_zskills_hook <basename> → 0 if <basename> is a zskills-OWNED hook
 # (one of the canonical settings.json-owned triples in update-zskills/SKILL.md,
-# plus the two non-registered-but-shipped hooks). Used to scope the integrity
+# plus the non-registered-but-shipped inject-bash-timeout.sh). Used to scope the integrity
 # checks (non-empty + line-2 version stamp) to zskills' OWN hooks — a foreign
 # (consumer-supplied) hook registered alongside zskills ones legitimately does
 # NOT carry the `# zskills-hook-version:` stamp, so blanket-checking every
@@ -226,7 +244,7 @@ vi_is_zskills_hook() {
     block-unsafe-generic.sh|block-unsafe-project.sh|block-stale-skill-version.sh|\
     block-bypassed-land-pr.sh|block-fix-issue-unclaimed.sh|block-run-plan-unclaimed.sh|\
     block-agents.sh|block-bad-cron.sh|block-main-edits.sh|warn-config-drift.sh|\
-    inject-bash-timeout.sh|verify-response-validate.sh)
+    inject-bash-timeout.sh)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -397,9 +415,10 @@ vi_check_legacy() {
     # set of settings.json-registered safety hooks that a HEALTHY legacy install
     # ALWAYS registers (per the canonical zskills-owned triples table in
     # update-zskills/SKILL.md). We deliberately do NOT require inject-bash-timeout.sh
-    # or verify-response-validate.sh here: SKILL.md states those have NO
-    # settings.json entry (loaded via verifier.md frontmatter / direct skill
-    # invocation), so requiring them would false-FAIL every valid legacy install.
+    # here: SKILL.md states it has NO settings.json entry (loaded via
+    # verifier.md frontmatter), so requiring it would false-FAIL every valid
+    # legacy install. (verify-response-validate.sh is skill-bundled as of the
+    # install redesign Phase 3 — not a hook at all, delivered via the mirror.)
     local canon canon_missing=""
     for canon in block-unsafe-generic.sh block-unsafe-project.sh block-stale-skill-version.sh block-agents.sh; do
       case "$registered" in
@@ -475,13 +494,16 @@ vi_check_legacy() {
 # PLUGIN-lane cheap structural checks.
 #
 # vi_check_plugin <project_dir>
-#   - the 5 materialised artifacts present, each carrying a
+#   - the 4 materialised artifacts (VI_PLUGIN_ARTIFACTS, the single
+#     definition at the top of this lib) present, each carrying a
 #     `zskills-materialised:` sentinel:
 #       .claude/agents/verifier.md
 #       .claude/agents/implementer.md
 #       .claude/hooks/inject-bash-timeout.sh
-#       .claude/hooks/verify-response-validate.sh
 #       .claude/rules/zskills/managed.md
+#     (verify-response-validate.sh is skill-bundled as of Phase 3 of the
+#     install redesign — delivered via the plugin skills tree, never
+#     materialised.)
 #   - mirror-less (.claude/skills/ ABSENT in the consumer project)
 #
 # ZERO-FALSE-POSITIVE BAR (#1004): no `plugin.version-recorded` check — the
@@ -492,16 +514,9 @@ vi_check_plugin() {
   local proj="$1"
   local claude="$proj/.claude"
 
-  # (1) The 5 materialised artifacts, each with a materialiser sentinel.
-  local -a artifacts=(
-    "agents/verifier.md"
-    "agents/implementer.md"
-    "hooks/inject-bash-timeout.sh"
-    "hooks/verify-response-validate.sh"
-    "rules/zskills/managed.md"
-  )
+  # (1) The 4 materialised artifacts, each with a materialiser sentinel.
   local a dest
-  for a in "${artifacts[@]}"; do
+  for a in "${VI_PLUGIN_ARTIFACTS[@]}"; do
     dest="$claude/$a"
     if [ ! -f "$dest" ]; then
       vi_emit FAIL "plugin.artifact.$a" "materialised artifact missing: .claude/$a"

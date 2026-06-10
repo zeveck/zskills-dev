@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.10+0a2e12"
+  version: "2026.06.10+ddccb8"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -1017,12 +1017,20 @@ Verification intensity matches the change type (from Phase 1):
   Do NOT invoke `/verify-changes` for content-only changes — it will run
   the full test suite regardless. Instead, dispatch a plain review agent.
 
-  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is sufficient for content review (Read + Grep cover the main path); the prose preamble above keeps it from running tests. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is sufficient for content review (Read + Grep cover the main path); the prose preamble above keeps it from running tests. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
 
   **Layer 3 — verifier response validation:**
 
   ```bash
-  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  # Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane
+  # prelude, references/canonical-config-prelude.md §1.
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
   VALIDATE_EXIT=$?
   ```
 
@@ -1064,12 +1072,20 @@ Verification intensity matches the change type (from Phase 1):
   `auto` flag (issue #713) — `auto` controls autonomous landing, not
   whether to verify.
 
-  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
 
   **Layer 3 — verifier response validation:**
 
   ```bash
-  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  # Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane
+  # prelude, references/canonical-config-prelude.md §1.
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
   VALIDATE_EXIT=$?
   ```
 

@@ -159,7 +159,6 @@ MAT_RC=$?
 V="$PROJ/.claude/agents/verifier.md"
 I="$PROJ/.claude/agents/implementer.md"
 H1="$PROJ/.claude/hooks/inject-bash-timeout.sh"
-H2="$PROJ/.claude/hooks/verify-response-validate.sh"
 M="$PROJ/.claude/rules/zskills/managed.md"
 
 # 1. Materialiser must complete cleanly (exit 0) — it must NOT abort on the
@@ -177,12 +176,14 @@ else
   pass "2. materialiser did NOT report 'no working Python 3'"
 fi
 
-# 3. All five artifacts materialised (proves the python-driven render/inject
-#    steps actually ran via the real interpreter).
-if [ -f "$V" ] && [ -f "$I" ] && [ -f "$H1" ] && [ -f "$H2" ] && [ -f "$M" ]; then
-  pass "3. all 5 artifacts materialised end-to-end under the stub"
+# 3. All four artifacts materialised (proves the python-driven render/inject
+#    steps actually ran via the real interpreter). (Was five —
+#    verify-response-validate.sh is skill-bundled as of INSTALL_REDESIGN
+#    Phase 3 and no longer materialised.)
+if [ -f "$V" ] && [ -f "$I" ] && [ -f "$H1" ] && [ -f "$M" ]; then
+  pass "3. all 4 artifacts materialised end-to-end under the stub"
 else
-  fail "3. missing artifact(s): V=$([ -f "$V" ]&&echo y||echo n) I=$([ -f "$I" ]&&echo y||echo n) H1=$([ -f "$H1" ]&&echo y||echo n) H2=$([ -f "$H2" ]&&echo y||echo n) M=$([ -f "$M" ]&&echo y||echo n)"
+  fail "3. missing artifact(s): V=$([ -f "$V" ]&&echo y||echo n) I=$([ -f "$I" ]&&echo y||echo n) H1=$([ -f "$H1" ]&&echo y||echo n) M=$([ -f "$M" ]&&echo y||echo n)"
 fi
 
 # 4. The rendered managed.md must carry the substitution from the config

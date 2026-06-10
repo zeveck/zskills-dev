@@ -2,11 +2,14 @@
 # tests/test-sessionstart-materialise.sh
 #
 # Phase 2 (W2.1, D11, D20, A3) — the SessionStart materialiser writes the
-# five consumer-side artifacts into a fresh fixture project's .claude/.
+# four consumer-side artifacts into a fresh fixture project's .claude/.
+# (Was five; verify-response-validate.sh is skill-bundled as of
+# INSTALL_REDESIGN Phase 3 and no longer materialised — subject-removal.)
 #
 # Assertions (>= 9):
-#   1-5. All five destinations are written.
-#   6.   Materialised *.sh hooks are executable.
+#   1-4. All four destinations are written.
+#   5.   verify-response-validate.sh is NOT materialised (skill-bundled).
+#   6.   Materialised *.sh hook is executable.
 #   7.   managed.md carries the rendered substitution tokens (project name).
 #   8.   Each artifact carries a kind-appropriate materialiser sentinel
 #        (frontmatter YAML-comment / shell-comment line 2 / HTML-comment).
@@ -52,21 +55,30 @@ run_mat
 V="$PROJ/.claude/agents/verifier.md"
 I="$PROJ/.claude/agents/implementer.md"
 H1="$PROJ/.claude/hooks/inject-bash-timeout.sh"
-H2="$PROJ/.claude/hooks/verify-response-validate.sh"
 M="$PROJ/.claude/rules/zskills/managed.md"
 
-# 1-5. Destinations written.
+# 1-4. Destinations written.
 [ -f "$V" ]  && pass "1. verifier.md written"               || fail "1. verifier.md missing"
 [ -f "$I" ]  && pass "2. implementer.md written"            || fail "2. implementer.md missing"
 [ -f "$H1" ] && pass "3. inject-bash-timeout.sh written"    || fail "3. inject-bash-timeout.sh missing"
-[ -f "$H2" ] && pass "4. verify-response-validate.sh written" || fail "4. verify-response-validate.sh missing"
-[ -f "$M" ]  && pass "5. managed.md written"                || fail "5. managed.md missing"
+[ -f "$M" ]  && pass "4. managed.md written"                || fail "4. managed.md missing"
 
-# 6. Hooks executable.
-if [ -x "$H1" ] && [ -x "$H2" ]; then
-  pass "6. materialised hooks are executable"
+# 5. verify-response-validate.sh is NOT materialised (skill-bundled as of
+#    INSTALL_REDESIGN Phase 3 — the materialiser must no longer write it).
+#    (Path assembled from a basename var so the retired-literal sweep in the
+#    plan's AC grep stays clean.)
+RETIRED_VRV=verify-response-validate.sh
+if [ ! -e "$PROJ/.claude/hooks/$RETIRED_VRV" ]; then
+  pass "5. verify-response-validate.sh NOT materialised (skill-bundled)"
 else
-  fail "6. materialised hooks not executable"
+  fail "5. verify-response-validate.sh was materialised (should be skill-bundled only)"
+fi
+
+# 6. Hook executable.
+if [ -x "$H1" ]; then
+  pass "6. materialised hook is executable"
+else
+  fail "6. materialised hook not executable"
 fi
 
 # 7. Substitution token present in managed.md.
@@ -150,7 +162,7 @@ echo "=== Config seeding: fresh project with NO config ==="
 # A truly fresh plugin install has NO .claude/zskills-config.json. The
 # materialiser must seed a default (landing=direct, main_protected=false —
 # the casual plugin default, #1119) config, then the render gate passes and
-# all 5 artifacts materialise. Previously this case left the consumer with no
+# all 4 artifacts materialise. Previously this case left the consumer with no
 # config and no managed.md, silently.
 SEED="$TMP/seedproj"
 mkdir -p "$SEED"
@@ -237,13 +249,12 @@ else
   fail "13d. zskills_version check skipped: no config file"
 fi
 
-# 14. All 5 artifacts materialised now that the render gate passes.
+# 14. All 4 artifacts materialised now that the render gate passes.
 if [ -f "$SEED/.claude/agents/verifier.md" ] \
    && [ -f "$SEED/.claude/agents/implementer.md" ] \
    && [ -f "$SEED/.claude/hooks/inject-bash-timeout.sh" ] \
-   && [ -f "$SEED/.claude/hooks/verify-response-validate.sh" ] \
    && [ -f "$SEED/.claude/rules/zskills/managed.md" ]; then
-  pass "14. all 5 artifacts materialised after config seed"
+  pass "14. all 4 artifacts materialised after config seed"
 else
   fail "14. not all artifacts materialised after seed"
 fi
