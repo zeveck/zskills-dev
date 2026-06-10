@@ -210,6 +210,7 @@ run_suite "test-update-zskills-paths-migration.sh" "tests/test-update-zskills-pa
 run_suite "test-migrate-paths-awk.sh" "tests/test-migrate-paths-awk.sh"
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 run_suite "test-update-zskills-lane-aware.sh" "tests/test-update-zskills-lane-aware.sh"
+run_suite "test-update-zskills-init.sh" "tests/test-update-zskills-init.sh"
 run_suite "test-managed-md-up-to-date.sh" "tests/test-managed-md-up-to-date.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-cleanup-merged-ahead-gate.sh" "tests/test-cleanup-merged-ahead-gate.sh"

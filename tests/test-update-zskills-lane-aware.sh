@@ -104,7 +104,8 @@ else
   fail "fail-soft default LANE=update-zskills missing"
 fi
 
-# The plugin-lane explanation text is present (reuse existing phrasing).
+# The plugin-lane explanation text is present (reuse existing phrasing —
+# now part of the update arm's summary).
 if grep -q "plugin-managed" "$REPO_ROOT/$SKILL" \
    && grep -q "plugin marketplace update" "$REPO_ROOT/$SKILL"; then
   pass "plugin-lane explanation text present in branch"
@@ -112,15 +113,61 @@ else
   fail "plugin-lane explanation text missing"
 fi
 
-# The bare-call plugin arm now ALSO runs the post-install verifier (the
-# plugin-lane analog of Step G.5). Scope the assertion to the Step 0.7
-# region (from its header to the next top-level '## ' header) so it does not
-# spuriously match Step G.5's own verify-install.sh reference further down.
+# The bare-call plugin arm is the explicit init/update entry point
+# (INSTALL_REDESIGN Phase 6a). Scope the assertions to the Step 0.7 region
+# (from its header to the next top-level '## ' header) so they do not
+# spuriously match Step G.5's own references further down.
 STEP07_REGION="$(awk '/^## Step 0\.7 — Lane check/{f=1} f{print} f&&/^## Bare-preset config-only short-circuit/{exit}' "$REPO_ROOT/$SKILL")"
 if printf '%s\n' "$STEP07_REGION" | grep -q "verify-install.sh"; then
-  pass "Step 0.7 plugin branch references verify-install.sh (runs post-install verifier)"
+  pass "Step 0.7 plugin branch references verify-install.sh (A6 verify, report-only this phase)"
 else
   fail "Step 0.7 plugin branch does NOT reference verify-install.sh (verifier not wired into bare-call arm)"
+fi
+
+# ── Init-flow pins (Phase 6a A0–A7) ───────────────────────────────────────
+# (a) The arm sources init-state.sh (#1132 single path definition) and uses
+#     its routing predicate + lock-LAST writer — never re-typed marker paths.
+for needle in "scripts/init-state.sh" "zskills_init_done_present" "zskills_write_init_markers"; do
+  if printf '%s\n' "$STEP07_REGION" | grep -q "$needle"; then
+    pass "Step 0.7 init arm carries '$needle' (init-state.sh-sourced flow)"
+  else
+    fail "Step 0.7 init arm MISSING '$needle'"
+  fi
+done
+
+# (b) A1.5 cleanup is wired via the init-state.sh helpers (referential — the
+#     frozen legacy-residue literals live ONLY in init-state.sh).
+for needle in "zskills_legacy_remove_sentinelled" "zskills_legacy_seed_config_matches" "zskills_legacy_consume_seed_notice"; do
+  if printf '%s\n' "$STEP07_REGION" | grep -q "$needle"; then
+    pass "Step 0.7 A1.5 cleanup references $needle"
+  else
+    fail "Step 0.7 A1.5 cleanup MISSING $needle"
+  fi
+done
+
+# (c) Literal-string discipline: the frozen legacy-residue literals appear
+#     NOWHERE in the Step 0.7 region — derive them by sourcing init-state.sh
+#     (never re-typed here either).
+. "$REPO_ROOT/skills/update-zskills/scripts/init-state.sh"
+if printf '%s\n' "$STEP07_REGION" | grep -qF "$ZSKILLS_LEGACY_SENTINEL_PREFIX"; then
+  fail "Step 0.7 region re-types the D20 sentinel prefix (must stay only in init-state.sh)"
+else
+  pass "Step 0.7 region carries NO re-typed D20 sentinel prefix (discipline holds)"
+fi
+if printf '%s\n' "$STEP07_REGION" | grep -qF "$ZSKILLS_LEGACY_SEED_NOTICE_REL"; then
+  fail "Step 0.7 region re-types the seed-notice path (must stay only in init-state.sh)"
+else
+  pass "Step 0.7 region carries NO re-typed seed-notice path (discipline holds)"
+fi
+
+# (d) Gitignore-first ordering: the check-ignore verification appears BEFORE
+#     the lock-LAST writer call within the region.
+GI_LINE="$(printf '%s\n' "$STEP07_REGION" | grep -n 'check-ignore' | head -1 | cut -d: -f1)"
+LOCK_LINE="$(printf '%s\n' "$STEP07_REGION" | grep -n 'zskills_write_init_markers' | head -1 | cut -d: -f1)"
+if [ -n "$GI_LINE" ] && [ -n "$LOCK_LINE" ] && [ "$GI_LINE" -lt "$LOCK_LINE" ]; then
+  pass "gitignore-first: check-ignore verification precedes the lock-LAST writer (lines $GI_LINE < $LOCK_LINE)"
+else
+  fail "gitignore-first ordering broken (check-ignore@$GI_LINE, writer@$LOCK_LINE)"
 fi
 
 # ── AC1 — pure-plugin not flipped ─────────────────────────────────────────

@@ -96,7 +96,8 @@ for known in \
   tests/test-plugin-live-load.sh \
   tests/test-switch-install-path.sh \
   tests/test-agents-parity.sh \
-  tests/test-session-rules-context.sh ; do
+  tests/test-session-rules-context.sh \
+  tests/test-update-zskills-init.sh ; do
   if printf '%s\n' "$SUITES" | grep -qx "$known"; then
     pass "[enum] $known is in the registered set"
   else

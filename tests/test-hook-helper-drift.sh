@@ -135,6 +135,7 @@ RESOLVE_PYTHON_CONSUMERS=(
   scripts/switch-install-path.sh
   scripts/_lib/finalize-prod-tree.sh
   skills/update-zskills/verifiers/verify-install-lib.sh
+  skills/update-zskills/scripts/init-state.sh
   skills/update-zskills/scripts/migrate-paths.sh
   skills/update-zskills/scripts/session-logs.sh
   skills/create-worktree/scripts/check-inflight-batch.sh

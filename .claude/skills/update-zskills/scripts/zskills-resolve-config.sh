@@ -238,28 +238,31 @@ if [ -f "$_ZSK_CFG" ]; then
 fi
 unset -f _zsk_extract_cascade_keys
 
-# ── ZSKILLS_VERSION fallback: .zskills/init-done `version:` line ───────────
-# Config-less consumers carry the installed version in .zskills/init-done
-# (written by the Phase 6a explicit init: `version:` + `date:` lines). Until
-# Phase 6a lands this fallback simply finds no file and yields empty — safe.
-#
-# #1132 note: the `.zskills/init-done` literal below is a TEMPORARY re-type —
-# init-state.sh (the single path definition) does not exist until Phase 6a;
-# Phase 6a item A0 retargets this fallback to source init-state.sh and use
-# $ZSKILLS_INIT_DONE_REL.
-if [ -z "$ZSKILLS_VERSION" ] && [ -f "$CLAUDE_PROJECT_DIR/.zskills/init-done" ]; then
-  while IFS= read -r _ZSK_IDLINE || [ -n "$_ZSK_IDLINE" ]; do
-    case "$_ZSK_IDLINE" in
-      version:*)
-        ZSKILLS_VERSION="${_ZSK_IDLINE#version:}"
-        # Trim surrounding whitespace.
-        ZSKILLS_VERSION="${ZSKILLS_VERSION#"${ZSKILLS_VERSION%%[![:space:]]*}"}"
-        ZSKILLS_VERSION="${ZSKILLS_VERSION%"${ZSKILLS_VERSION##*[![:space:]]}"}"
-        break
-        ;;
-    esac
-  done < "$CLAUDE_PROJECT_DIR/.zskills/init-done"
-  unset _ZSK_IDLINE
+# ── ZSKILLS_VERSION fallback: the init-done marker's `version:` line ───────
+# Config-less consumers carry the installed version in the init-done marker
+# (written by the Phase 6a explicit init: `version:` + `date:` lines). The
+# marker path comes from init-state.sh — the #1132 single path definition,
+# shipped in this same directory (BASH_SOURCE self-location) — never a
+# re-typed literal (Phase 6a item A0 closed the documented Phase 5 re-type
+# window). If init-state.sh is somehow unreachable, the fallback is skipped
+# and ZSKILLS_VERSION stays empty (fail-open, no literal fallback).
+if [ -z "$ZSKILLS_VERSION" ] && [ -f "${BASH_SOURCE[0]%/*}/init-state.sh" ]; then
+  # shellcheck source=skills/update-zskills/scripts/init-state.sh
+  . "${BASH_SOURCE[0]%/*}/init-state.sh"
+  if [ -f "$CLAUDE_PROJECT_DIR/$ZSKILLS_INIT_DONE_REL" ]; then
+    while IFS= read -r _ZSK_IDLINE || [ -n "$_ZSK_IDLINE" ]; do
+      case "$_ZSK_IDLINE" in
+        version:*)
+          ZSKILLS_VERSION="${_ZSK_IDLINE#version:}"
+          # Trim surrounding whitespace.
+          ZSKILLS_VERSION="${ZSKILLS_VERSION#"${ZSKILLS_VERSION%%[![:space:]]*}"}"
+          ZSKILLS_VERSION="${ZSKILLS_VERSION%"${ZSKILLS_VERSION##*[![:space:]]}"}"
+          break
+          ;;
+      esac
+    done < "$CLAUDE_PROJECT_DIR/$ZSKILLS_INIT_DONE_REL"
+    unset _ZSK_IDLINE
+  fi
 fi
 
 # ── Built-in defaults (cascade tier 3) — fill still-empty keys ──────────────

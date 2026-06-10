@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+f83c88"
+  version: "2026.06.10+8457b2"
 ---
 
 # Update Z Skills Infrastructure
@@ -1071,53 +1071,272 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   **`### Bare-preset config-only short-circuit`** below, and exit with the
   script's exit code. Do not proceed to the audit or any fill step.
 
-- **Else (bare call, no preset):** FIRST run the bundled verifier's cheap
-  structural tier, THEN print the plugin-lane explanation and exit 0.
-
-  This is the plugin-lane analog of **`#### Step G.5 — Post-install
-  verification`**: a read-only, NON-FATAL health check ("verify at install
-  completion" equivalent) for the most-common single-lane install state. A
-  bare `/update-zskills` on the plugin lane does no install work (the plugin
-  manager owns skills/hooks/rules), but the consumer-side install can still
-  be subtly broken (a registered hook resolving to nothing, an un-rendered
-  `managed.md` carrying raw `{{TOKEN}}` placeholders, a dropped
-  artifact/sentinel, an accidental dual-install). Running the verifier here
-  surfaces that breakage even though there is no install/update path to wire
-  Step G.5 into on this lane. It is **read-only and NON-FATAL** — it reports
-  PASS/WARN/FAIL but never aborts and **cannot re-create the legacy
-  `.claude/skills` mirror** (the verifier only inspects state). Run ONLY the
-  cheap structural tier here — never `--deep` (the heavy live-`claude` probe
-  is opt-in and must not run on a bare informational call). Resolve the
-  verifier path lane-awarely, exactly as Step G.5 does:
+- **Else (bare call, no preset): the explicit init / update entry point
+  (INSTALL_REDESIGN Phase 6a, item A1).** A bare `/zs:update-zskills` on the
+  plugin lane is the ONE-TIME explicit setup (init) — or, once initialised,
+  the update/refresh pass. The route is keyed on the init-done marker, whose
+  path (and the marker writer, and the frozen legacy-residue constants the
+  cleanup below consumes) is defined in exactly ONE place —
+  `skills/update-zskills/scripts/init-state.sh` (#1132 single-path-definition
+  rule). Source it first; never re-type the marker paths:
 
   ```bash
-  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
+  # Single path definition (#1132): paths + lock-LAST writer + frozen
+  # legacy-residue constants. Plugin root first; legacy-mirror fallback.
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/init-state.sh" ]; then
     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-    VERIFY_INSTALL="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/init-state.sh"
   else
-    VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/init-state.sh"
   fi
-  if [ -f "$VERIFY_INSTALL" ]; then
-    # Cheap tier only (no --deep). Non-fatal: report, never abort.
-    bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
-      echo "(post-install verification reported a FAIL above — review and fix your environment)"
-  else
-    echo "(post-install verifier not found at $VERIFY_INSTALL — skipping verification)"
-  fi
+  # The version recorded in the init-done marker (and refreshed on update).
+  # resolve-repo-version.sh falls back to .claude-plugin/plugin.json (#1124).
+  ZS_INIT_VERSION="$(bash "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/resolve-repo-version.sh" "${CLAUDE_PLUGIN_ROOT}" 2>/dev/null || true)"
   ```
 
-  THEN print the plugin-lane explanation and exit 0:
+  Then run **step A1.5 — materialiser-residue cleanup** (below) FIRST, and
+  route: `zskills_init_done_present "$CLAUDE_PROJECT_DIR"` true → the
+  **update arm**; false → the **init sequence** (A2–A7, in order). Both
+  arms are defined below.
 
-  ```
-  You're on the plugin lane. Skills, hooks, and rules are plugin-managed —
-  update them with `/plugin marketplace update`, not `/update-zskills`. To
-  change landing mode here, run
-  `/zs:update-zskills <cherry-pick|locked-main-pr|direct>` or edit
-  `.claude/zskills-config.json` directly (config is the single source of
-  truth for mode). To switch install lanes, use
-  `scripts/switch-install-path.sh` (or
-  `/update-zskills --switch-install-path=...`).
-  ```
+  **Step A1.5 — materialiser-residue cleanup (BOTH arms, before anything
+  else).** Upgraded (materialiser-era) consumers otherwise keep stale
+  artifacts forever: stale `.claude/agents` twins that SHADOW the plugin's
+  own agents on bare-name dispatch, and a stale project `managed.md` that
+  keeps the SessionStart rules hook's guard closed. The discriminator is
+  the D20 sentinel prefix constant from `init-state.sh` — user-owned and
+  legacy-lane-installed files never carry it and are NEVER touched.
+
+  - **(a) Sentinelled-artifact removal (unconditional, deterministic):**
+
+    ```bash
+    # Deletes each legacy materialiser artifact IFF it carries the D20
+    # sentinel (constants + predicate live ONLY in init-state.sh).
+    ZS_REMOVED_ARTIFACTS="$(zskills_legacy_remove_sentinelled "$CLAUDE_PROJECT_DIR")"
+    ```
+
+  - **(b) Seeded-config cure:** fire the offer ONLY when the legacy seed
+    notice exists AND the config still matches the frozen legacy seed shape
+    (value-bearing keys only — the comparison spec, which excludes the three
+    per-install dynamic keys, lives in `init-state.sh`'s matcher):
+
+    ```bash
+    ZS_SEED_OFFER=0
+    ZS_REMOVED_CONFIG_THIS_RUN=0
+    if zskills_legacy_seed_notice_present "$CLAUDE_PROJECT_DIR" \
+       && zskills_legacy_seed_config_matches "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"; then
+      ZS_SEED_OFFER=1
+    fi
+    ```
+
+    If `ZS_SEED_OFFER=1` AND the session is interactive, ask in plain
+    conversation text: *"This config was auto-seeded by the old installer
+    and never customized; remove it and run on built-in defaults?"* —
+    **Accept** → delete `.claude/zskills-config.json`, its
+    `.claude/zskills-config.schema.json` sibling, consume the notice
+    (`zskills_legacy_consume_seed_notice "$CLAUDE_PROJECT_DIR"`), and set
+    `ZS_REMOVED_CONFIG_THIS_RUN=1`. **Decline**, **non-interactive**, or
+    **shape-mismatch** (= the user customized it) → KEEP the config as
+    user-owned and still consume the notice. The notice is consumed exactly
+    once on every path, so the offer never repeats (W6.3 no-nag lesson).
+
+  - **Mid-window caveat (known transient, converges at Phase 7):** while
+    the SessionStart materialiser is still alive, every sentinelled
+    artifact removed here is re-materialised at the next session start,
+    and an accepted config removal is re-seeded with the notice re-touched
+    (so the offer re-fires on a later run). This re-pollution per session
+    is EXPECTED, not an A1.5 defect; it becomes permanent cleanup when
+    Phase 7 deletes the materialiser. Do NOT edit the materialiser to
+    avoid it.
+
+  - Include everything removed (`$ZS_REMOVED_ARTIFACTS`, the config/schema/
+    notice if cured) in the arm's final summary.
+
+  **Init sequence (init-done absent) — steps A2–A7, in order. Lock-LAST:
+  the init-done marker is written ONLY at A7, after every prior step
+  succeeded; any earlier STOP leaves the consumer cleanly re-runnable.**
+
+  - **A2 — gitignore-first.** Append the umbrella `.zskills/` entry to the
+    project `.gitignore` (idempotent — skip when an equivalent rule already
+    covers), then VERIFY effectiveness and detect a negative-override that
+    defeats it. This runs BEFORE any other init write; on STOP, no marker
+    has been written:
+
+    ```bash
+    GI="$CLAUDE_PROJECT_DIR/.gitignore"
+    [ -f "$GI" ] || touch "$GI"
+    # Idempotent append: only when .zskills/ paths are not already ignored.
+    if ! git -C "$CLAUDE_PROJECT_DIR" check-ignore -q .zskills/probe 2>/dev/null; then
+      echo ".zskills/" >> "$GI"
+    fi
+    # Verify effective ignore (the migrate-paths Step 8 pattern). A probe
+    # PATHNAME is enough — check-ignore does not require the file to exist.
+    zs_gi_match=$(git -C "$CLAUDE_PROJECT_DIR" check-ignore -v .zskills/probe 2>/dev/null) || {
+      echo "STOP: .zskills/ is not effectively ignored even after appending the umbrella entry." >&2
+      echo "Init did NOT complete (no init-done marker was written). Fix .gitignore (or run inside a git repo) and re-run /zs:update-zskills." >&2
+      exit 1
+    }
+    case "$zs_gi_match" in
+      *!*)
+        echo "STOP: a negative .gitignore rule overrides the .zskills/ ignore: $zs_gi_match" >&2
+        echo "Init did NOT complete (no init-done marker was written). Remove the override and re-run /zs:update-zskills." >&2
+        exit 1 ;;
+    esac
+    ```
+
+  - **A3 — optional config interview (plugin-lane init arm ONLY — the
+    legacy lane's Step 0.6 keeps its existing config-absent gate
+    byte-untouched; this gate is init-done-keyed and lives only here).**
+    In a NON-INTERACTIVE context (cron-fired, headless, or an agent
+    dispatch with no human to answer) SKIP the interview entirely — write
+    nothing, defaults flow from the config cascade, the version lives in
+    the init-done marker, and a later interactive bare run can still offer
+    config via the update arm. If A1.5(b) just removed the seeded config
+    THIS run, also skip — the consumer chose zero-config; re-offering
+    immediately would contradict the choice (a later bare run re-offers
+    via the update arm). Otherwise:
+    - **A config already exists** (commonly: the still-live materialiser
+      seeded one before init could run — a known transient that dies in
+      Phase 7): say *"A config already exists at
+      `.claude/zskills-config.json` (it may have been auto-seeded) —
+      review it, especially `testing.unit_cmd`/`full_cmd` and
+      `execution.landing`."* Keep it on any answer — init NEVER clobbers
+      and NEVER deletes a config.
+    - **No config exists:** offer creation — *"Want a project config?
+      Without one, zskills runs on built-in defaults (landing=direct,
+      timezone=UTC); a config lets you set test commands, landing mode,
+      etc."* On **decline**, write NOTHING. On **accept**, seed from the
+      canonical defaults artifact (never a re-typed dict), atomically and
+      never-clobber, then copy the schema sibling and stamp
+      `zskills_version` (the Step F.5-region scripts) ONLY when the config
+      file exists:
+
+      ```bash
+      if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+        export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+        . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      else
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      fi
+      [ -n "$PYTHON" ] || { echo "ERROR: zskills requires Python 3 — install it or set ZSKILLS_PYTHON" >&2; exit 1; }
+      ZS_CONFIG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
+      ZS_DEFAULTS="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-defaults.json"
+      if [ ! -f "$ZS_CONFIG" ]; then   # never-clobber
+        mkdir -p "$CLAUDE_PROJECT_DIR/.claude"
+        zs_cfg_tmp="$ZS_CONFIG.zskills-tmp.$$"
+        PROJECT_NAME="$(basename "$CLAUDE_PROJECT_DIR")" "$PYTHON" - "$ZS_DEFAULTS" "$zs_cfg_tmp" <<'PY'
+import json, os, sys
+with open(sys.argv[1]) as f:
+    defaults = json.load(f)
+defaults.pop("_comment", None)
+seed = {"$schema": "./zskills-config.schema.json",
+        "project_name": os.environ["PROJECT_NAME"]}
+seed.update(defaults)
+with open(sys.argv[2], "w") as f:
+    json.dump(seed, f, indent=2)
+    f.write("\n")
+PY
+        if [ -s "$zs_cfg_tmp" ]; then
+          mv "$zs_cfg_tmp" "$ZS_CONFIG"
+        else
+          rm -f "$zs_cfg_tmp"
+          echo "WARN: failed to seed .claude/zskills-config.json — continuing config-less (defaults apply)" >&2
+        fi
+      fi
+      if [ -f "$ZS_CONFIG" ]; then
+        ZS_SCHEMA_SRC="${CLAUDE_PLUGIN_ROOT}/config/zskills-config.schema.json"
+        ZS_SCHEMA_DEST="$CLAUDE_PROJECT_DIR/.claude/zskills-config.schema.json"
+        if [ -f "$ZS_SCHEMA_SRC" ] && [ ! -f "$ZS_SCHEMA_DEST" ]; then
+          cp "$ZS_SCHEMA_SRC" "$ZS_SCHEMA_DEST" \
+            || echo "WARN: failed to copy zskills-config.schema.json — the config's \$schema ref will dangle" >&2
+        fi
+        if [ -n "$ZS_INIT_VERSION" ]; then
+          bash "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/json-set-string-field.sh" \
+            "$ZS_CONFIG" zskills_version "$ZS_INIT_VERSION" \
+            || echo "WARN: failed to stamp zskills_version into config" >&2
+        fi
+      fi
+      ```
+
+  - **A4 — branch-dependent artifact writes: NO-OP on the landed branches.**
+    Phase 1 selected agents = 1A (the plugin's root `agents/` dispatches
+    directly) and timeout = T-A (Layer-0 ships via the plugin's
+    `hooks/hooks.json`), so init writes NO project-side agents and NO
+    project-side hooks. (The unselected 1B/T-C branch specs live in
+    `docs/plans/INSTALL_REDESIGN_PLAN.md` Phase 6a item A4, not in shipped
+    prose.)
+  - **A5 — rules delivery: NO-OP on the landed branch.** Rules = R-b: the
+    plugin's SessionStart `session-rules-context.sh` hook delivers the
+    rendered rules as `additionalContext` every session — nothing to write
+    at init.
+  - **A6 — verify (REPORT-ONLY this phase).** Run the bundled verifier's
+    cheap structural tier — read-only, NON-FATAL: report PASS/WARN/FAIL in
+    the init summary but never abort init on it. (Phase 6b flips this to a
+    hard gate once the verifier's plugin-section checks are init-keyed; the
+    pre-rework sentinel-era checks would false-fail a healthy init right
+    after A1.5's cleanup.) Never `--deep`. Resolve lane-awarely, exactly as
+    Step G.5 does:
+
+    ```bash
+    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
+      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+      VERIFY_INSTALL="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh"
+    else
+      VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
+    fi
+    if [ -f "$VERIFY_INSTALL" ]; then
+      # Cheap tier only (no --deep). Report-only this phase: never abort init.
+      bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
+        echo "(verification reported a FAIL above — report-only during the redesign window; review and fix your environment)"
+    else
+      echo "(post-install verifier not found at $VERIFY_INSTALL — skipping verification)"
+    fi
+    ```
+
+  - **A7 — lock-LAST.** Write the markers LAST, via the single writer
+    (setup-confirmed first, then init-done — both atomic; init-done carries
+    the `version:` + `date:` record read by the config-less version
+    fallback):
+
+    ```bash
+    zskills_write_init_markers "$CLAUDE_PROJECT_DIR" "$ZS_INIT_VERSION" || {
+      echo "STOP: failed to write the init markers — init is incomplete; re-run /zs:update-zskills." >&2
+      exit 1
+    }
+    ```
+
+    Then print the post-init footprint summary: exactly what was created
+    (the `.zskills/` gitignore entry; the two `.zskills/` markers; the
+    optional config + schema, only if accepted) and what A1.5 removed.
+    Exit 0.
+
+  **Update arm (init-done present) — A1.5 already ran; then:**
+
+  - **Rules refresh:** no-op on R-b (the SessionStart hook re-renders every
+    session; there is no project-side rules copy to refresh).
+  - **Conditional config offer:** when NO `.claude/zskills-config.json`
+    exists AND A1.5 did not just remove one THIS run
+    (`ZS_REMOVED_CONFIG_THIS_RUN=0` — a consumer who accepted the
+    seeded-config removal has chosen zero-config; immediately re-offering
+    would contradict the choice; the offer stays available on a LATER bare
+    run), offer creation via the same A3 interview (same accept fence,
+    same non-interactive skip).
+  - **Re-run verify-install** — the same A6 fence (report-only, cheap tier).
+  - **Refresh the version line in the init-done marker** — re-run the same
+    single writer: `zskills_write_init_markers "$CLAUDE_PROJECT_DIR"
+    "$ZS_INIT_VERSION"` (atomic rewrite; re-stamping setup-confirmed is the
+    same "ran /update-zskills" semantics the legacy lane records).
+  - Print the update summary — include A1.5 removals, then the standing
+    plugin-lane explanation — and exit 0:
+
+    ```
+    You're on the plugin lane. Skills, hooks, and rules are plugin-managed —
+    update them with `/plugin marketplace update`, not `/update-zskills`. To
+    change landing mode here, run
+    `/zs:update-zskills <cherry-pick|locked-main-pr|direct>` or edit
+    `.claude/zskills-config.json` directly (config is the single source of
+    truth for mode).
+    ```
 
 **Plugin-pre-materialise guard (`LANE == fresh` AND `$CLAUDE_PLUGIN_ROOT`
 set) — #1080.** Before the bare-preset / Default-Mode dispatch below, handle
@@ -1633,6 +1852,16 @@ Tracking files are ephemeral session state and should never be committed.
 `scripts/stop-dev.sh` reads PIDs from `.zskills/dev-server.pid` (written
 by the project's dev server launcher); PID files are per-worktree runtime
 state and must never be committed.
+
+**Add the `.zskills/` umbrella entry to `.gitignore` (INSTALL_REDESIGN
+Phase 6a A2 — the one planned legacy-lane addition):** idempotent append of
+a `.zskills/` line if `.zskills/` paths are not already effectively ignored
+(`git check-ignore -q .zskills/probe`). All `.zskills/` content is
+per-checkout runtime state; the umbrella entry converges both install lanes
+on the same ignore rule (the per-subdir lines above remain for consumers
+who pre-date the umbrella). This runs on install AND on the update path's
+gap-fill, so legacy consumers upgrading later get the same append the
+plugin-lane init performs.
 
 Then register the hooks in `.claude/settings.json` via a **surgical
 agent-driven merge** — `Read` + `Edit` only, never `Write`-from-template.
@@ -2268,13 +2497,15 @@ user the install succeeded but verification flagged an environment issue.
 **Write the `setup-confirmed` marker (#1119).** A successful install means the
 consumer has now run `/update-zskills` — record that so the plugin SessionStart
 greeting (`👋 zskills installed. Run /update-zskills …`) goes silent from the
-next session on. Write a one-line ISO timestamp to `.zskills/setup-confirmed`
-(`.zskills/` is gitignored — per-checkout local state). Do this LAST, after the
-verifier ran, so the marker means "install completed AND was verified":
+next session on. The marker path and writer live in `init-state.sh` (#1132
+single path definition — gitignored `.zskills/` per-checkout state); the
+legacy lane writes ONLY this marker, never the plugin-lane init-done lock.
+Do this LAST, after the verifier ran, so the marker means "install completed
+AND was verified":
 
 ```bash
-mkdir -p "$CLAUDE_PROJECT_DIR/.zskills"
-date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/init-state.sh"
+zskills_write_setup_confirmed "$CLAUDE_PROJECT_DIR"
 ```
 
 ### Pull Latest and Update (already-installed path)
@@ -2422,12 +2653,13 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
 
 8. **Write the `setup-confirmed` marker (#1119).** Same as install-path
    Step G.5: a successful update is also a run of `/update-zskills`, so record
-   it to silence the plugin SessionStart greeting. Write a one-line ISO
-   timestamp to `.zskills/setup-confirmed` (gitignored, per-checkout state):
+   it to silence the plugin SessionStart greeting. Marker path + writer from
+   `init-state.sh` (#1132 — gitignored, per-checkout state; legacy lane never
+   writes init-done):
 
    ```bash
-   mkdir -p "$CLAUDE_PROJECT_DIR/.zskills"
-   date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/init-state.sh"
+   zskills_write_setup_confirmed "$CLAUDE_PROJECT_DIR"
    ```
 
 ---

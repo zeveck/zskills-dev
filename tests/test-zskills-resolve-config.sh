@@ -416,13 +416,15 @@ T8B_VER=$(
   && pass "Test 8c: \$ZSKILLS_VERSION empty when zskills_version field absent" \
   || fail "Test 8c: \$ZSKILLS_VERSION empty when absent" "got '$T8B_VER'"
 
-# Subtest 8d (Phase 5): config-less consumer with a .zskills/init-done
-# marker → ZSKILLS_VERSION falls back to its `version:` line. (The
-# init-done literal in the helper is the documented Phase 5 temporary
-# re-type; Phase 6a A0 retargets it to init-state.sh.)
+# Subtest 8d (Phase 5; retargeted by Phase 6a A0): config-less consumer with
+# an init-done marker → ZSKILLS_VERSION falls back to its `version:` line.
+# The marker path is DERIVED from init-state.sh (#1132 single path
+# definition) — the helper now sources it too; no re-typed literal here.
+# shellcheck source=skills/update-zskills/scripts/init-state.sh
+. "$REPO_ROOT/skills/update-zskills/scripts/init-state.sh"
 T8D=$(mktemp -d /tmp/zskills-resolve-cfg-t8d-XXXXXX)
-mkdir -p "$T8D/.zskills"
-printf 'version: 2026.06.1\ndate: 2026-06-10T00:00:00-04:00\n' > "$T8D/.zskills/init-done"
+mkdir -p "$T8D/$(dirname "$ZSKILLS_INIT_DONE_REL")"
+printf 'version: 2026.06.1\ndate: 2026-06-10T00:00:00-04:00\n' > "$T8D/$ZSKILLS_INIT_DONE_REL"
 T8D_VER=$(
   HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T8D" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_VERSION"'
