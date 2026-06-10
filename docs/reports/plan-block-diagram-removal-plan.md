@@ -1,5 +1,25 @@
 # Plan Report — Block-Diagram Add-On Removal
 
+## Phase — 5 Final sweep + verification
+
+**Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
+**Status:** Completed (verified) — PLAN COMPLETE
+**Commits:** 8194f9c3 (TECHNICAL.html consistency + tracker)
+
+### Verification
+- All sweeps re-run independently by the verifier: zero-reference grep EMPTY (end-state HOLDS); residual sweep 19 hits all adjudicated (2 survivors newly recorded: §1.7 bare-"add-ons" lines; BLOCK_DIAGRAM_TRACKING_CATCHUP provenance citation); stale-count clean; DocsRegistry byte-identical.
+- TECHNICAL.html made internally consistent (trend endpoints recomputed −30%/+22%; tests 236/82,807; hooks 8,828; scripts 20/3,088; dual-basis methodology date); git-activity cards ACCEPTED-STALE with explicit basis labeling (adjudicated + agreed).
+- Suite: Overall: 7614/7614 passed, 0 failed.
+
+### Fork-portability notes (drift log)
+- Stale-count sweep exclusion regex assumes `./`-prefixed grep output — use `^(\./)?(…)`.
+- Residual-sweep survivor list: add §1.7 bare-"add-ons" lines + the invariants:452 provenance citation (underscore form, invisible to hyphenated done-checks).
+- The plan's verbatim residual-sweep command (`xargs -0 grep -nirE 'add-on|…'`) trips a PreToolUse hook false-positive (xargs-delete pattern) — fork copy should use `git grep -niE` directly. Issue candidate filed in this repo.
+- TECHNICAL.html scripts-card recipe undocumented — record `find scripts -maxdepth 1 -type f \( -name "*.sh" -o -name "*.py" \)`.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 4 Root docs + counts
 
 **Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
