@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # warn-config-drift.sh — PostToolUse hook, non-blocking warn.
 #
 # Two responsibilities:
@@ -100,7 +100,7 @@ fi
 # drive-letter / backslash path (e.g. `D:\proj\skills\foo\SKILL.md`). All
 # three branches below classify $FILE_PATH against POSIX `/`-rooted forms:
 # Branch 1 suffix-matches `.claude/zskills-config.json`, Branch 2 anchors on
-# `(^|/)(skills|block-diagram)/`, and Branch 3 derives a repo-relative path via
+# `(^|/)skills/`, and Branch 3 derives a repo-relative path via
 # `realpath --relative-to` / prefix-strip — all of which silently fail on a
 # backslash path, so the staged-file gate never fires. Normalise to a POSIX
 # form FIRST so every branch matches on Windows. No-op on Linux/Mac (a
@@ -123,7 +123,7 @@ fi
 # `^skills/...`), but NOT `.claude/skills/...` mirrors. Editing the source
 # skills/ file is the canonical path; the mirror gets cp-batched, so warning
 # twice would spam every Edit→cp pair.
-if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/[^/]+/.*\.md$ ]] && [[ "$FILE_PATH" != *.claude/skills/* ]] \
+if [[ "$FILE_PATH" =~ (^|/)skills/[^/]+/.*\.md$ ]] && [[ "$FILE_PATH" != *.claude/skills/* ]] \
    && [ -n "${CLAUDE_PROJECT_DIR:-}" ] \
    && [ -r "$CLAUDE_PROJECT_DIR/tests/fixtures/forbidden-literals.txt" ] \
    && [ -r "$FILE_PATH" ]; then
@@ -210,7 +210,7 @@ if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/[^/]+/.*\.md$ ]] && [[ "$FILE_
 fi
 
 # --- Branch 3: skill version not bumped --------------------------------------
-# Fires on Edit/Write of any regular file under (skills|block-diagram)/<name>/
+# Fires on Edit/Write of any regular file under skills/<name>/
 # (parent SKILL.md OR child files in modes/, references/, scripts/, fixtures/,
 # stubs/, etc — every file in the §1.1 projection). Compares the parent
 # skill's recomputed projection hash against HEAD's metadata.version hash; if
@@ -219,20 +219,18 @@ fi
 # symmetric WARN (revert / no-op edit).
 #
 # Trailing `[^/]+` requires a path segment AFTER the skill name — keeps
-# top-level docs like `block-diagram/README.md` and asset-only paths like
-# `block-diagram/screenshots/foo.png` from matching this branch unless
+# asset-only paths from matching this branch unless
 # their parent has a SKILL.md (the [ -f "$skill_md" ] || exit 0 check
 # downstream is the load-bearing guard). refine-plan F-DA-9.
-if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/([^/]+)/[^/]+ ]] \
+if [[ "$FILE_PATH" =~ (^|/)skills/([^/]+)/[^/]+ ]] \
    && [[ "$FILE_PATH" != *.claude/skills/* ]]; then
   REPO_ROOT="${CLAUDE_PROJECT_DIR:-}"
   if [ -n "$REPO_ROOT" ]; then
     HASH_HELPER="$REPO_ROOT/scripts/skill-content-hash.sh"
     GET_HELPER="$REPO_ROOT/scripts/frontmatter-get.sh"
     if [ -x "$HASH_HELPER" ] && [ -x "$GET_HELPER" ]; then
-      skill_root_kind="${BASH_REMATCH[2]}"
-      skill_name="${BASH_REMATCH[3]}"
-      skill_dir="$REPO_ROOT/$skill_root_kind/$skill_name"
+      skill_name="${BASH_REMATCH[2]}"
+      skill_dir="$REPO_ROOT/skills/$skill_name"
       skill_md="$skill_dir/SKILL.md"
       if [ -f "$skill_md" ]; then
         # Normalise $FILE_PATH to repo-relative form. Probe `realpath

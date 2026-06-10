@@ -1,18 +1,7 @@
 #!/bin/bash
 # skill-version-delta.sh — Per-skill version delta.
-# Stdout: <name>\t<kind>\t<source-ver>\t<installed-ver>\t<status>
-# `<kind>` is `core` for skills/<name>/ or `addon` for block-diagram/<name>/.
-# Iterating BOTH source roots so block-diagram add-ons surface in install /
-# update / audit reports. (refine-plan F-R13 / F-DA-10: prior loop ranged only
-# over `skills/*/`, silently dropping the 3 add-ons even though §1.7 promised
-# parity.)
-#
-# Render-time filter (consumed by Phase 5b.1 Site C): the renderer applies the
-# `--with-block-diagram-addons` heuristic — include `kind=addon` rows ONLY
-# when the flag was passed OR when at least one `block-diagram/*` skill is
-# currently installed under `.claude/skills/`. Filtering happens at the
-# renderer, not the enumerator — so the data plumbing is symmetric and
-# downstream callers can render either subset.
+# Stdout: <name>\t<source-ver>\t<installed-ver>\t<status>
+# Iterates the `skills/*/` source root.
 #
 # Status codes:
 #   new        — installed version unknown (skill not yet installed)
@@ -29,14 +18,9 @@ ZSKILLS_PATH="${1:?usage: skill-version-delta.sh <zskills-source-path>}"
 : "${CLAUDE_PROJECT_DIR:=$ZSKILLS_PATH}"
 GET="$CLAUDE_PROJECT_DIR/scripts/frontmatter-get.sh"
 [ -x "$GET" ] || GET="$ZSKILLS_PATH/scripts/frontmatter-get.sh"
-for src_skill in "$ZSKILLS_PATH/skills"/*/ "$ZSKILLS_PATH/block-diagram"/*/; do
+for src_skill in "$ZSKILLS_PATH/skills"/*/; do
   [ -f "${src_skill}SKILL.md" ] || continue
   name=$(basename "$src_skill")
-  case "$src_skill" in
-    "$ZSKILLS_PATH/skills"/*) kind="core" ;;
-    "$ZSKILLS_PATH/block-diagram"/*) kind="addon" ;;
-    *) kind="unknown" ;;
-  esac
   src_ver=$(bash "$GET" "${src_skill}SKILL.md" metadata.version) || src_ver=""
   inst_skill="$CLAUDE_PROJECT_DIR/.claude/skills/$name"
   inst_ver=""
@@ -52,5 +36,5 @@ for src_skill in "$ZSKILLS_PATH/skills"/*/ "$ZSKILLS_PATH/block-diagram"/*/; do
   else
     status="bumped"
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$kind" "$src_ver" "$inst_ver" "$status"
+  printf '%s\t%s\t%s\t%s\n' "$name" "$src_ver" "$inst_ver" "$status"
 done

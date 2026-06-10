@@ -188,27 +188,6 @@ else
 fi
 cleanup_fixture "$F"
 
-# --- Test 9: block-diagram/<name> source resolves correctly -----------
-# Per Phase 1b §1b.1: passing `block-diagram/<NAME>` as the script
-# argument MUST mirror `block-diagram/<NAME>/` -> `.claude/skills/<NAME>/`
-# (basename only — no `.claude/skills/block-diagram/` parent created).
-F=$(make_fixture blockdiag)
-mkdir -p "$F/block-diagram/add-example/references"
-echo "add-example main"   > "$F/block-diagram/add-example/SKILL.md"
-echo "add-example refs-x" > "$F/block-diagram/add-example/references/x.md"
-out=$( cd "$F" && bash "$HELPER" block-diagram/add-example 2>&1 )
-ec=$?
-if [ "$ec" -eq 0 ] \
-   && [ -f "$F/.claude/skills/add-example/SKILL.md" ] \
-   && [ -f "$F/.claude/skills/add-example/references/x.md" ] \
-   && diff -rq "$F/block-diagram/add-example/" "$F/.claude/skills/add-example/" >/dev/null 2>&1 \
-   && [ ! -d "$F/.claude/skills/block-diagram" ]; then
-  pass "block-diagram/<name>: mirror lands at .claude/skills/<basename> with no block-diagram parent"
-else
-  fail "block-diagram/<name> resolution (exit=$ec, out=$out, parent-exists=$( [ -d "$F/.claude/skills/block-diagram" ] && echo yes || echo no ))"
-fi
-cleanup_fixture "$F"
-
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' \

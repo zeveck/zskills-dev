@@ -97,12 +97,12 @@ else
 fi
 
 # Helper: assert one row matches the given fields. Format:
-#   <name>\t<kind>\t<src>\t<inst>\t<status>
+#   <name>\t<src>\t<inst>\t<status>
 assert_row() {
-  local name="$1" kind="$2" src="$3" inst="$4" status="$5"
-  local label="row name=$name kind=$kind"
+  local name="$1" src="$2" inst="$3" status="$4"
+  local label="row name=$name"
   local needle
-  needle=$(printf '%s\t%s\t%s\t%s\t%s' "$name" "$kind" "$src" "$inst" "$status")
+  needle=$(printf '%s\t%s\t%s\t%s' "$name" "$src" "$inst" "$status")
   if grep -qFx "$needle" "$FIXT/out.tsv"; then
     pass "$label → $status"
   else
@@ -110,11 +110,11 @@ assert_row() {
   fi
 }
 
-assert_row bumped-newer       core  "2026.05.02+aaaaaa"  "2026.04.01+bbbbbb"  bumped
-assert_row bumped-older       core  "2026.04.01+aaaaaa"  "2026.05.02+bbbbbb"  bumped
-assert_row newcomer           core  "2026.05.02+cccccc"  ""                   new
-assert_row malformed          core  ""                   "2026.04.01+ddddddd" malformed
-assert_row same-version       core  "2026.05.02+eeeeee"  "2026.05.02+eeeeee"  unchanged
+assert_row bumped-newer       "2026.05.02+aaaaaa"  "2026.04.01+bbbbbb"  bumped
+assert_row bumped-older       "2026.04.01+aaaaaa"  "2026.05.02+bbbbbb"  bumped
+assert_row newcomer           "2026.05.02+cccccc"  ""                   new
+assert_row malformed          ""                   "2026.04.01+ddddddd" malformed
+assert_row same-version       "2026.05.02+eeeeee"  "2026.05.02+eeeeee"  unchanged
 
 # Total row count = 5 core
 LINE_COUNT=$(wc -l < "$FIXT/out.tsv")
@@ -125,12 +125,12 @@ else
 $(cat "$FIXT/out.tsv")"
 fi
 
-# Tab-delimited 5-field invariant.
-NON5=$(awk -F'\t' 'NF != 5' "$FIXT/out.tsv" | wc -l)
-if [ "$NON5" = "0" ]; then
-  pass "every row is exactly 5 tab-delimited fields"
+# Tab-delimited 4-field invariant.
+NON4=$(awk -F'\t' 'NF != 4' "$FIXT/out.tsv" | wc -l)
+if [ "$NON4" = "0" ]; then
+  pass "every row is exactly 4 tab-delimited fields"
 else
-  fail "field count invariant" "$NON5 rows have NF != 5"
+  fail "field count invariant" "$NON4 rows have NF != 4"
 fi
 
 # Real-repo smoke check: run against the actual REPO_ROOT and assert the
@@ -145,14 +145,6 @@ else
     pass "real-repo smoke: $REAL_LINES rows (≥ 23 core)"
   else
     fail "real-repo smoke row count" "expected ≥23 got $REAL_LINES"
-  fi
-  CORE_COUNT=$(awk -F'\t' '$2 == "core"' "$FIXT/real.tsv" | wc -l)
-  # Issue #584: review-feedback was historically a core skill; it and the
-  # /doc and /quickfix skills were removed — core count now 23.
-  if [ "$CORE_COUNT" -ge 23 ]; then
-    pass "real-repo smoke: core=$CORE_COUNT (≥23)"
-  else
-    fail "real-repo smoke: kind split" "core=$CORE_COUNT"
   fi
 fi
 

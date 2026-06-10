@@ -133,21 +133,21 @@ jobs:
   # THREE explicit tiers:
   #
   #   Tier 1 (cheap, MANDATORY — runs on every PR): Python JSON-schema
-  #     validation of both plugin.json files (zs + zsbd) and marketplace.json,
+  #     validation of the zs plugin.json and marketplace.json,
   #     via tests/test-plugin-manifest.sh + tests/test-plugin-marketplace.sh.
   #     These are stdlib-json (no jq) and have no external dependency, so they
   #     are the gating floor. A failure here fails the PR.
   #
   #   Tier 2 (moderate, BEST-EFFORT): if a `claude` CLI is reachable on the
-  #     runner, run `claude plugin validate --strict .` (marketplace) and
-  #     `claude plugin validate --strict ./block-diagram` (zsbd plugin). The
+  #     runner, run `claude plugin validate --strict .` (marketplace). The
   #     CLI is NOT installed by default on GitHub runners and no stable
   #     public install URL is pinned here, so this tier SKIPS-with-reason when
-  #     `claude` is absent or install fails. It never blocks the PR (the step
-  #     is `continue-on-error` semantics via an explicit `|| true` after a
-  #     reachability probe). If tier 2 becomes chronically flaky (>50% of runs
-  #     skip for non-CLI reasons), tier 1 remains the gating floor (Abort/
-  #     Rollback in PLUGIN_DISTRIBUTION.md Phase 5).
+  #     `claude` is absent. When the CLI IS present and validation fails, the
+  #     step warns and FAILS (`::warning` + exit 1) — it only skips on CLI
+  #     absence, never on a real validation failure. If tier 2 becomes
+  #     chronically flaky (>50% of runs skip for non-CLI reasons), tier 1
+  #     remains the gating floor (Abort/Rollback in PLUGIN_DISTRIBUTION.md
+  #     Phase 5).
   #
   #   Tier 3 (expensive, DEFERRED — NOT in this plan): an actual agentic
   #     dispatch `claude -p '/zs:briefing summary'` to prove the plugin's
@@ -162,9 +162,9 @@ jobs:
       - name: "Tier 1 (mandatory): plugin + marketplace manifest validation"
         run: |
           set -e
-          echo "== zs + zsbd plugin.json schema =="
+          echo "== zs plugin.json schema =="
           bash tests/test-plugin-manifest.sh
-          echo "== marketplace.json schema (incl. D10 version lockstep) =="
+          echo "== marketplace.json schema =="
           bash tests/test-plugin-marketplace.sh
           echo "== build push targets ↔ consumer-resolved refs (bare main + bare <version> tag) =="
           bash tests/test-plugin-ref-consistency.sh

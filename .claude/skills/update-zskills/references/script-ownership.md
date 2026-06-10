@@ -40,7 +40,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `insert-test-spec-revisions.sh` | 1   | `draft-tests`                |
 | `land-phase.sh`              | 1      | `commit`                     |
 | `migrate-paths.sh`           | 1      | `update-zskills` (one-shot deterministic mover for /update-zskills --migrate-paths; writes .pre-paths-migration; updates .gitignore; rerenders hook EARLY (step 2.5), writes output.plans_dir / output.issues_dir / output.reports_dir LAST (3-tuple atomic both-or-all-or-neither)) |
-| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...`. Accepts both `<skill-name>` (for `skills/<name>/`) and `block-diagram/<skill-name>` (for `block-diagram/<name>/`); destination is always `.claude/skills/<basename>/` — no `block-diagram/` parent under `.claude/skills/` (Phase 1b extension). |
+| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...`. Accepts `<skill-name>` (for `skills/<name>/`); destination is `.claude/skills/<skill-name>/`. |
 | `parse-plan.sh`              | 1      | `draft-tests`                |
 | `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |

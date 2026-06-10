@@ -360,7 +360,7 @@ fi
 # Case 12b: $FILE_PATH fed as a WINDOWS-NATIVE backslash path → normalises
 # and warns. On a Windows (MSYS / Git-Bash) consumer the Edit/Write tool
 # passes a backslash path; pre-fix the Branch-2/3 anchor
-# `(^|/)(skills|block-diagram)/` and the realpath/prefix-strip staged-file
+# `(^|/)skills/` and the realpath/prefix-strip staged-file
 # gate all silently miss it (a `\skills\` path doesn't match `/skills/`), so
 # the WARN never fires. The hook now normalises $FILE_PATH through
 # zskills_normalize_tool_path BEFORE Branch 1, so the staged-file gate fires.
@@ -471,33 +471,6 @@ if [ "$ec" -eq 0 ] && [[ -z "$err" ]]; then
   pass "case 18: child + parent bump staged → exit 0"
 else
   fail "case 18: expected exit 0, got exit=$ec err=$err"
-fi
-
-# Case 19 (s7): block-diagram skill body change without bump → exit 1.
-case_no=19
-sandbox=$(make_sandbox "$case_no")
-mkdir -p "$sandbox/block-diagram/baz"
-cat > "$sandbox/block-diagram/baz/SKILL.md" <<'EOF'
----
-name: baz
-metadata:
-  version: "2026.01.01+000000"
----
-
-# baz body
-EOF
-h=$(bash "$sandbox/scripts/skill-content-hash.sh" "$sandbox/block-diagram/baz")
-bash "$sandbox/scripts/frontmatter-set.sh" \
-  "$sandbox/block-diagram/baz/SKILL.md" metadata.version "2026.05.02+$h"
-(cd "$sandbox" && git add -A && git commit -q -m "add baz")
-echo "edit baz body" >> "$sandbox/block-diagram/baz/SKILL.md"
-(cd "$sandbox" && git add block-diagram/baz/SKILL.md)
-err=$(run_stage_check "$sandbox" 2>&1)
-ec=$?
-if [ "$ec" -ne 0 ] && [[ "$err" == *"STOP:"* ]] && [[ "$err" == *"block-diagram/baz"* ]]; then
-  pass "case 19: block-diagram skill body change → exit 1 + STOP"
-else
-  fail "case 19: expected exit 1 naming block-diagram/baz, got exit=$ec err=$err"
 fi
 
 # Case 20 (s8): two affected skills, ONE bumped ONE not → exit 1

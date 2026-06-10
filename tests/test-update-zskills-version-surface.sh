@@ -81,7 +81,7 @@ render_site_a_line() {
   current=$(bash "$RESOLVE" "$zskills_path")
   installed=$(read_installed_zskills_ver "$claude_dir/.claude/zskills-config.json")
   delta_tsv=$(CLAUDE_PROJECT_DIR="$claude_dir" bash "$DELTA" "$zskills_path")
-  n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
+  n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$4 == "bumped" || $4 == "new"' | wc -l)
   [ -z "$current" ]   && current="(unversioned) — source clone has no tags"
   [ -z "$installed" ] && installed="(none)"
   echo "Repo version: ${installed} → ${current}"
@@ -97,7 +97,7 @@ render_site_b_block() {
   local delta_tsv
   delta_tsv=$(CLAUDE_PROJECT_DIR="$claude_dir" bash "$DELTA" "$zskills_path")
   printf '%s\n' "$delta_tsv" | awk -F'\t' '
-    { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
+    { printf "  %-20s %s  (%s)\n", $1, $2, $4 }
   '
 }
 
@@ -120,12 +120,12 @@ render_site_c_table() {
   echo ""
   echo "Updated: skills"
   printf '%s\n' "$delta_tsv" | awk -F'\t' '
-    $5 == "bumped"   { printf "  %-20s %s → %s\n", $1, $4, $3 }
-    $5 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $3 }
+    $4 == "bumped"   { printf "  %-20s %s → %s\n", $1, $3, $2 }
+    $4 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $2 }
   '
   echo "New: items installed"
   printf '%s\n' "$delta_tsv" | awk -F'\t' '
-    $5 == "new" { printf "  %s\n", $1 }
+    $4 == "new" { printf "  %s\n", $1 }
   '
 }
 

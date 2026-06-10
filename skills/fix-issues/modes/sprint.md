@@ -1681,8 +1681,6 @@ agent hasn't returned after 1 hour, declare it **failed**:
    >   if (length($2) > 0) {
    >     src="skills/" owner "/scripts/" $2;
    >     if (system("test -f " src) == 0) print src;
-   >     else { src="block-diagram/" owner "/scripts/" $2;
-   >       if (system("test -f " src) == 0) print src }
    >   }
    > }' skills/update-zskills/references/script-ownership.md)
    > # 2. Intersect with your staged changes.

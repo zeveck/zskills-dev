@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # block-unmaterialised-skill.sh — UserPromptExpansion gate (#1128).
 #
 # PLUGIN-LANE-ONLY. Registered solely in hooks/hooks.json under the
@@ -23,9 +23,7 @@
 #   command_name matches ^zs:               (a zskills plugin slash command)
 #   AND command_name != zs:update-zskills   (update-zskills is the CURE; never block it)
 #   AND the materialiser sentinel is ABSENT (NOT materialized — see below)
-# `^zs:` only — block-diagram skills ride INSIDE the zs plugin (they expand
-# as zs:add-block, NOT zsbd:); the zsbd marketplace plugin is delisted, so
-# zsbd: never matches a real consumer.
+# `^zs:` only — every shipped skill expands under the zs plugin namespace.
 #
 # NOT materialized iff $CLAUDE_PROJECT_DIR/.claude/agents/verifier.md is absent
 # OR its first 3 lines lack the D20(a) materialiser sentinel prefix
