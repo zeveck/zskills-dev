@@ -312,7 +312,7 @@ a real attended transcript/marker — as a verification FAIL.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Empirical verification → recorded branch selections | ✅ | | 1A / T-A(scoped-filter) / R-b; 2 ATTENDED-PENDING (non-gating); evidence preserved |
+| 1 — Empirical verification → recorded branch selections | ✅ | d592c80a | 1A / T-A(scoped-filter) / R-b; 2 ATTENDED-PENDING (non-gating); evidence preserved |
 | 2 — Plugin-native agents + hooks.json Layer-0 timeout | ⬚ | | |
 | 3 — Layer-3 relocation (verify-response-validate.sh) | ⬚ | | |
 | 4 — Rules de-parameterization + delivery channel | ⬚ | | |
