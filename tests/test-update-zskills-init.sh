@@ -21,7 +21,8 @@
 #   before init-done; failure leaves re-runnable state); A1.5 case families
 #   (sentinelled removal, un-sentinelled never removed, seeded-config cure
 #   accept/decline/shape-mismatch, notice consumed exactly once, the
-#   anti-#1132-mask foreign-zskills_version fixture); A6 report-only gate.
+#   anti-#1132-mask foreign-zskills_version fixture); A6 HARD gate (Phase
+#   6b: a failing verify-install STOPs init before the lock write).
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -148,7 +149,12 @@ run_init() {
        && [ "$INTERVIEW" = accept ]; then
       oracle_seed_config "$PROJ" "$ZS_INIT_VERSION" || return 1
     fi
-    $VERIFY_CMD || echo "(verification reported a FAIL above — report-only during the redesign window)"
+    # A6 HARD gate (Phase 6b): a verify FAIL stops the run before the
+    # version-line refresh.
+    $VERIFY_CMD || {
+      echo "STOP: verify-install reported a FAIL" >&2
+      return 1
+    }
     zskills_write_init_markers "$PROJ" "$ZS_INIT_VERSION" || return 1
     echo "arm: update"
     return 0
@@ -186,8 +192,15 @@ run_init() {
 
   # ── A4 / A5 — no-ops on the landed 1A + T-A + R-b branches ──
 
-  # ── A6 — verify, REPORT-ONLY this phase ──
-  $VERIFY_CMD || echo "(verification reported a FAIL above — report-only during the redesign window)"
+  # ── A6 — verify, HARD GATE (Phase 6b): a FAIL STOPs init BEFORE the A7
+  # lock write (no init-done — lock-LAST; consumer fixes and re-runs). The
+  # real fence invokes verify-install.sh with ZSKILLS_VI_PRE_LOCK=1 (the
+  # markers are expected-absent pre-A7); the oracle abstracts the verifier
+  # as $VERIFY_CMD and pins the CONTROL FLOW.
+  $VERIFY_CMD || {
+    echo "STOP: verify-install reported a FAIL" >&2
+    return 1
+  }
 
   # ── A7 — lock-LAST (init-state.sh's single writer) ──
   zskills_write_init_markers "$PROJ" "$ZS_INIT_VERSION" || {
@@ -598,13 +611,37 @@ else
   fail "8e. lock-LAST ordering broken ($ORDER_OUT)"
 fi
 
-# ── 9. A6 is REPORT-ONLY this phase (flips to a hard gate in Phase 6b) ──────
-P="$(new_proj verify-reportonly)"
+# ── 9. A6 HARD GATE (Phase 6b): a failing verify-install BLOCKS the lock ────
+# (Intended behavior re-spec of the Phase 6a interim: the old 9a asserted
+# report-only and named this exact flip as Phase 6b's.)
+P="$(new_proj verify-hardgate)"
 ZSINIT_VERIFY_CMD=false run_init "$P" >/dev/null 2>&1; rc=$?
-if [ "$rc" -eq 0 ] && zskills_init_done_present "$P"; then
-  pass "9a. failing verify step does NOT block the lock write (A6 report-only interim)"
+if [ "$rc" -ne 0 ] && ! zskills_init_done_present "$P" \
+   && [ ! -e "$P/$ZSKILLS_SETUP_CONFIRMED_REL" ]; then
+  pass "9a. failing verify-install BLOCKS the init-done write (A6 hard gate — no markers, lock-LAST)"
 else
-  fail "9a. verify failure blocked init (rc=$rc) — the hard gate belongs to Phase 6b"
+  fail "9a. hard gate broken: rc=$rc init-done=$(zskills_init_done_present "$P" && echo yes || echo no)"
+fi
+# Re-runnable: the same project completes cleanly once verify passes.
+run_init "$P" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && zskills_init_done_present "$P"; then
+  pass "9b. re-run after a verify FAIL completes cleanly (consumer fixes, re-runs)"
+else
+  fail "9b. re-run after verify FAIL did not complete (rc=$rc)"
+fi
+# The update arm gates too: a verify FAIL stops before the version refresh.
+P="$(new_proj verify-update-gate)"
+run_init "$P" >/dev/null 2>&1
+"$PYTHON" - "$P/$ZSKILLS_INIT_DONE_REL" <<'PY'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("version: 0.0.1\ndate: 2020-01-01T00:00:00+00:00\n")
+PY
+ZSINIT_VERIFY_CMD=false run_init "$P" >/dev/null 2>&1; rc=$?
+if [ "$rc" -ne 0 ] && grep -q '^version: 0.0.1$' "$P/$ZSKILLS_INIT_DONE_REL"; then
+  pass "9c. update arm: verify FAIL stops the run BEFORE the version-line refresh"
+else
+  fail "9c. update-arm gate broken (rc=$rc, version line: $(head -1 "$P/$ZSKILLS_INIT_DONE_REL"))"
 fi
 
 # ── 10. Update arm: version-line refresh + conditional config offer ────────

@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+8457b2"
+  version: "2026.06.10+b7ea8d"
 ---
 
 # Update Z Skills Infrastructure
@@ -1269,13 +1269,19 @@ PY
     plugin's SessionStart `session-rules-context.sh` hook delivers the
     rendered rules as `additionalContext` every session — nothing to write
     at init.
-  - **A6 — verify (REPORT-ONLY this phase).** Run the bundled verifier's
-    cheap structural tier — read-only, NON-FATAL: report PASS/WARN/FAIL in
-    the init summary but never abort init on it. (Phase 6b flips this to a
-    hard gate once the verifier's plugin-section checks are init-keyed; the
-    pre-rework sentinel-era checks would false-fail a healthy init right
-    after A1.5's cleanup.) Never `--deep`. Resolve lane-awarely, exactly as
-    Step G.5 does:
+  - **A6 — verify (HARD GATE — INSTALL_REDESIGN Phase 6b).** Run the
+    bundled verifier's cheap structural tier — read-only, and a FAIL **STOPs
+    init**: no init-done marker is written (lock-LAST), the consumer fixes
+    the reported problem(s) and re-runs `/zs:update-zskills` (init re-runs
+    cleanly — every step up to here is idempotent). The verifier's
+    plugin-section checks are init-keyed (init-done/setup-confirmed,
+    gitignore umbrella, config-valid-if-present, R-b rules delivery,
+    version currency), so a healthy init never false-fails here. Note the
+    benign self-observation: when A6 runs INSIDE the init arm, init-done
+    does not exist yet by design (lock-LAST) — that is exactly the one FAIL
+    class still expected at this point, so the verifier is invoked with the
+    pre-lock allowance below. Never `--deep`. Resolve lane-awarely, exactly
+    as Step G.5 does:
 
     ```bash
     if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
@@ -1285,9 +1291,16 @@ PY
       VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
     fi
     if [ -f "$VERIFY_INSTALL" ]; then
-      # Cheap tier only (no --deep). Report-only this phase: never abort init.
-      bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
-        echo "(verification reported a FAIL above — report-only during the redesign window; review and fix your environment)"
+      # Cheap tier only (no --deep). HARD GATE (Phase 6b): a FAIL beyond the
+      # expected pre-lock marker absences STOPs init before the lock write.
+      # ZSKILLS_VI_PRE_LOCK=1 tells the verifier the init markers are
+      # EXPECTED to be absent (A7 has not run yet) — their two checks report
+      # PASS-pending instead of FAIL, so the gate measures everything ELSE.
+      if ! ZSKILLS_VI_PRE_LOCK=1 bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR"; then
+        echo "STOP: verify-install reported a FAIL above — init did NOT complete (no init-done marker was written; lock-LAST)." >&2
+        echo "Fix the reported problem(s) and re-run /zs:update-zskills." >&2
+        exit 1
+      fi
     else
       echo "(post-install verifier not found at $VERIFY_INSTALL — skipping verification)"
     fi
@@ -1321,7 +1334,10 @@ PY
     would contradict the choice; the offer stays available on a LATER bare
     run), offer creation via the same A3 interview (same accept fence,
     same non-interactive skip).
-  - **Re-run verify-install** — the same A6 fence (report-only, cheap tier).
+  - **Re-run verify-install** — the same A6 fence (hard gate, cheap tier):
+    a FAIL stops the run before the version-line refresh below; fix the
+    reported problem(s) and re-run. (Markers already exist on this arm, so
+    the fence's pre-lock allowance is inert here.)
   - **Refresh the version line in the init-done marker** — re-run the same
     single writer: `zskills_write_init_markers "$CLAUDE_PROJECT_DIR"
     "$ZS_INIT_VERSION"` (atomic rewrite; re-stamping setup-confirmed is the

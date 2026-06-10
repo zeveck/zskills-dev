@@ -1726,6 +1726,52 @@ for hook_path in "$REPO_ROOT"/hooks/block-*.sh; do
 done
 
 echo ""
+echo "=== Gate allow/block-list tripwire (INSTALL_REDESIGN Phase 6b) ==="
+# hooks/block-unmaterialised-skill.sh gates `/zs:` invocations pre-init via
+# an ALLOW-LIST (unlisted skills are blocked — fails safe). The gate itself
+# never breaks on a new skill, but a read-only NEW skill silently blocking
+# pre-init would ship with no signal. This tripwire asserts every shipped
+# skills/<name> appears in the gate's ZSKILLS_GATE_ALLOW list OR its
+# ZSKILLS_GATE_BLOCK_ACK (block-acknowledged) list — so adding/renaming a
+# skill without consciously categorizing it fails CI with a message naming
+# the choice. Both lists live in the hook itself (single surface).
+GATE_HOOK="$REPO_ROOT/hooks/block-unmaterialised-skill.sh"
+GATE_ALLOW="$(sed -n 's/^ZSKILLS_GATE_ALLOW="\(.*\)"$/\1/p' "$GATE_HOOK")"
+GATE_BLOCK_ACK="$(sed -n 's/^ZSKILLS_GATE_BLOCK_ACK="\(.*\)"$/\1/p' "$GATE_HOOK")"
+# Anti-vacuous: the extraction itself must work (an empty list means the
+# hook's variable shape changed and every assertion below would be hollow).
+if [ -n "$GATE_ALLOW" ] && [ -n "$GATE_BLOCK_ACK" ]; then
+  pass "[gate] tripwire: extracted non-empty ALLOW + BLOCK_ACK lists from $(basename "$GATE_HOOK")"
+else
+  fail "[gate] tripwire: list extraction" \
+    "ZSKILLS_GATE_ALLOW / ZSKILLS_GATE_BLOCK_ACK not extractable from hooks/block-unmaterialised-skill.sh"
+fi
+for skill_dir in "$REPO_ROOT"/skills/*/; do
+  [ -d "$skill_dir" ] || continue
+  sname="$(basename "$skill_dir")"
+  in_allow=0; in_block=0
+  case " $GATE_ALLOW " in *" $sname "*) in_allow=1 ;; esac
+  case " $GATE_BLOCK_ACK " in *" $sname "*) in_block=1 ;; esac
+  if [ "$in_allow" -eq 1 ] && [ "$in_block" -eq 1 ]; then
+    fail "[gate] tripwire: $sname categorized in BOTH lists" \
+      "remove $sname from one of ZSKILLS_GATE_ALLOW / ZSKILLS_GATE_BLOCK_ACK in hooks/block-unmaterialised-skill.sh"
+  elif [ "$in_allow" -eq 1 ] || [ "$in_block" -eq 1 ]; then
+    pass "[gate] tripwire: $sname categorized ($([ "$in_allow" -eq 1 ] && echo allow || echo block-acknowledged))"
+  else
+    fail "[gate] tripwire: skills/$sname is in NEITHER gate list" \
+      "categorize it: add to ZSKILLS_GATE_ALLOW (read-only, safe pre-init) or ZSKILLS_GATE_BLOCK_ACK (state-writing) in hooks/block-unmaterialised-skill.sh"
+  fi
+done
+# And the reverse direction: every name the lists carry must be a real
+# shipped skill (catches a rename leaving a stale entry behind).
+for sname in $GATE_ALLOW $GATE_BLOCK_ACK; do
+  if [ ! -d "$REPO_ROOT/skills/$sname" ]; then
+    fail "[gate] tripwire: stale gate-list entry '$sname'" \
+      "no skills/$sname directory exists — remove or rename the entry in hooks/block-unmaterialised-skill.sh"
+  fi
+done
+
+echo ""
 echo "=== Multi-agent adversarial-loop skills — Agent-tool-required preflight (issue #143) ==="
 # These five skills internally dispatch reviewer + devil's-advocate + refiner
 # sub-agents (or, in research-and-go's case, Skill-load sibling skills that
