@@ -10,7 +10,7 @@
 #
 #   - dev slug (zeveck/zskills-dev) → prod slug (zeveck/zskills)
 #   - `ref: "main"` is left untouched
-#   - the `zsbd` `./block-diagram` relative-path source is left untouched
+#   - a non-zs entry's (`other-addon`) `./other-addon` relative-path source is left untouched
 #   - top-level name / version / $schema survive the round-trip
 #   - idempotent: a second call is a no-op
 #   - a fixture that is ALREADY prod-pointing is left unchanged
@@ -67,7 +67,7 @@ write_dev_fixture() {
   "version": "1",
   "plugins": [
     { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills-dev", "ref": "main" } },
-    { "name": "zsbd", "source": "./block-diagram" }
+    { "name": "other-addon", "source": "./other-addon" }
   ]
 }
 JSON
@@ -84,13 +84,13 @@ write_prod_fixture() {
   "version": "1",
   "plugins": [
     { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "main" } },
-    { "name": "zsbd", "source": "./block-diagram" }
+    { "name": "other-addon", "source": "./other-addon" }
   ]
 }
 JSON
 }
 
-# ── 1. dev slug → prod slug, ref + zsbd + top-level fields untouched ──────────
+# ── 1. dev slug → prod slug, ref + other-addon + top-level fields untouched ──
 MP="$TMP/dev.json"
 write_dev_fixture "$MP"
 rewrite_marketplace_repo "$MP"
@@ -115,10 +115,10 @@ if [ "$(field "$MP" 'by["zs"]["source"]["source"]')" = "github" ]; then
 else
   fail "1d. zs source.source changed (must stay 'github')"
 fi
-if [ "$(field "$MP" 'by["zsbd"]["source"]')" = "./block-diagram" ]; then
-  pass "1e. zsbd source './block-diagram' relative path untouched"
+if [ "$(field "$MP" 'by["other-addon"]["source"]')" = "./other-addon" ]; then
+  pass "1e. other-addon source './other-addon' relative path untouched"
 else
-  fail "1e. zsbd source changed (must stay './block-diagram')"
+  fail "1e. other-addon source changed (must stay './other-addon')"
 fi
 if [ "$(field "$MP" 'mp["name"]')" = "zskills" ] \
    && [ "$(field "$MP" 'mp["version"]')" = "1" ] \

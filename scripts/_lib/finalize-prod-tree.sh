@@ -148,7 +148,7 @@ rewrite_dev_urls() {
 # which the URL-anchored regex would never touch.
 #
 # A field-scoped Python json load/mutate/dump is used (NOT a blanket sed across
-# the file) so `ref`, `source.source`, the `zsbd` `./block-diagram` source, the
+# the file) so `ref`, `source.source`, the
 # marketplace `name`/`version`/`$schema`, and key ordering survive intact — a
 # clean round-trip that changes ONLY that one value. Idempotent: a no-op when
 # the file is already prod-pointing (or has no `zs` github source). Defined at

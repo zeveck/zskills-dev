@@ -2,7 +2,7 @@
 # skill-version-stage-check.sh — commit-time hard stop on skill metadata.version drift.
 #
 # Used by /commit Phase 5 step 2.5. Iterates the staging set, gathers
-# unique parent skills under (skills|block-diagram)/<name>/..., and for
+# unique parent skills under skills/<name>/..., and for
 # each compares:
 #   - the skill's CURRENT (worktree) projection hash, vs.
 #   - the staged metadata.version's hash, vs.
@@ -58,8 +58,8 @@ fi
 
 declare -A SKILLS_TO_CHECK
 while IFS= read -r f; do
-  [[ "$f" =~ ^(skills|block-diagram)/([^/]+)/ ]] || continue
-  SKILLS_TO_CHECK["${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"]=1
+  [[ "$f" =~ ^skills/([^/]+)/ ]] || continue
+  SKILLS_TO_CHECK["skills/${BASH_REMATCH[1]}"]=1
 done < <(git -C "$REPO_ROOT" diff --cached --name-only)
 
 FAIL_LIST=()

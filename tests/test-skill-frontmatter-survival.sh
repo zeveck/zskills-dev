@@ -15,9 +15,8 @@
 #      invocation-control frontmatter key — `scripts/build-prod.sh` would
 #      delete it during the prod build.
 #   2. A skill that declares an invocation-control key not being covered by
-#      any plugin `skills` glob in `.claude-plugin/plugin.json` (zs) or
-#      `block-diagram/.claude-plugin/plugin.json` (zsbd) — so it would not be
-#      packaged at all.
+#      the plugin `skills` glob in `.claude-plugin/plugin.json` (zs) — so it
+#      would not be packaged at all.
 #
 # The survival check is exercised by SIMULATING the build-prod prod-strip
 # transformation on a fixture copy and re-reading the key with
@@ -69,35 +68,28 @@ simulate_prod_strip() {
 }
 
 # --- Plugin glob coverage. Mirrors plugin.json `skills` semantics:
-#     zs   covers ./skills/ and ./block-diagram/
-#     zsbd covers ./ (rooted at block-diagram/) ---
+#     zs covers ./skills/ ---
 covered_by_plugin() {
   local file="$1"
   case "$file" in
-    skills/*/SKILL.md)        return 0 ;;  # zs ./skills/
-    block-diagram/*/SKILL.md) return 0 ;;  # zs ./block-diagram/ AND zsbd ./
-    *)                        return 1 ;;
+    skills/*/SKILL.md) return 0 ;;  # zs ./skills/
+    *)                 return 1 ;;
   esac
 }
 
-# Sanity: confirm the plugin manifests actually declare the globs we assume.
+# Sanity: confirm the plugin manifest actually declares exactly the skills
+# glob we assume (exact equality keeps the coverage assumption honest).
 ZS_MANIFEST=".claude-plugin/plugin.json"
-ZSBD_MANIFEST="block-diagram/.claude-plugin/plugin.json"
-if grep -q '"./skills/"' "$ZS_MANIFEST" && grep -q '"./block-diagram/"' "$ZS_MANIFEST"; then
-  pass "zs plugin.json declares ./skills/ and ./block-diagram/ in skills glob"
+if grep -qF '"skills": ["./skills/"]' "$ZS_MANIFEST"; then
+  pass "zs plugin.json declares skills == [\"./skills/\"]"
 else
-  fail "zs plugin.json must declare ./skills/ and ./block-diagram/ in skills glob (coverage assumption)"
-fi
-if grep -q '"\./"' "$ZSBD_MANIFEST"; then
-  pass "zsbd plugin.json declares ./ in skills glob"
-else
-  fail "zsbd plugin.json must declare ./ in skills glob (coverage assumption)"
+  fail "zs plugin.json must declare skills == [\"./skills/\"] (coverage assumption)"
 fi
 
 # Enumerate every source skill declaring an invocation-control key.
 shopt -s nullglob
 DECLARING=()
-for f in skills/*/SKILL.md block-diagram/*/SKILL.md; do
+for f in skills/*/SKILL.md; do
   [ -f "$f" ] || continue
   for key in "${KEYS[@]}"; do
     if fm_declares "$f" "$key"; then

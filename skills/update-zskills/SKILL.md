@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.06+f0f43f"
+  version: "2026.06.10+ed1439"
 ---
 
 # Update Z Skills Infrastructure
@@ -17,7 +17,6 @@ dependencies.
 ```
 /update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
                 [cherry-pick | locked-main-pr | direct]
-                [--with-addons | --with-block-diagram-addons]
 ```
 
 Default mode (no argument): **smart detection** — if nothing is installed
@@ -118,15 +117,6 @@ Behavior by invocation:
 - `/update-zskills` **and existing config, no preset arg** — respect the
   existing config; do NOT re-ask. This is the idempotent re-install /
   update path (smart detection — audit + pull + update). Unchanged.
-
-**Add-on flags:**
-- `--with-addons` — install/update core skills + ALL available add-on packs
-- `--with-block-diagram-addons` — install/update core skills + block-diagram
-  add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
-
-Without an add-on flag, only the 23 core skills are installed/updated.
-If core is already installed, adding an add-on flag just copies the
-add-on skills (the audit detects core is satisfied and skips it).
 
 ---
 
@@ -413,29 +403,25 @@ Record the match as `$PRESET_ARG`. If none is present, `$PRESET_ARG` is
 empty. If more than one is present, stop with an error: "Specify exactly
 one preset: cherry-pick, locked-main-pr, or direct."
 
-Parser pseudocode (classify each token; presets, mode, and add-on flags
+Parser pseudocode (classify each token; presets and mode
 are orthogonal and can coexist):
 
 ```
 PRESET_ARG=""
 MODE=""          # "install" or "" (default = smart detection)
-ADDON_FLAG=""    # --with-addons | --with-block-diagram-addons | ""
 for tok in $ARGUMENTS; do
   case "$tok" in
     cherry-pick|locked-main-pr|direct)
       [ -n "$PRESET_ARG" ] && fail "multiple presets"
       PRESET_ARG="$tok" ;;
     install) MODE="install" ;;
-    --with-addons|--with-block-diagram-addons) ADDON_FLAG="$tok" ;;
     *) ;;  # unknown token — ignore, don't error
   esac
 done
 ```
 
 `install` + a preset keyword are compatible and combine (force-install
-with the chosen preset). `--with-addons` / `--with-block-diagram-addons`
-are independent of the preset — they control only which skills get
-installed, not landing behavior.
+with the chosen preset).
 
 Preset → field mapping (used wherever a preset is applied in later
 steps):
@@ -932,7 +918,7 @@ fi
 
 # Per-skill delta: count rows whose `metadata.version` differs upstream.
 delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
-n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
+n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$4 == "bumped" || $4 == "new"' | wc -l)
 ```
 
 Render (print the lines verbatim, substituting the three values; if
@@ -986,7 +972,7 @@ flip of a pure-plugin consumer on a **bare** `/update-zskills` call: with no
 and the gap-fill would copy them all in, flipping the consumer onto the
 legacy lane.
 
-**Policy reversal (W6.1) — explicit `install` / `--with-addons` is now
+**Policy reversal (W6.1) — explicit `install` is now
 HARD-REFUSED on the plugin lane.** Earlier this branch let explicit `install`
 through as an "opt-in" mirror action. That carve-out is removed: a client is
 **single-lane**, so running `/update-zskills install` on a `detect ==
@@ -1037,17 +1023,17 @@ if [ -n "$DIS" ]; then . "$DIS"; LANE="$(detect_install_state "$MAIN_ROOT")"; fi
 **If `LANE == plugin`:** do NOT run Step 0 asset-locate, the audit's
 gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
 
-- **W6.1 hard-refuse — explicit `install` / `--with-addons` on the plugin
-  lane.** If an explicit install arg was parsed (`$MODE == "install"` OR
-  `$ADDON_FLAG` non-empty) AND no lane switch is in progress, REFUSE and exit
+- **W6.1 hard-refuse — explicit `install` on the plugin
+  lane.** If an explicit install arg was parsed (`$MODE == "install"`)
+  AND no lane switch is in progress, REFUSE and exit
   non-zero. The `switch-in-progress` carve-out (W6.2) lets
   `scripts/switch-install-path.sh --to-update-zskills` run its mandated
   `/update-zskills install` step without tripping this refuse:
 
   ```bash
-  if { [ "$MODE" = install ] || [ -n "$ADDON_FLAG" ]; } \
+  if [ "$MODE" = install ] \
      && [ ! -f "${CLAUDE_PROJECT_DIR:-$PWD}/.zskills/switch-in-progress" ]; then
-    echo "ERROR: refusing 'install' / '--with-addons' on the plugin lane." >&2
+    echo "ERROR: refusing 'install' on the plugin lane." >&2
     echo "A client is single-lane. Running it here would re-create the legacy" >&2
     echo ".claude/skills mirror alongside the plugin (the dual state the system" >&2
     echo "actively pushes to consolidate). To switch lanes, run:" >&2
@@ -2103,22 +2089,6 @@ if [ -f "$CFG" ] && grep -qF '"port_script"' "$CFG"; then
 fi
 ```
 
-#### Step E — Install add-ons (if `--with-addons` or `--with-block-diagram-addons`)
-
-Skip this step if no add-on flag was provided.
-
-1. **Determine which add-on packs to install:**
-   - `--with-addons` -> all packs in `$PORTABLE/../block-diagram/` (and any
-     future add-on directories)
-   - `--with-block-diagram-addons` -> only `$PORTABLE/../block-diagram/`
-
-2. **For each add-on skill** (e.g., `add-block`, `add-example`, `model-design`):
-   - If `.claude/skills/<name>/SKILL.md` already exists, skip (never overwrite)
-   - Otherwise, copy from the add-on source directory to `.claude/skills/<name>/`
-
-3. **Report:** "Installed N add-on skills: [list]" or "Add-on skills already
-   installed — skipped."
-
 #### Step F — Apply Preset (if `$PRESET_ARG` is non-empty)
 
 This is the **single place** where preset values land into config and
@@ -2158,7 +2128,7 @@ formatting variance. Delegate to the script.
 
 #### Step F.5 — Mirror the source-repo tag into config
 
-Now that all skills, hooks, scripts, and add-ons have been installed
+Now that all skills, hooks, and scripts have been installed
 from the current source clone, mirror the clone's latest tag into
 `.claude/zskills-config.json` as the consumer-side `zskills_version`.
 This is what the audit gap report (Step 6) and `/briefing` "Z Skills
@@ -2197,7 +2167,6 @@ Installed:
 - Root ./CLAUDE.md migration: [none | N lines relocated, backup at ./CLAUDE.md.pre-zskills-migration]
 - Hooks: N hooks installed
 - Scripts: N scripts installed
-- Add-ons: N add-on skills installed (omit this line if no add-on flag was used)
 
 Skills with additional requirements:
 - /briefing: requires `.claude/skills/briefing/scripts/briefing.py` (see /briefing skill docs)
@@ -2214,10 +2183,7 @@ Run /update-zskills to check for updates later.
 
 The **Per-skill versions** sub-section is generated by piping
 `skill-version-delta.sh` output through awk. For an install, every
-row's status is `new` (the prior installed state was empty). Only show
-`addon`-kind rows when `--with-block-diagram-addons` (or
-`--with-addons`) was passed OR when at least one block-diagram skill
-is already present under `.claude/skills/`; otherwise filter them out.
+row's status is `new` (the prior installed state was empty).
 Same renderer logic as the update-path table (see Pull Latest step 6).
 
 ```bash
@@ -2228,12 +2194,8 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
-show_addons=0
-case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-[ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
-printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-  $2 == "addon" && show_addons == 0 { next }
-  { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
+printf '%s\n' "$delta_tsv" | awk -F'\t' '
+  { printf "  %-20s %s  (%s)\n", $1, $2, $4 }
 '
 ```
 
@@ -2319,13 +2281,9 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
    the new version to `.claude/skills/`. Show the user what changed (file
    names and a brief diff summary) before overwriting.
 
-4. **Update installed add-ons.** Check if any block-diagram add-on skills
-   are installed (e.g., `.claude/skills/add-block/SKILL.md` exists). If so,
-   diff against `$ZSKILLS_PATH/block-diagram/` and update the same way.
-
 5. **Fill new gaps.** For any NEW items (skills, hooks, scripts, zskills
    rules file) that don't exist yet, install them using the same steps as the
-   install path above (Steps B-E). In particular, if
+   install path above (Steps B-D). In particular, if
    `.claude/skills/update-zskills/scripts/apply-preset.sh` is missing from the target, copy it — Step F
    relies on it.
 
@@ -2413,19 +2371,14 @@ date -Iseconds > "$CLAUDE_PROJECT_DIR/.zskills/setup-confirmed"
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
-   show_addons=0
-   case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-   [ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
    # Updated section (status=bumped: old → new), then unchanged:
-   printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-     $2 == "addon" && show_addons == 0 { next }
-     $5 == "bumped"   { printf "  %-20s %s → %s\n", $1, $4, $3 }
-     $5 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $3 }
+   printf '%s\n' "$delta_tsv" | awk -F'\t' '
+     $4 == "bumped"   { printf "  %-20s %s → %s\n", $1, $3, $2 }
+     $4 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $2 }
    '
    # New section (status=new):
-   printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-     $2 == "addon" && show_addons == 0 { next }
-     $5 == "new" { printf "  %s\n", $1 }
+   printf '%s\n' "$delta_tsv" | awk -F'\t' '
+     $4 == "new" { printf "  %s\n", $1 }
    '
    ```
 

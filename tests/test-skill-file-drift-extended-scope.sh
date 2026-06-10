@@ -3,9 +3,8 @@
 #
 # Regression test for the extended-scope deny-list block in
 # tests/test-skill-conformance.sh that scans non-markdown sources
-# (hooks/*.sh, scripts/*.sh, skills/**/scripts/*.py,
-# block-diagram/**/scripts/*.py) for the same forbidden literals as the
-# .md scanner.
+# (hooks/*.sh, scripts/*.sh, skills/**/scripts/*.py) for the same
+# forbidden literals as the .md scanner.
 #
 # Test strategy: build a tiny synthetic REPO_ROOT in a mktemp tree
 # (NEVER touch real hooks/, scripts/, or skills/ files), drop the
@@ -44,7 +43,6 @@ trap 'rm -rf "$SYNTH"' EXIT
 
 mkdir -p "$SYNTH/hooks" "$SYNTH/scripts" \
          "$SYNTH/skills/synth/scripts" \
-         "$SYNTH/block-diagram/synth/scripts" \
          "$SYNTH/tests/fixtures"
 
 # Copy the canonical fixture (single source of truth for forbidden literals).

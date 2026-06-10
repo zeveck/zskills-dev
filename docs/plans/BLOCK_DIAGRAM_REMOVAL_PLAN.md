@@ -1,7 +1,8 @@
 ---
 title: Remove the block-diagram Add-Ons Entirely
 created: 2026-06-10
-status: active
+status: "complete"
+completed: "2026-06-10T18:02:48Z"
 ---
 
 # Plan: Remove the block-diagram Add-Ons Entirely
@@ -142,11 +143,11 @@ shifted since inventory.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — De-reference the test layer | ⬚ | | |
-| 2 — Delete the trees + deletion-coupled edits | ⬚ | | |
-| 3 — Strip addon machinery (skills, scripts, hooks, CI) | ⬚ | | |
-| 4 — Root docs + counts | ⬚ | | |
-| 5 — Final sweep + verification | ⬚ | | |
+| 1 — De-reference the test layer | ✅ | f4479288 | 19 test files; 7658/7658 passed; floor 6 kept; survivors per plan |
+| 2 — Delete the trees + deletion-coupled edits | ✅ | 30c097d3 | 14 deletes + 8 edits; 7617/7617; −41 accounted; AC3 comment-hit → Phase 3 F |
+| 3 — Strip addon machinery (skills, scripts, hooks, CI) | ✅ | 6b09c4ba | 56 files; 10 skill bumps+mirrors; 2 regex adaptations verified; post-commit 119/119+13/13 |
+| 4 — Root docs + counts | ✅ | ff56972f | 5 docs files; receipts matched; 7614/7614; 3 leftovers → Phase 5 |
+| 5 — Final sweep + verification | ✅ | 8194f9c3 | zero-ref sweep EMPTY; residual 19 hits all adjudicated survivors; count sweep clean (23 core intact); registry byte-clean; TECHNICAL.html internal-consistency fixes (handoff items 1–3); 7614/7614 |
 
 ---
 

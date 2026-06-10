@@ -259,12 +259,12 @@ for f in "$SKILL" "$MIRROR"; do
 done
 
 # (b) Execute the refuse fence's gate logic directly. The fence refuses when
-#     ($MODE==install || $ADDON_FLAG non-empty) AND no switch-in-progress
+#     $MODE==install AND no switch-in-progress
 #     marker. Model the exact condition the branch uses.
 refuse_gate() {
-  # args: MODE ADDON_FLAG PROJ
-  local MODE="$1" ADDON_FLAG="$2" PROJ="$3"
-  if { [ "$MODE" = install ] || [ -n "$ADDON_FLAG" ]; } \
+  # args: MODE PROJ
+  local MODE="$1" PROJ="$2"
+  if [ "$MODE" = install ] \
      && [ ! -f "$PROJ/.zskills/switch-in-progress" ]; then
     return 1   # refused
   fi
@@ -272,26 +272,20 @@ refuse_gate() {
 }
 PR="$TMP/refuse"; mkdir -p "$PR/.zskills"
 # explicit install, no switch marker → REFUSE
-if ! refuse_gate install "" "$PR"; then
+if ! refuse_gate install "$PR"; then
   pass "AC5b. explicit 'install' on plugin lane → refused (no switch marker)"
 else
   fail "AC5b. explicit install should have been refused"
 fi
-# --with-addons, no switch marker → REFUSE
-if ! refuse_gate "" "--with-addons" "$PR"; then
-  pass "AC5c. '--with-addons' on plugin lane → refused"
-else
-  fail "AC5c. --with-addons should have been refused"
-fi
-# bare call (no install/addons) → ALLOWED (not refused)
-if refuse_gate "" "" "$PR"; then
-  pass "AC5d. bare call (no install/addons) → not refused"
+# bare call (no install) → ALLOWED (not refused)
+if refuse_gate "" "$PR"; then
+  pass "AC5d. bare call (no install) → not refused"
 else
   fail "AC5d. bare call wrongly refused"
 fi
 # explicit install WITH switch-in-progress marker → ALLOWED (carve-out)
 : > "$PR/.zskills/switch-in-progress"
-if refuse_gate install "" "$PR"; then
+if refuse_gate install "$PR"; then
   pass "AC5e. install + switch-in-progress marker → refuse SKIPPED (W6.2 carve-out)"
 else
   fail "AC5e. switch-in-progress carve-out failed to skip the refuse"

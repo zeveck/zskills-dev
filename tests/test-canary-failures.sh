@@ -996,57 +996,57 @@ assert_tracking_allow \
   "meta.* prefix: metadata files do not match requires.* glob, no enforcement fires" \
   "$tn8_out"
 
-# Case 9 — block-diagram delegation pair (add-block ↔ add-example).
-# add-block (parent) writes requires.add-example.${BLOCK_SLUG};
-# add-example (child) writes fulfilled.add-example.${NAME_SLUG} from
+# Case 9 — generic delegation pair (parent-skill ↔ child-skill).
+# parent-skill (parent) writes requires.child-skill.${ITEM_SLUG};
+# child-skill (child) writes fulfilled.child-skill.${NAME_SLUG} from
 # the same worktree. Both must land in the parent's $PIPELINE_ID
 # subdir for the hook's pair-matching gate to resolve. Verifies the
-# post-catchup layout. Fixture YAML matches the writer shape from
-# Phase 1.
+# post-catchup layout. Fixture YAML matches the generic
+# delegation-pair writer shape.
 tn9_repo=$(setup_tracking_fixture)
-mkdir -p "$tn9_repo/.zskills/tracking/add-block.Gain"
-printf 'skill: add-example\nparent: add-block\nblock: Gain\ndate: 2026-04-26T10:00:00-04:00\n' \
-  > "$tn9_repo/.zskills/tracking/add-block.Gain/requires.add-example.Gain"
-printf 'skill: add-example\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:05:00-04:00\n' \
-  > "$tn9_repo/.zskills/tracking/add-block.Gain/fulfilled.add-example.Gain"
-printf 'add-block.Gain\n' > "$tn9_repo/.zskills-tracked"
+mkdir -p "$tn9_repo/.zskills/tracking/parent-skill.Gain"
+printf 'skill: child-skill\nparent: parent-skill\nblock: Gain\ndate: 2026-04-26T10:00:00-04:00\n' \
+  > "$tn9_repo/.zskills/tracking/parent-skill.Gain/requires.child-skill.Gain"
+printf 'skill: child-skill\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:05:00-04:00\n' \
+  > "$tn9_repo/.zskills/tracking/parent-skill.Gain/fulfilled.child-skill.Gain"
+printf 'parent-skill.Gain\n' > "$tn9_repo/.zskills-tracked"
 tn9_out=$(run_tracking_hook "$tn9_repo")
 assert_tracking_allow \
-  "block-diagram delegation pair: requires + fulfilled co-located in PIPELINE_ID subdir → allow" \
+  "delegation pair: requires + fulfilled co-located in PIPELINE_ID subdir → allow" \
   "$tn9_out"
 
-# Case 10 — block-diagram missing fulfillment: parent's requires marker
-# is present but no fulfilled.add-example.<slug> → hook must block.
+# Case 10 — delegation-pair missing fulfillment: parent's requires marker
+# is present but no fulfilled.child-skill.<slug> → hook must block.
 # Confirms the gate actually fires when the pair is incomplete.
 tn10_repo=$(setup_tracking_fixture)
-mkdir -p "$tn10_repo/.zskills/tracking/add-block.Integrator"
-printf 'skill: add-example\nparent: add-block\nblock: Integrator\ndate: 2026-04-26T10:00:00-04:00\n' \
-  > "$tn10_repo/.zskills/tracking/add-block.Integrator/requires.add-example.Integrator"
-printf 'add-block.Integrator\n' > "$tn10_repo/.zskills-tracked"
+mkdir -p "$tn10_repo/.zskills/tracking/parent-skill.Integrator"
+printf 'skill: child-skill\nparent: parent-skill\nblock: Integrator\ndate: 2026-04-26T10:00:00-04:00\n' \
+  > "$tn10_repo/.zskills/tracking/parent-skill.Integrator/requires.child-skill.Integrator"
+printf 'parent-skill.Integrator\n' > "$tn10_repo/.zskills-tracked"
 tn10_out=$(run_tracking_hook "$tn10_repo")
 assert_tracking_deny \
-  "block-diagram missing fulfillment: requires.add-example.Integrator unfulfilled → deny" \
-  "$tn10_out" "add-example.Integrator"
+  "delegation-pair missing fulfillment: requires.child-skill.Integrator unfulfilled → deny" \
+  "$tn10_out" "child-skill.Integrator"
 
-# Case 11 — cross-name isolation: pipeline add-block.Gain has its
-# requires fulfilled, but a sibling add-block.Integrator pipeline
+# Case 11 — cross-name isolation: pipeline parent-skill.Gain has its
+# requires fulfilled, but a sibling parent-skill.Integrator pipeline
 # exists with an unfulfilled requires. The active pipeline (Gain)
 # must NOT be blocked by Integrator's unmet requirement (subdir
-# scoping). Mirrors fix-issues sprint isolation (case 7) for the
-# block-diagram namespace.
+# scoping). Mirrors fix-issues sprint isolation (case 7) for a
+# generic parent↔child delegation-pair namespace.
 tn11_repo=$(setup_tracking_fixture)
-mkdir -p "$tn11_repo/.zskills/tracking/add-block.Gain"
-mkdir -p "$tn11_repo/.zskills/tracking/add-block.Integrator"
-printf 'skill: add-example\nparent: add-block\nblock: Gain\ndate: 2026-04-26T10:00:00-04:00\n' \
-  > "$tn11_repo/.zskills/tracking/add-block.Gain/requires.add-example.Gain"
-printf 'skill: add-example\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:05:00-04:00\n' \
-  > "$tn11_repo/.zskills/tracking/add-block.Gain/fulfilled.add-example.Gain"
-printf 'skill: add-example\nparent: add-block\nblock: Integrator\ndate: 2026-04-26T11:00:00-04:00\n' \
-  > "$tn11_repo/.zskills/tracking/add-block.Integrator/requires.add-example.Integrator"
-printf 'add-block.Gain\n' > "$tn11_repo/.zskills-tracked"
+mkdir -p "$tn11_repo/.zskills/tracking/parent-skill.Gain"
+mkdir -p "$tn11_repo/.zskills/tracking/parent-skill.Integrator"
+printf 'skill: child-skill\nparent: parent-skill\nblock: Gain\ndate: 2026-04-26T10:00:00-04:00\n' \
+  > "$tn11_repo/.zskills/tracking/parent-skill.Gain/requires.child-skill.Gain"
+printf 'skill: child-skill\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:05:00-04:00\n' \
+  > "$tn11_repo/.zskills/tracking/parent-skill.Gain/fulfilled.child-skill.Gain"
+printf 'skill: child-skill\nparent: parent-skill\nblock: Integrator\ndate: 2026-04-26T11:00:00-04:00\n' \
+  > "$tn11_repo/.zskills/tracking/parent-skill.Integrator/requires.child-skill.Integrator"
+printf 'parent-skill.Gain\n' > "$tn11_repo/.zskills-tracked"
 tn11_out=$(run_tracking_hook "$tn11_repo")
 assert_tracking_allow \
-  "block-diagram cross-name isolation: Gain not blocked by Integrator's unmet requires" \
+  "cross-name isolation: Gain not blocked by Integrator's unmet requires" \
   "$tn11_out"
 
 # --- Phase 5: /commit reviewer prompt + Phase 7 anti-stash discipline ---

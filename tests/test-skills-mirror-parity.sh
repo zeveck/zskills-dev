@@ -6,13 +6,8 @@
 # closed issue #390 for hooks) for the skill-source -> skill-install layer.
 # Closes issue #538.
 #
-# Source-of-truth is multi-rooted:
-#   skills/<X>/            -> .claude/skills/<X>/         (required, byte-equal)
-#   block-diagram/<X>/     -> .claude/skills/<X>/         (optional install per
-#                                                          --with-addons /
-#                                                          --with-block-diagram-addons;
-#                                                          if mirror exists it MUST
-#                                                          be byte-equal)
+# Source-of-truth:
+#   skills/<X>/  ->  .claude/skills/<X>/  (required, byte-equal)
 #
 # Exclusions (per `feedback_claude_skills_permissions` and mirror semantics):
 #   __pycache__/*.pyc — Python bytecode, not source-tracked.
@@ -28,8 +23,7 @@
 # To update the whitelist, run:
 #   diff -rq skills/ .claude/skills/ --exclude=__pycache__ --exclude='*.pyc' \
 #     | grep '^Only in .claude/skills/'
-# Anything not in skills/, not in block-diagram/, and not whitelisted is
-# treated as drift.
+# Anything not in skills/ and not whitelisted is treated as drift.
 
 set -u
 
@@ -87,55 +81,20 @@ for SRC in "${SKILL_DIRS[@]}"; do
   fi
 done
 
-# --- Forward check: every block-diagram/<X>/ that IS installed must match. ---
-# block-diagram add-ons are installed opt-in (`--with-addons` /
-# `--with-block-diagram-addons`); missing mirror is NOT a failure, but a
-# present-but-divergent mirror IS.
-shopt -s nullglob
-ADDON_DIRS=( block-diagram/*/ )
-shopt -u nullglob
-
-for SRC in "${ADDON_DIRS[@]}"; do
-  bn="$(basename "$SRC")"
-  # Only consider entries that look like skills (have SKILL.md). Non-skill
-  # directories under block-diagram/ (e.g., `screenshots/`) are
-  # documentation/assets, not installable skills.
-  if [[ ! -f "$SRC/SKILL.md" ]]; then
-    pass "skip (not a skill, no SKILL.md): $SRC"
-    continue
-  fi
-
-  MIRROR=".claude/skills/$bn"
-  if [[ ! -d "$MIRROR" ]]; then
-    pass "addon $SRC not installed (no mirror at $MIRROR/) — opt-in, ok"
-    continue
-  fi
-
-  if diff -rq "${DIFF_EXCLUDES[@]}" "$SRC" "$MIRROR/" >/dev/null 2>&1; then
-    pass "addon parity: $SRC == $MIRROR/"
-  else
-    drift="$(diff -rq "${DIFF_EXCLUDES[@]}" "$SRC" "$MIRROR/" 2>&1)"
-    fail "addon drift: $SRC vs $MIRROR/"
-    while IFS= read -r line; do
-      [[ -n "$line" ]] && echo "       $line"
-    done <<< "$drift"
-  fi
-done
-
-# --- Reverse check: every .claude/skills/<X>/ must trace to a source root
-# OR be whitelisted. ---
+# --- Reverse check: every .claude/skills/<X>/ must trace to a source under
+# skills/ OR be whitelisted. ---
 shopt -s nullglob
 MIRROR_DIRS=( .claude/skills/*/ )
 shopt -u nullglob
 
 for MIR in "${MIRROR_DIRS[@]}"; do
   bn="$(basename "$MIR")"
-  if [[ -d "skills/$bn" || -d "block-diagram/$bn" ]]; then
+  if [[ -d "skills/$bn" ]]; then
     pass "reverse: mirror $MIR traces to a source root"
   elif is_whitelisted "$bn"; then
     pass "reverse: mirror $MIR is whitelisted (consumer-installed)"
   else
-    fail "reverse: mirror $MIR has no source under skills/ or block-diagram/ and is not whitelisted"
+    fail "reverse: mirror $MIR has no source under skills/ and is not whitelisted"
   fi
 done
 

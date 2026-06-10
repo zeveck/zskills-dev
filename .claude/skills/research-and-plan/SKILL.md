@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.06.03+9e71b0"
+  version: "2026.06.10+5f506d"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -119,7 +119,7 @@ It does NOT mean "don't use the Agent tool generally" — `/draft-plan`
 itself uses the Agent tool extensively for its sub-tasks. It means: to
 invoke a skill that has internal dispatches, use the Skill tool, not the
 Agent tool. The same rule applies to `/run-plan`, `/research-and-plan`,
-`/fix-issues`, `/verify-changes`, and `/add-block`.
+`/fix-issues`, and `/verify-changes`.
 
 **Past failure:** This has been violated three separate times by agents
 who interpreted the rule as "/draft-plan internally is forbidden from

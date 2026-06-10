@@ -6,9 +6,9 @@
 # SCOPE: pure-shell integration assertion that the shared
 # `ensure-worktree.sh` preamble (loaded from
 # `.claude/skills/create-worktree/scripts/ensure-worktree.sh`)
-# implements the 10 gate sub-cases A-J that all 6 adopter skills rely
-# on. Six consumer skills (draft-plan, refine-plan, draft-tests,
-# block-diagram/add-block, block-diagram/add-example, fix-issues) front-
+# implements the 10 gate sub-cases A-J that the adopter skills rely
+# on. Five consumer skills (draft-plan, refine-plan, draft-tests,
+# fix-report, fix-issues) front-
 # run this helper to honour --worktree-override, no-op when already
 # inside a worktree, no-op when main_protected is not true, otherwise
 # create a fresh worktree via the peer create-worktree.sh.

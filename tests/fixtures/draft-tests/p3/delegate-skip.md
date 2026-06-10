@@ -55,9 +55,9 @@ responsibility.
 
 - [ ] 2.1 — delegated work.
 
-### Execution: delegate /add-block to scaffold the new sub-skill
+### Execution: delegate /create-worktree to scaffold the new sub-skill
 
-Delegate to `/add-block` with appropriate arguments.
+Delegate to `/create-worktree` with appropriate arguments.
 
 ### Acceptance Criteria
 

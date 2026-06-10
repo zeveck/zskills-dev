@@ -106,7 +106,7 @@ confirm_block() {
 # Is $1 a zskills-owned skill/hook by basename against the shipped source
 # tree (D25/D27 wildcard rule — no frozen KNOWN_* lists)? $1 = a basename.
 is_shipped_skill() {
-  [ -d "$REPO_ROOT/skills/$1" ] || [ -d "$REPO_ROOT/block-diagram/$1" ]
+  [ -d "$REPO_ROOT/skills/$1" ]
 }
 is_shipped_hook() {
   # Match against hooks/*.sh and hooks/*.sh.template basenames.

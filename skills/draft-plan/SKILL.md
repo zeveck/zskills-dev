@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.04+53c471"
+  version: "2026.06.10+344b88"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -429,8 +429,8 @@ broken into 5-10 sub-phases at execution time with no adversarial review.
 
 Common pattern: tasks that add multiple block types alongside new engine
 infrastructure (new solver, new domain, new codegen path) should
-decompose into infrastructure-first plan + block additions via
-`/add-block` delegate phases after the engine lands.
+decompose into infrastructure-first plan + the repetitive per-block
+additions via `/do` delegate phases after the engine lands.
 
 If the task is too big, present this to the user:
 > This task is too broad for one well-specified plan. It decomposes

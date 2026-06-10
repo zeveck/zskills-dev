@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ensure-worktree.sh — Gate worktree creation for file-writing skills.
 #
-# Single shared helper for the worktree preamble. Six consumer skills
-# (plan-family + block-diagram + /fix-issues) dispatch this BEFORE
+# Single shared helper for the worktree preamble. Five consumer skills /
+# six invocation sites (draft-plan, refine-plan, draft-tests, fix-report,
+# fix-issues sprint+sync) dispatch this BEFORE
 # writing any files, so that they uniformly:
 #   - honour an explicit --worktree-override (resume-or-redirect),
 #   - no-op when already running inside a worktree,

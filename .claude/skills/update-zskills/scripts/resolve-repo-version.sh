@@ -39,8 +39,7 @@ if [ -n "$tag" ]; then
 fi
 
 # 2) plugin.json fallback — top-level `version` from the `zs` plugin manifest
-#    at <path>/.claude-plugin/plugin.json. NOT block-diagram/.claude-plugin/
-#    (that is the `zsbd` addon manifest). Read only the manifest head so the
+#    at <path>/.claude-plugin/plugin.json. Read only the manifest head so the
 #    FIRST "version": "..." match is the top-level key, never a nested one.
 manifest="$ZSKILLS_PATH/.claude-plugin/plugin.json"
 if [ -f "$manifest" ]; then

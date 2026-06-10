@@ -23,17 +23,9 @@ shares the plugin-completion logic with `build-prod.sh` via
 
 Release steps:
 
-1. **Bump BOTH `plugin.json.version` files in lockstep** (D10):
-   `.claude-plugin/plugin.json` (the `zs` plugin) and
-   `block-diagram/.claude-plugin/plugin.json` (the `zsbd` addon manifest,
-   still shipped on disk). They MUST stay equal —
-   `tests/test-plugin-marketplace.sh` asserts `zs.version == zsbd.version`.
-   Choose the next `YYYY.MM.N` value (same scheme as the git tag). Commit the
-   bump on dev. **Interim note:** the marketplace now lists a SINGLE plugin
-   (`zs`); the `zsbd` addon has been delisted from the marketplace and its
-   block-diagram skills ride bundled inside `zs`. The `zsbd` manifest stays on
-   disk pending a future separate-repo split, which is why the lockstep bump
-   still touches both files.
+1. **Bump `plugin.json.version`** in `.claude-plugin/plugin.json` (the `zs`
+   plugin). Choose the next `YYYY.MM.N` value (same scheme as the git tag).
+   Commit the bump on dev.
 2. **(Optional) Dry-build / inspect locally.** Two ways:
    - **Workflow dry-run:** click Run workflow with **Dry run** checked — it
      builds the prod tree and shows the file diff in the run summary, pushing
@@ -70,8 +62,7 @@ exactly analogous to the dev→prod URL rewrite: the shared finalizer
 (`scripts/_lib/finalize-prod-tree.sh`) runs `rewrite_marketplace_repo` over the
 prod tree's `.claude-plugin/marketplace.json`, swapping `zeveck/zskills-dev` →
 `zeveck/zskills` in ONLY the `zs` `source.repo` field (a field-scoped Python
-round-trip, NOT a blanket sed; `ref`, `source.source`, and the `zsbd`
-`./block-diagram` source are untouched). A **residue invariant** immediately
+round-trip, NOT a blanket sed; `ref` and `source.source` are untouched). A **residue invariant** immediately
 after the rewrite asserts the built manifest carries ZERO `zskills-dev` (bare
 substring) and `return 1`s the build if any survives — and because
 `build-prod.sh` runs `set -euo pipefail`, that aborts the publish BEFORE any

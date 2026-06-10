@@ -254,7 +254,7 @@ vi_hook_has_version_stamp() {
 # mirror ALWAYS carries `update-zskills` (the installer) plus the stable core,
 # so a future new skill not yet in this list never breaks lane detection — the
 # mirror still carries the anchors. Derived from the repo's `skills/` directory
-# names (excludes block-diagram add-ons). Kept INLINE: this lib must stay
+# names. Kept INLINE: this lib must stay
 # standalone (it deliberately does NOT source detect-install-state.sh, which is
 # not mirrored to a legacy consumer).
 vi_has_zskills_mirror() {

@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.05+498b5d"
+  version: "2026.06.10+0a2e12"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -25,7 +25,6 @@ phases) or `/fix-issues` (batch bug fixing).
 |------|-----|
 | Documentation, examples, presentations, screenshots | `/do` |
 | Small refactors, one-off fixes, content updates | `/do` |
-| Adding a new block type | `/add-block` (10-step workflow) |
 | Newsletter entry | `/do` |
 | Batch bug fixing (N issues) | `/fix-issues N` |
 | Executing a plan phase | `/run-plan` |

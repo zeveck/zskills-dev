@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.06.03+21acf7"
+  version: "2026.06.10+7b65f8"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -296,7 +296,7 @@ For every file classified as "related":
    Skip this step for content-only commits (`.md`, `.jpg`, `.png`, logs).
 
 2.5. **Skill-version bump check.** For every staged file under
-   `skills/<owner>/...` or `block-diagram/<owner>/...`, verify each affected
+   `skills/<owner>/...`, verify each affected
    skill's `metadata.version` was correctly bumped (date refreshed AND hash
    matches recomputed projection):
 

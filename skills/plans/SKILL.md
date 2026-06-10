@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.06.04+58727c"
+  version: "2026.06.10+af5e6a"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -240,7 +240,7 @@ when you have many plans and can't remember what each one is about.
        Fill documentation gaps: missing READMEs, stale block counts, broken links
 
      BLOCK_EXPANSION_PLAN.md (4 phases, Medium)
-       Add 15 missing blocks via /add-block delegate phases
+       Add 15 missing blocks via /do delegate phases
 
    In Progress:
      CORRECTNESS_PLAN.md (13 phases, 7/13 done)
@@ -386,7 +386,7 @@ prose if desired.
 - **Never modify plan files** — the index is read-only metadata. It
   reads plans (via the aggregator) but never changes them.
 - **Skip `$ZSKILLS_PLANS_DIR/blocks/` subdirectories** — those are block-specific
-  plan files managed by `/add-block`, not executable plans.
+  plan files managed by consumer tooling, not executable plans.
   `collect.py` already restricts to top-level `$ZSKILLS_PLANS_DIR/*.md`.
 - **Skip `PLAN_INDEX.md` itself** — don't index the index.
 - **Relative links** — since the index lives in `$ZSKILLS_PLANS_DIR`, links are

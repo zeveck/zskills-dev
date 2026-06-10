@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Asserts total `description:` bytes across all source SKILL.md files
-# (skills/*/SKILL.md and block-diagram/*/SKILL.md, excluding screenshots/).
+# (skills/*/SKILL.md).
 # Two-tier budget: hard-fail above 7500, soft-warn between 7000 and 7500.
 # Per-skill breakdown emitted for diagnosis.
 #
@@ -35,8 +35,8 @@ extract_description() {
   # Handles BOTH scalar forms found in this repo:
   #   * Block scalar: `description: >-` followed by indented continuation
   #     lines (joined with single spaces, YAML folded form).
-  #   * Single-line: `description: <text on the same line>` (3 skills:
-  #     land-pr, update-zskills, model-design).
+  #   * Single-line: `description: <text on the same line>` (e.g.
+  #     land-pr, update-zskills).
   # Pure awk; no jq, no python.
   local file="$1"
   awk '
@@ -80,7 +80,7 @@ extract_description() {
 
 TOTAL=0
 declare -A PER_SKILL
-for f in $(find skills block-diagram -mindepth 2 -maxdepth 2 -name SKILL.md | sort); do
+for f in $(find skills -mindepth 2 -maxdepth 2 -name SKILL.md | sort); do
   desc=$(extract_description "$f")
   n=${#desc}
   name=$(echo "$f" | awk -F/ '{print $2}')

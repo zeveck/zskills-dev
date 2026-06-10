@@ -20,8 +20,7 @@
 #                                 README.md is the section index and always
 #                                 stays under "Skills".)
 #
-# Deliberately excluded (agent/dev artifacts OR optional add-ons, not docs a new user needs):
-#   - docs/skills/block-diagram/ (optional block-diagram add-on; users who need it visit the addon repo separately)
+# Deliberately excluded (agent/dev artifacts, not docs a new user needs):
 #   - docs/plans/    (in-flight + completed design plans — for maintainers)
 #   - docs/reports/  (post-execution reports — auto-generated)
 #   - docs/evals/    (skill evaluations / coverage analyses)

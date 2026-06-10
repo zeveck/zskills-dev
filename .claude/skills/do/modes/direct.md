@@ -77,7 +77,6 @@ fi
 ```
 
 **Follow existing conventions in all paths:**
-- Example models → `/model-design` skill guidelines
 - Newsletter entries → existing NEWSLETTER.md format
 - Documentation → existing doc style in the repo
 - Code → existing patterns in the codebase

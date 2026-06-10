@@ -21,7 +21,6 @@
 #                  <name>  <old> → <new>
 #                  <name>  <ver> (unchanged)
 #                New: M items installed
-#   6. Site C — addon rows hidden by default, shown with --with-block-diagram-addons
 #   7. CONTRAST — rerender output silent on `Repo version|metadata.version`
 #   8. CONTRAST — managed.md silent on `Repo version|metadata.version`
 #   9. SKILL.md textual invariants (anchors + keywords for all 3 sites)
@@ -82,7 +81,7 @@ render_site_a_line() {
   current=$(bash "$RESOLVE" "$zskills_path")
   installed=$(read_installed_zskills_ver "$claude_dir/.claude/zskills-config.json")
   delta_tsv=$(CLAUDE_PROJECT_DIR="$claude_dir" bash "$DELTA" "$zskills_path")
-  n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
+  n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$4 == "bumped" || $4 == "new"' | wc -l)
   [ -z "$current" ]   && current="(unversioned) — source clone has no tags"
   [ -z "$installed" ] && installed="(none)"
   echo "Repo version: ${installed} → ${current}"
@@ -92,15 +91,13 @@ render_site_a_line() {
 # ----------------------------------------------------------------------
 # Oracle: render Site B's per-skill versions block (install final report).
 # Every row shows `<name>  <metadata.version>  (new)` for fresh install.
-# Optionally include addon rows.
 # ----------------------------------------------------------------------
 render_site_b_block() {
-  local zskills_path="$1" claude_dir="$2" show_addons="${3:-0}"
+  local zskills_path="$1" claude_dir="$2"
   local delta_tsv
   delta_tsv=$(CLAUDE_PROJECT_DIR="$claude_dir" bash "$DELTA" "$zskills_path")
-  printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-    $2 == "addon" && show_addons == 0 { next }
-    { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
+  printf '%s\n' "$delta_tsv" | awk -F'\t' '
+    { printf "  %-20s %s  (%s)\n", $1, $2, $4 }
   '
 }
 
@@ -109,7 +106,7 @@ render_site_b_block() {
 # Updated rows (bumped: old → new), unchanged rows (ver), New rows.
 # ----------------------------------------------------------------------
 render_site_c_table() {
-  local zskills_path="$1" claude_dir="$2" show_addons="${3:-0}"
+  local zskills_path="$1" claude_dir="$2"
   local delta_tsv old_ver new_ver
   delta_tsv=$(CLAUDE_PROJECT_DIR="$claude_dir" bash "$DELTA" "$zskills_path")
   old_ver=$(read_installed_zskills_ver "$claude_dir/.claude/zskills-config.json")
@@ -122,15 +119,13 @@ render_site_c_table() {
   echo "Repo version: ${old_ver} → ${new_ver}"
   echo ""
   echo "Updated: skills"
-  printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-    $2 == "addon" && show_addons == 0 { next }
-    $5 == "bumped"   { printf "  %-20s %s → %s\n", $1, $4, $3 }
-    $5 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $3 }
+  printf '%s\n' "$delta_tsv" | awk -F'\t' '
+    $4 == "bumped"   { printf "  %-20s %s → %s\n", $1, $3, $2 }
+    $4 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $2 }
   '
   echo "New: items installed"
-  printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
-    $2 == "addon" && show_addons == 0 { next }
-    $5 == "new" { printf "  %s\n", $1 }
+  printf '%s\n' "$delta_tsv" | awk -F'\t' '
+    $4 == "new" { printf "  %s\n", $1 }
   '
 }
 
@@ -138,7 +133,6 @@ render_site_c_table() {
 # Fixture builder. Creates an isolated tree with:
 #   $FIXT/source/                (zskills source clone, optionally git-init + tag)
 #     skills/<name>/SKILL.md
-#     block-diagram/<name>/SKILL.md
 #     scripts/frontmatter-get.sh   (so DELTA helper finds it)
 #   $FIXT/consumer/              (consumer project)
 #     .claude/skills/<name>/SKILL.md
@@ -176,7 +170,7 @@ T1=$(mktemp -d /tmp/zskills-test-vsurf-XXXXXX)
 trap 'rm -rf /tmp/zskills-test-vsurf-*' EXIT
 
 # Source clone with one tag.
-mkdir -p "$T1/source/skills" "$T1/source/scripts" "$T1/source/block-diagram"
+mkdir -p "$T1/source/skills" "$T1/source/scripts"
 cp "$GET_HELPER" "$T1/source/scripts/frontmatter-get.sh"
 chmod +x "$T1/source/scripts/frontmatter-get.sh"
 write_skill "$T1/source/skills/run-plan" run-plan "2026.05.02+aaaaaa"
@@ -304,16 +298,15 @@ fi
 echo ""
 echo "=== Test 4: Site B — install renders Per-skill versions list ==="
 T4=$(mktemp -d /tmp/zskills-test-vsurf-XXXXXX)
-mkdir -p "$T4/source/skills" "$T4/source/scripts" "$T4/source/block-diagram"
+mkdir -p "$T4/source/skills" "$T4/source/scripts"
 cp "$GET_HELPER" "$T4/source/scripts/frontmatter-get.sh"
 write_skill "$T4/source/skills/run-plan" run-plan "2026.05.02+aaaaaa"
 write_skill "$T4/source/skills/briefing" briefing "2026.05.02+bbbbbb"
-write_skill "$T4/source/block-diagram/add-block" add-block "2026.05.02+adadad"
 mkdir -p "$T4/consumer/.claude/skills"  # empty install
 cat > "$T4/consumer/.claude/zskills-config.json" <<'EOF'
 { "project_name": "acme" }
 EOF
-BLOCK=$(render_site_b_block "$T4/source" "$T4/consumer" 0)
+BLOCK=$(render_site_b_block "$T4/source" "$T4/consumer")
 if echo "$BLOCK" | grep -q 'run-plan' \
    && echo "$BLOCK" | grep -q 'briefing' \
    && echo "$BLOCK" | grep -q '(new)'; then
@@ -322,20 +315,6 @@ else
   fail "Site B core skills" "block:
 $BLOCK"
 fi
-if echo "$BLOCK" | grep -q 'add-block'; then
-  fail "Site B addon hidden by default" "add-block leaked into block:
-$BLOCK"
-else
-  pass "Site B addon hidden by default (no add-block row)"
-fi
-# Now with addon flag.
-BLOCK_ADD=$(render_site_b_block "$T4/source" "$T4/consumer" 1)
-if echo "$BLOCK_ADD" | grep -q 'add-block'; then
-  pass "Site B addon shown with --with-block-diagram-addons"
-else
-  fail "Site B addon shown" "block:
-$BLOCK_ADD"
-fi
 
 # ----------------------------------------------------------------------
 # Test 5: Site C — update report renders structured table.
@@ -343,7 +322,7 @@ fi
 # ----------------------------------------------------------------------
 echo ""
 echo "=== Test 5: Site C — update final report renders structured table ==="
-TABLE=$(render_site_c_table "$T1/source" "$T1/consumer" 0)
+TABLE=$(render_site_c_table "$T1/source" "$T1/consumer")
 # Expected lines:
 #   Repo version: 2026.04.0 → 2026.05.0
 #   run-plan        2026.04.20+999999 → 2026.05.02+aaaaaa
@@ -418,8 +397,8 @@ fi
 rm -f "$RERENDER_OUT"
 
 # Contrast complement: install/update flows DO surface version data.
-INSTALL_OUT=$(render_site_b_block "$T4/source" "$T4/consumer" 0)
-UPDATE_OUT=$(render_site_c_table "$T1/source" "$T1/consumer" 0)
+INSTALL_OUT=$(render_site_b_block "$T4/source" "$T4/consumer")
+UPDATE_OUT=$(render_site_c_table "$T1/source" "$T1/consumer")
 if echo "$INSTALL_OUT$UPDATE_OUT" | grep -qE '2026\.0[0-9]\.[0-9]+\+'; then
   pass "install/update flows DO surface metadata.version-style version data (contrast)"
 else

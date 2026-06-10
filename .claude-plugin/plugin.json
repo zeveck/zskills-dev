@@ -8,5 +8,5 @@
   "repository": "https://github.com/zeveck/zskills",
   "license": "MIT",
   "keywords": ["zskills", "agent", "claude-code", "skills", "plans"],
-  "skills": ["./skills/", "./block-diagram/"]
+  "skills": ["./skills/"]
 }

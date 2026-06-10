@@ -14,7 +14,7 @@ scope: `$PLAN_FILE`, `$PHASE`, `$TRACKING_ID`, `$LANDING_MODE`,
 Check the phase text for an execution mode directive:
 
 - **`### Execution: delegate <skill> [args]`** — delegate mode. The phase
-  runs a skill (e.g., `/add-block`, `/run-plan`) that manages its own
+  runs a skill (e.g., `/draft-plan`, `/run-plan`) that manages its own
   isolation. The orchestrating agent runs on **main**, not in a worktree.
   See "Delegate mode" below.
 - **`### Execution: worktree`** or **no directive** — default worktree mode.
@@ -44,7 +44,6 @@ skill manages its own worktree, verification, and landing.
    worktree — the delegate skill creates and destroys its own).
 
 Use cases:
-- `### Execution: delegate /add-block DiscreteFilter` — block expansion
 - `### Execution: delegate /run-plan plans/SUB_PLAN.md finish auto` — meta-plans
 - `### Execution: delegate /draft-plan plans/FOO.md <description> auto` — plan generation (omit `auto` if /run-plan was invoked without auto; thread `$AUTO_ARG` per #648)
 
@@ -720,8 +719,9 @@ Include this VERBATIM in the verifier dispatch prompt:
      The fix agent receives: the worktree path, the verbatim plan text,
      the specific items that failed verification, and instructions to
      complete them — not summarize them, not note them, COMPLETE them.
-     If the missing item is an example model, the fix agent calls
-     `/add-example`. If it's a runtime entry, the fix agent adds it.
+     If the missing item was produced by a skill or verification step,
+     the fix agent re-runs the relevant skill/verification; otherwise it
+     adds the missing artifact directly.
      The fix agent is NOT the implementer — it's a fresh agent with no
      bias toward "this is good enough."
 

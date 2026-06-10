@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.06.05+bdead4"
+  version: "2026.06.10+ef5e13"
 ---
 
 # /briefing — Project Status Briefing

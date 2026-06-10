@@ -1965,8 +1965,6 @@ _DOGFOOD_SOURCE_CANON = {
     'commit': 'commit',
     'land-pr': 'land-pr',
     'fix-report': 'fix-report',
-    'add-block': 'add-block',
-    'add-example': 'add-example',
 }
 
 # Ordered (prefix, canonical) rules for parameterized variants like
@@ -1979,8 +1977,6 @@ _DOGFOOD_SOURCE_PREFIXES = [
     ('run-plan', 'run-plan'),
     ('draft-plan', 'draft-plan'),
     ('fix-report', 'fix-report'),
-    ('add-block', 'add-block'),
-    ('add-example', 'add-example'),
     ('land-pr', 'land-pr'),
     ('commit', 'commit'),
     ('do', 'do'),

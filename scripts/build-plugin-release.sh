@@ -164,7 +164,7 @@ done
 # ── 4. Remove dev_only skills (+ mirrors) ──────────────────────────────────
 log "scanning for dev_only skills"
 dev_only_count=0
-for skill_file in "$STAGE"/skills/*/SKILL.md "$STAGE"/block-diagram/*/SKILL.md; do
+for skill_file in "$STAGE"/skills/*/SKILL.md; do
   [ -f "$skill_file" ] || continue
   if awk '
       BEGIN { in_fm = 0 }
@@ -182,12 +182,12 @@ for skill_file in "$STAGE"/skills/*/SKILL.md "$STAGE"/block-diagram/*/SKILL.md; 
 done
 [ "$dev_only_count" -eq 0 ] && printf "  ${DIM}(no dev_only: true skills)${RESET}\n"
 
-# ── 5. Version-bump-before-branch (D1/D10) ─────────────────────────────────
-# Set BOTH plugin.json versions in the staging tree to $VERSION before the
+# ── 5. Version-bump-before-branch (D1) ─────────────────────────────────
+# Set the plugin.json version in the staging tree to $VERSION before the
 # prod commit is built, so marketplace version-resolution sees the bumped
 # value (never the commit-SHA fallback, research §11).
-log "setting plugin.json version → $VERSION in staging tree (both zs + zsbd)"
-for pj in "$STAGE/.claude-plugin/plugin.json" "$STAGE/block-diagram/.claude-plugin/plugin.json"; do
+log "setting plugin.json version → $VERSION in staging tree (plugin.json)"
+for pj in "$STAGE/.claude-plugin/plugin.json"; do
   [ -f "$pj" ] || continue
   VERSION="$VERSION" "$PYTHON" - "$pj" <<'PY'
 import json, os, sys

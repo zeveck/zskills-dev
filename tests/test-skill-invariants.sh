@@ -110,8 +110,8 @@ for pair in "${ISSUE_606_PAIRS[@]}"; do
   fi
 done
 
-# Structural family scan — broad sweep across skills/**/*.md and
-# block-diagram/**/*.md for the family-pattern variables (TRACKING_ID,
+# Structural family scan — broad sweep across skills/**/*.md
+# for the family-pattern variables (TRACKING_ID,
 # PLAN_FILE, OUTPUT_FILE, META_PLAN_PATH, GOAL, CHANGE_SUMMARY, SPRINT_ID,
 # ROUND). Each occurrence inside a ```bash...``` fence MUST be backed by
 # an assignment in the same file. This catches the next person editing
@@ -210,7 +210,7 @@ while IFS= read -r f; do
     [ "$allowed" -eq 1 ] && continue
     FAMILY_FAIL+="$(printf '%s\t%s\n' "$f" "$v")"$'\n'
   done <<< "$fence_vars"
-done < <(find skills block-diagram -name '*.md' -type f 2>/dev/null)
+done < <(find skills -name '*.md' -type f 2>/dev/null)
 if [ -z "$FAMILY_FAIL" ]; then
   check 'issue #606: family-pattern vars (TRACKING_ID/PLAN_FILE/OUTPUT_FILE/META_PLAN_PATH/GOAL/CHANGE_SUMMARY/SPRINT_ID/ROUND) all have same-file assignments' 'true'
 else
@@ -218,10 +218,9 @@ else
   check 'issue #606: family-pattern vars (TRACKING_ID/PLAN_FILE/OUTPUT_FILE/META_PLAN_PATH/GOAL/CHANGE_SUMMARY/SPRINT_ID/ROUND) all have same-file assignments' 'false'
 fi
 
-# Phase C: tool-list-aware dispatch (4 skills)
+# Phase C: tool-list-aware dispatch (3 skills)
 for f in skills/run-plan/modes/execute-phase.md skills/fix-issues/modes/sprint.md \
-         skills/verify-changes/SKILL.md \
-         block-diagram/add-block/SKILL.md; do
+         skills/verify-changes/SKILL.md; do
   check "tool-list-aware dispatch in $f" \
     "grep -q 'Check your tool list' '$f'"
 done
@@ -396,10 +395,7 @@ TIER1_DIRTY_OUT=$(
   }' skills/update-zskills/references/script-ownership.md \
   | while IFS=$'\t' read -r name owner; do
       src="skills/$owner/scripts/$name"
-      if [ ! -f "$src" ]; then
-        src="block-diagram/$owner/scripts/$name"
-        [ -f "$src" ] || continue
-      fi
+      [ -f "$src" ] || continue
       if ! git diff --quiet HEAD -- "$src" 2>/dev/null; then
         echo "DIRTY: $src has uncommitted changes (working tree differs from HEAD); this test only checks committed state. Commit first, then re-run."
       fi
@@ -422,10 +418,7 @@ TIER1_DRIFT_OUT=$(
   }' skills/update-zskills/references/script-ownership.md \
   | while IFS=$'\t' read -r name owner; do
       src="skills/$owner/scripts/$name"
-      if [ ! -f "$src" ]; then
-        src="block-diagram/$owner/scripts/$name"
-        [ -f "$src" ] || continue
-      fi
+      [ -f "$src" ] || continue
       current_hash=$(git ls-tree HEAD "$src" 2>/dev/null | awk '{print $3}')
       [ -z "$current_hash" ] && continue
       if ! grep -qF "$current_hash" skills/update-zskills/references/tier1-shipped-hashes.txt; then
@@ -447,7 +440,7 @@ fi
 # negative warnings ("WITHOUT `isolation: "worktree"`"), so existing migrated skills
 # don't false-positive.
 check 'no skill prescribes isolation: worktree (use skills/create-worktree/scripts/create-worktree.sh)' \
-  '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ block-diagram/ 2>/dev/null'
+  '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ 2>/dev/null'
 
 # Cross-skill invariant: no skill writes flat-layout tracking markers.
 # Post-UNIFY_TRACKING_NAMES Phase 6, only $PIPELINE_ID-subdir writes
@@ -458,81 +451,7 @@ check 'no skill prescribes isolation: worktree (use skills/create-worktree/scrip
 # verify-changes,run-plan}/SKILL.md don't false-positive. See
 # plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md for baseline-zero proof.
 check 'no skill writes flat-layout tracking markers (post-UNIFY_TRACKING_NAMES)' \
-  '! grep -rEn '"'"'> "[^"]*\.zskills/tracking/[a-zA-Z]'"'"' skills/ block-diagram/ 2>/dev/null'
-
-# Meta-lint: every framework-wide cross-skill check must cover
-# block-diagram/. Two prior framework migrations (isolation:worktree,
-# UNIFY_TRACKING_NAMES) silently skipped block-diagram/ because the
-# check enumerated skills/ alone.
-#
-# Detection rule: a `check` line references `skills/` as a
-# framework-wide enumeration (matches the regex `[^A-Za-z]skills/`
-# followed by whitespace, a quote, or end-of-line — NOT followed by
-# a skill-name segment like `skills/run-plan/SKILL.md`). Such a
-# check must also contain ` block-diagram/` (with whitespace
-# boundary) somewhere in the same logical check invocation.
-#
-# CRITICAL — line-continuation handling: real `check` invocations
-# span TWO physical lines via trailing `\` continuation, e.g.:
-#   check '<desc>' \                  ← head: matches `^check`, lacks `skills/`
-#     '! grep -rE ... skills/ ...'    ← body: has `skills/`, lacks `^check`
-# A naive per-physical-line regex never finds the `^check && skills/`
-# conjunction and the meta-lint passes vacuously. The pre-process
-# step below joins `\\n` continuations so each logical check
-# invocation collapses to one line BEFORE the regex runs.
-#
-# Opt-out: prefix the check with the comment
-#   # block-diagram-exempt: <reason>
-# on the immediately preceding line. Use sparingly — exemptions
-# are by definition the surface that grows to bite us next time.
-SCRIPT="$REPO_ROOT/tests/test-skill-invariants.sh"
-_meta_skipped=0
-_meta_failed=0
-# Collapse `\\n` continuations into single logical lines.
-# awk: when a line ends with `\`, drop the `\` and buffer; on the
-# next line, prepend the buffer and emit. Comment lines pass
-# through unchanged so the `# block-diagram-exempt:` opt-out
-# still works on the preceding-line basis.
-joined=$(awk '
-  /\\$/ { sub(/\\$/,""); buf = buf $0; next }
-  buf   { print buf $0; buf = ""; next }
-        { print }
-' "$SCRIPT")
-while IFS= read -r line; do
-  case "$line" in
-    *"# block-diagram-exempt:"*) _meta_skipped=1; continue ;;
-  esac
-  # Match logical-check lines that enumerate skills/ as a path.
-  # Regex: skills/ preceded by non-alpha, followed by space,
-  # single-quote, double-quote, or end-of-line (i.e., a path arg
-  # at a directory boundary) — NOT skills/<name>/ (alpha after
-  # slash, single-skill probe) NOR skills/$f/... (variable
-  # interpolation, also single-skill probe by convention). The
-  # post-slash class must be path-terminator-shaped, not just
-  # non-alpha — `$` is non-alpha, but `skills/$f/SKILL.md` is the
-  # mirror-sync per-skill loop body at
-  # `tests/test-skill-invariants.sh:101-102`, which is single-skill
-  # by intent. After the awk-join above, both predicates evaluate
-  # against the same logical line.
-  if printf '%s' "$line" | grep -qE '^[[:space:]]*check ' \
-     && printf '%s' "$line" | grep -qE '[^A-Za-z]skills/([[:space:]'\''"]|$)'; then
-    if [ "$_meta_skipped" -eq 1 ]; then
-      _meta_skipped=0
-      continue
-    fi
-    if ! printf '%s' "$line" | grep -qE '[^A-Za-z]block-diagram/'; then
-      echo "META-LINT FAIL: framework-wide check missing block-diagram/ coverage: $line" >&2
-      _meta_failed=1
-    fi
-  else
-    _meta_skipped=0
-  fi
-done <<<"$joined"
-if [ "$_meta_failed" -eq 0 ]; then
-  check 'meta: framework-wide checks cover block-diagram/' 'true'
-else
-  check 'meta: framework-wide checks cover block-diagram/' 'false'
-fi
+  '! grep -rEn '"'"'> "[^"]*\.zskills/tracking/[a-zA-Z]'"'"' skills/ 2>/dev/null'
 
 # Issue #621: /briefing renderer paths must enumerate every canonical
 # worktree category. PR #532 (#516 fix) added
@@ -566,20 +485,11 @@ for _landed_status in full landed partial pr-ready pr-ci-failing pr-failed \
     "grep -qF '\"$_landed_status\"' .claude/skills/zskills-dashboard/scripts/zskills_monitor/static/app.js"
 done
 
-# Issue #649: CLAUDE.md Architecture section's skill counts must match
-# `ls -d skills/*/` and `ls -d block-diagram/*/` (minus screenshots).
+# Issue #649: CLAUDE.md Architecture section's skill count must match
+# `ls -d skills/*/`.
 # Stale counts ship outdated framing to every consumer reading CLAUDE.md.
-# These are two intentionally single-domain checks — one probes skills/,
-# the sibling check probes block-diagram/ — so the framework-wide
-# meta-lint's "must also reference block-diagram/" rule doesn't apply.
-# The opt-out below must sit IMMEDIATELY before the first `check` line
-# (no intervening non-marker lines) because the meta-lint resets the
-# skip flag on any non-marker line.
-# block-diagram-exempt: CLAUDE.md count check; sibling assertion below covers block-diagram/
 check "CLAUDE.md skills/ count matches ls -d skills/*/" \
   "test \"\$(grep -oE '\\([0-9]+ core\\)' CLAUDE.md | head -1 | grep -oE '[0-9]+')\" = \"\$(ls -d skills/*/ | wc -l)\""
-check "CLAUDE.md block-diagram/ count matches ls -d block-diagram/*/ (minus screenshots)" \
-  "test \"\$(grep -oE 'add-on skills \\([0-9]+\\)' CLAUDE.md | head -1 | grep -oE '[0-9]+')\" = \"\$(ls -d block-diagram/*/ | grep -v screenshots | wc -l)\""
 
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"

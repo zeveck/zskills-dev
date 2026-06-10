@@ -490,7 +490,7 @@ test_case_6c_commit_cohabitation() {
   fi
   while IFS=$'\t' read -r name owner; do
     [ -z "$name" ] && continue
-    for candidate in "scripts/$name" "skills/$owner/scripts/$name" "block-diagram/$owner/scripts/$name"; do
+    for candidate in "scripts/$name" "skills/$owner/scripts/$name"; do
       if [ -f "$REPO_ROOT/$candidate" ]; then
         if ! git -C "$REPO_ROOT" diff --quiet HEAD -- "$candidate" 2>/dev/null; then
           dirty_paths+=("$candidate")
