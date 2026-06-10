@@ -1,5 +1,28 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 2 Plugin-native agents + hooks.json Layer-0 timeout
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 18a004e2 (14 files, +633/−13)
+
+### Work Items (branches 1A + T-A)
+Root agents/{verifier,implementer}.md (hooks-block-stripped twins, parity-suite-locked); hooks.json gains the PreToolUse/Bash inject-bash-timeout entry; the hook gains the T-A suffix filter (absent⇒EXTEND; {verifier,implementer} incl. zs:-scoped ⇒ EXTEND; foreign ⇒ bare allow) + stamp 2026.06.9 + mirror; unit suite 11→19 (all legacy identity-less cases preserved); integrity/canary/manifest/conformance pins; finalizer fail-closed agents presence gate + URL-walk addition; new test-agents-parity.sh w/ triplet.
+
+### Verification
+- Verifier PASS 18a004e2; Layer-3 exit 0. Suite 7651/7651 (+37 independently accounted per-suite). Weakening audit CLEAN (13 deletions all in-place rewordings, zero assertion sites).
+- **Layer-0 STOP rule: SATISFIED with live shape-(b) proof** — real marketplace install (scope: user), probe log `verifier→EXTEND` + `zs:verifier→EXTEND`; legacy frontmatter path untouched; orchestrator absent⇒EXTEND.
+- Materialiser output-flip observed (resolve_src now prefers root agents/ → materialised copies lose the hooks: block) — Layer-0-safe, observation-not-edit, expected by plan.
+
+### Fork-portability notes (drift log)
+- Plan's "sentinel-half" expectation for test-inject-bash-timeout-parity.sh is stale (no such half exists) — drop from fork copy.
+- Finalizer "staging" should be specced as a fail-closed presence ASSERTION (tracked files ride automatically; a copy step is dead code).
+- The shim-sourcing in inject-bash-timeout.sh must be GUARDED (dual-context script: frontmatter path may lack CLAUDE_PLUGIN_ROOT) — spec the guarded idiom explicitly.
+- PROCESS: refresh .test-baseline.txt BEFORE dispatching the implementer, never after (orchestrator clobbered it this phase; verifier reconstructed).
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 1 Empirical verification → recorded branch selections
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md

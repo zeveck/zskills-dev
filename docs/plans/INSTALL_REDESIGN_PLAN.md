@@ -313,7 +313,7 @@ a real attended transcript/marker — as a verification FAIL.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Empirical verification → recorded branch selections | ✅ | d592c80a | 1A / T-A(scoped-filter) / R-b; 2 ATTENDED-PENDING (non-gating); evidence preserved |
-| 2 — Plugin-native agents + hooks.json Layer-0 timeout | ⬚ | | |
+| 2 — Plugin-native agents + hooks.json Layer-0 timeout | ✅ | 18a004e2 | 1A+T-A landed; STOP rule live-proven shape (b); 7651/7651 (+37 accounted) |
 | 3 — Layer-3 relocation (verify-response-validate.sh) | ⬚ | | |
 | 4 — Rules de-parameterization + delivery channel | ⬚ | | |
 | 5 — Config cascade (project > user > built-ins) | ⬚ | | |
