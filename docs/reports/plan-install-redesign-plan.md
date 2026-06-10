@@ -1,5 +1,26 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 4 Rules de-parameterization + delivery channel (R-b)
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 3f54ddc8 (19 files, +781/−279)
+
+### Work Items
+CLAUDE_TEMPLATE.md: all 10 {{TOKENS}} → config-resolution prose (per-token disposition table in the phase report); 3-4 legacy-mirror-only paths → dual-path; managed.md re-rendered same commit (pass-through — template and render now byte-equal modulo sentinel). Canonical zskills-defaults.json hoisted (skills/update-zskills/scripts/, seed-congruent, mirror twin). Renderer no-config mode (--defaults, fails closed). NEW hooks/session-rules-context.sh (R-b: additionalContext-only, lane+managed.md guards, zero writes, stamp 2026.06.10, shim) + hooks.json entry + 8-case suite w/ triplet + parity-exclusion + Gap-2b + finalizer R-b ship-file gate.
+
+### Verification
+- Verifier PASS 3f54ddc8; Layer-3 exit 0. Suite 7662/7662 (+13 net, accounting independently reproduced incl. the −4 environmental attended delta and the +2 baseline dirty-tree gates). Weakening audit: none; +13 net assertions.
+- Adjudications: retired-token render hard-error ACCEPTED (designed loud-fail, test-pinned); R-b end-to-end live session = ATTENDED-PENDING #3, non-gating (mechanism live-proven in Phase 1 Claim 3 both shapes; hook structurally proven 8/8) — DISCHARGE BY PHASE 9 DEV-QUAL: model quotes a managed-rules landmark + clean git status in an authed probe session.
+
+### Fork-portability notes (drift log)
+- Defaults key is testing.output_file (the seed's key), not output.file — fix the plan-table naming in the fork copy.
+- Baseline hygiene: capture baselines post-commit (a mid-pipeline dirty-tree baseline carries the 2 Tier-1 gate failures).
+- The renderer's --defaults path resolves renderer-relative (../skills/update-zskills/scripts/) — valid in dev/plugin/legacy-portable trees; fork should keep that relative form.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 3 Layer-3 relocation (verify-response-validate.sh)
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
