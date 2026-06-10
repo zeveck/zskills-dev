@@ -1,5 +1,23 @@
 # Plan Report — Block-Diagram Add-On Removal
 
+## Phase — 4 Root docs + counts
+
+**Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
+**Status:** Completed (verified)
+**Commits:** ff56972f (5 files: CLAUDE.md ×4 sites, RELEASING.md ×2 regions, description-budget glob, skill-versioning light-touch w/ historical markers, TECHNICAL.html recomputed to 23-skill basis)
+
+### Verification
+- Verifier PASS ff56972f; Layer-3 exit 0. Receipts independently re-run and matched (23 skills, 52163 skill-tree LOC, 16214 SKILL.md lines, fresh top-10). Suite: Overall: 7614/7614 passed, 0 failed.
+- AC1 zero-hit grep over the 4 fully-cleaned files; AC1b marked-historical adjudication set {196,198,200,202,232,234} confirmed; "26 + 3 = 29" preserved as history.
+
+### Fork-portability notes (drift log)
+- Plan labels the 3 sub-clauses as living in the "Two install lanes" paragraph; they actually live in "Dual-path dogfooding" — fix the label in the fork copy.
+- Top-10 table: fork plan should say "refresh the whole table from a fresh wc -l run" (survivor sizes drift between drafting and execution).
+- HANDOFF TO PHASE 5: 3 TECHNICAL.html leftovers outside Phase-4 ACs — L228 third "as of" date; L205/L208 trend-narrative endpoints now internally inconsistent with recomputed stats (strongest candidate); tests/hooks/git stats on the 06-05 basis. Phase 5 sweeps adjudicate.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 3 Strip addon machinery (skills, scripts, hooks, CI)
 
 **Plan:** docs/plans/BLOCK_DIAGRAM_REMOVAL_PLAN.md
