@@ -13,8 +13,17 @@ Because both callers route through ``managed_rules_substitution.build_substituti
 ``tests/test-managed-md-renderer-equivalence.sh`` is the canary.
 
 Usage:
-    render-managed-rules.py --config <cfg.json> --template <tmpl.md> \\
-        --out <out.md> [--sentinel <version>]
+    render-managed-rules.py [--config <cfg.json>] --template <tmpl.md> \\
+        --out <out.md> [--sentinel <version>] [--defaults <defaults.json>]
+
+``--config`` is OPTIONAL (INSTALL_REDESIGN Phase 4 — the redesign's
+consumers are config-optional). When omitted, the renderer loads the
+canonical built-in defaults from ``--defaults`` (default: the single
+checked-in defaults artifact
+``skills/update-zskills/scripts/zskills-defaults.json``, resolved relative
+to this script — valid in the dev tree, the released plugin tree, and the
+legacy portable tree alike). The legacy ``/update-zskills`` Step B/D call
+shape (explicit ``--config``) is unchanged.
 
 ``--sentinel <version>`` prepends an HTML-comment materialiser sentinel line
 matching the D20(a) detect-by-prefix regex ``^(#|<!--) zskills-materialised: ``
@@ -38,16 +47,38 @@ from managed_rules_substitution import build_substitutions, apply  # noqa: E402
 # frontmatter) the sentinel is an HTML comment.
 SENTINEL_PREFIX = "<!-- zskills-materialised:"
 
+# Canonical built-in defaults (INSTALL_REDESIGN Phase 4 — THE single defaults
+# artifact; every later defaults copy pins to it). Resolved relative to this
+# script so the same path works in the dev tree, the released plugin tree
+# (${CLAUDE_PLUGIN_ROOT}/scripts/ -> ${CLAUDE_PLUGIN_ROOT}/skills/...), and
+# the legacy portable tree ($PORTABLE/scripts/ -> $PORTABLE/skills/...).
+CANONICAL_DEFAULTS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "skills", "update-zskills", "scripts", "zskills-defaults.json",
+)
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Render managed.md from template + config.")
-    parser.add_argument("--config", required=True, help="path to .claude/zskills-config.json")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="path to .claude/zskills-config.json (optional; when omitted the "
+             "canonical built-in defaults are loaded instead)",
+    )
     parser.add_argument("--template", required=True, help="path to CLAUDE_TEMPLATE.md")
     parser.add_argument("--out", required=True, help="output path for rendered managed.md")
     parser.add_argument(
         "--sentinel",
         default=None,
         help="if set, prepend an HTML-comment materialiser sentinel carrying this version",
+    )
+    parser.add_argument(
+        "--defaults",
+        default=CANONICAL_DEFAULTS,
+        help="path to the canonical built-in defaults JSON, used only when "
+             "--config is omitted (default: the checked-in "
+             "skills/update-zskills/scripts/zskills-defaults.json)",
     )
     args = parser.parse_args(argv)
 
@@ -57,14 +88,15 @@ def main(argv=None):
     except OSError as e:
         print(f"ERROR: cannot read template {args.template}: {e}", file=sys.stderr)
         return 1
+    cfg_path = args.config if args.config is not None else args.defaults
     try:
-        with open(args.config) as f:
+        with open(cfg_path) as f:
             cfg = json.load(f)
     except OSError as e:
-        print(f"ERROR: cannot read config {args.config}: {e}", file=sys.stderr)
+        print(f"ERROR: cannot read config {cfg_path}: {e}", file=sys.stderr)
         return 1
     except json.JSONDecodeError as e:
-        print(f"ERROR: invalid JSON in {args.config}: {e}", file=sys.stderr)
+        print(f"ERROR: invalid JSON in {cfg_path}: {e}", file=sys.stderr)
         return 1
 
     subs = build_substitutions(cfg)

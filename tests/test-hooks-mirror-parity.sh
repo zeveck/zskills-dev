@@ -46,6 +46,12 @@ EXCLUDE_BASENAMES=(
   # half-installed state it closes is plugin-lane-only, so there is no
   # /update-zskills mirror to byte-compare.
   "block-unmaterialised-skill.sh"
+  # session-rules-context.sh (INSTALL_REDESIGN Phase 4, R-b) — PLUGIN-LANE-ONLY
+  # SessionStart rules delivery via additionalContext (registered in
+  # hooks/hooks.json, never in .claude/settings.json). The legacy lane delivers
+  # the managed rules from disk (.claude/rules/zskills/managed.md), so there is
+  # no /update-zskills mirror to byte-compare — do NOT create one.
+  "session-rules-context.sh"
 )
 
 is_excluded() {

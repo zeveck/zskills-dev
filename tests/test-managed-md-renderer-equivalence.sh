@@ -41,17 +41,18 @@ trap 'rm -rf "$TMP"' EXIT
 
 echo "=== managed.md renderer equivalence (Step D path vs materialiser path) ==="
 
-# A template using every placeholder, shared by all 5 fixtures (the config
-# varies per fixture to exercise different substitution outcomes).
+# INSTALL_REDESIGN Phase 4 — the template is DE-PARAMETERIZED (zero
+# {{TOKEN}}s; the substitution map is empty and the render a structural
+# pass-through). The placeholder-bearing fixture template was a
+# subject-removal; what this canary still guards is the TWO render code
+# paths (Step D no-sentinel vs materialiser --sentinel) staying byte-equal
+# below the sentinel line across configs.
 cat > "$TMP/tmpl.md" <<'EOF'
-# {{PROJECT_NAME}}
-tz={{TIMEZONE}} port={{DEFAULT_PORT}} main={{MAIN_REPO_PATH}}
-unit={{UNIT_TEST_CMD}} full={{FULL_TEST_CMD}}
-dev={{DEV_SERVER_CMD}}
-auth={{AUTH_BYPASS}}
-patterns:
-{{TEST_FILE_PATTERNS}}
-layout={{SOURCE_LAYOUT}}
+# Project Agent Rules
+Resolve `$UNIT_TEST_CMD` / `$FULL_TEST_CMD` from `.claude/zskills-config.json`
+via the canonical prelude at point of use.
+date: $(TZ=${TIMEZONE:-UTC} date -Iseconds)
+Special chars survive: `--ours` vs `--theirs`, 100% pass-through — "quoted".
 EOF
 
 # 5 distinct fixture configs.
@@ -92,6 +93,23 @@ for i in 1 2 3 4 5; do
     diff "$TMP/a$i.md" "$TMP/b$i.md" | head -20 | sed 's/^/      /'
   fi
 done
+
+# Fixture 6 — NO-CONFIG mode (INSTALL_REDESIGN Phase 4): Path A and Path B
+# with --config omitted (canonical defaults loaded) must also stay
+# byte-equal below the sentinel, and equal the config-present renders
+# (pass-through render is config-independent).
+"$PYTHON" "$RENDERER" --template "$TMP/tmpl.md" --out "$TMP/a6.md" 2>/dev/null
+rcA=$?
+"$PYTHON" "$RENDERER" --template "$TMP/tmpl.md" --out "$TMP/b6.raw.md" --sentinel "2026.05.0" 2>/dev/null
+rcB=$?
+tail -n +2 "$TMP/b6.raw.md" > "$TMP/b6.md"
+if [ "$rcA" -eq 0 ] && [ "$rcB" -eq 0 ] \
+   && diff -q "$TMP/a6.md" "$TMP/b6.md" >/dev/null 2>&1 \
+   && diff -q "$TMP/a6.md" "$TMP/a1.md" >/dev/null 2>&1; then
+  pass "fixture 6: no-config Step D path == no-config materialiser path == config-present render"
+else
+  fail "fixture 6: no-config render paths diverged or errored (A=$rcA B=$rcB)"
+fi
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

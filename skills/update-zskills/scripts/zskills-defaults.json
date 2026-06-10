@@ -1,0 +1,38 @@
+{
+  "_comment": "Canonical zskills built-in defaults (INSTALL_REDESIGN Phase 4) — THE single defaults artifact. Values ported from the SessionStart materialiser's config seed (minus the per-project $schema/project_name, which are dynamic). Consumers: render-managed-rules.py's no-config mode (Phase 4), the Phase 5 config-cascade merge helper, the Phase 6a init interview seed; the bash resolver families keep inline literals PINNED to this file by the Phase 5 congruence check.",
+  "timezone": "UTC",
+  "execution": {
+    "landing": "direct",
+    "main_protected": false,
+    "branch_prefix": "feat/"
+  },
+  "commit": {
+    "co_author": ""
+  },
+  "testing": {
+    "unit_cmd": "",
+    "full_cmd": "",
+    "output_file": ".test-results.txt",
+    "file_patterns": []
+  },
+  "dev_server": {
+    "cmd": "",
+    "default_port": 8080
+  },
+  "ui": {
+    "file_patterns": "",
+    "auth_bypass": ""
+  },
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2
+  },
+  "agents": {
+    "min_model": "auto"
+  },
+  "output": {
+    "plans_dir": "docs/plans",
+    "issues_dir": "docs/issues",
+    "reports_dir": "docs/reports"
+  }
+}

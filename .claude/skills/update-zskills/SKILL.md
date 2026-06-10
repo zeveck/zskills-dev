@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+c45f49"
+  version: "2026.06.10+71cc32"
 ---
 
 # Update Z Skills Infrastructure
@@ -657,16 +657,18 @@ for each field F in schema:
     mark as empty -> template section gets commented out
 ```
 
-**Template placeholder mapping:**
+**Template placeholder mapping:** none — `CLAUDE_TEMPLATE.md` is fully
+de-parameterized (INSTALL_REDESIGN Phase 4). The managed rules are
+install-level: instead of carrying rendered per-project values, they
+INSTRUCT the agent to resolve project-specific fields (`dev_server.cmd`,
+`ui.auth_bypass`, `dev_server.default_port`, `dev_server.main_repo_path`,
+test commands, timezone) from `.claude/zskills-config.json` at point of
+use via the canonical prelude. The renderer still runs on every install
+and `--rerender` (D24 — one renderer, both lanes) and still hard-errors
+on any leftover `{{...}}` token, so a retired-token template fails loudly
+instead of shipping broken rules.
 
-| Placeholder | Config path | Example |
-|-------------|-------------|---------|
-| `{{DEV_SERVER_CMD}}` | `dev_server.cmd` | `npm start` |
-| `{{AUTH_BYPASS}}` | `ui.auth_bypass` | `localStorage.setItem(...)` |
-| `{{DEFAULT_PORT}}` | `dev_server.default_port` | `8080` |
-| `{{MAIN_REPO_PATH}}` | `dev_server.main_repo_path` | `/path/to/repo` |
-
-Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`. The field `dev_server.main_repo_path` is read at runtime by `port.sh` AND install-substituted into managed.md as `{{MAIN_REPO_PATH}}` (the rendered value reflects the config at install/--rerender time; warn-config-drift signals re-render-needed when the config is edited via Claude Code's Edit/Write tool — see Phase 3 Design & Constraints for coverage limits). Similarly, `dev_server.default_port` is runtime-read by `port.sh` AND install-substituted as `{{DEFAULT_PORT}}`. See Phase 1 of `plans/DRIFT_ARCH_FIX.md` for the canonical bash-regex read pattern.
+Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`, `dev_server.cmd`, `ui.auth_bypass`, and the `port.sh`-read pair `dev_server.default_port` / `dev_server.main_repo_path`. Post-de-parameterization EVERY config field is runtime-read — nothing is install-substituted into managed.md (warn-config-drift still signals re-render-needed when `CLAUDE_TEMPLATE.md` itself is edited). See Phase 1 of `plans/DRIFT_ARCH_FIX.md` for the canonical bash-regex read pattern.
 
 **Empty value handling:** When a config field is empty string `""`, the
 corresponding template section is commented out with a TODO marker:
@@ -1314,12 +1316,16 @@ only removes zskills-rendered lines — never user content).
    #1083), then run:
    `"$PYTHON" "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
    The renderer imports `scripts/managed_rules_substitution.py` (the single
-   source-of-truth `build_substitutions` + `apply` map), substitutes every
-   `{{PLACEHOLDER}}` from current `.claude/zskills-config.json` values
-   (empty `dev_server.cmd` / `ui.auth_bypass` / `testing.file_patterns`
-   render the documented TODO fallbacks), and exits non-zero rather than
-   ship a broken `{{...}}` token. This step both substitutes AND writes the
-   rendered content (step 3's write is performed by the renderer's
+   source-of-truth `build_substitutions` + `apply` map — EMPTY since the
+   template was de-parameterized in INSTALL_REDESIGN Phase 4, making the
+   render a structural pass-through) and exits non-zero rather than ship a
+   broken `{{...}}` token, so a retired-token template fails loudly. The
+   renderer's `--config` is optional: when omitted (no-config mode, used by
+   the plugin lane's SessionStart rules hook) it loads the canonical
+   built-in defaults from `skills/update-zskills/scripts/zskills-defaults.json`
+   — THE single defaults artifact; this legacy Step B/D call shape (explicit
+   `--config`) is unchanged. This step both renders AND writes the
+   content (step 3's write is performed by the renderer's
    atomic-rename `--out`).
 
 3. **The renderer's `--out` writes** `.claude/rules/zskills/managed.md`

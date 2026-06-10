@@ -1,73 +1,46 @@
 """managed_rules_substitution — single source-of-truth substitution map.
 
 This module is the ONE substitution map for rendering
-`CLAUDE_TEMPLATE.md` -> `.claude/rules/zskills/managed.md`. It is consumed
-by THREE callers (D24, F-DA2-2):
+`CLAUDE_TEMPLATE.md` -> `.claude/rules/zskills/managed.md` (D24). It is
+consumed via ``scripts/render-managed-rules.py`` — the thin CLI wrapper
+invoked by the plugin SessionStart hooks (the materialiser, and the R-b
+``session-rules-context.sh`` rules-delivery hook) AND by ``/update-zskills``
+Step B/D — and by ``tests/test-managed-md-up-to-date.sh`` through that same
+wrapper. Because every caller routes through ``build_substitutions`` +
+``apply`` here, byte-equality across render paths is structural;
+``tests/test-managed-md-renderer-equivalence.sh`` is the canary.
 
-  1. ``scripts/render-managed-rules.py`` — the thin CLI wrapper invoked by
-     the plugin SessionStart materialiser (W2.1) AND by ``/update-zskills``
-     Step B/D (W2.7).
-  2. ``tests/test-managed-md-up-to-date.sh`` — refactored (W2.7) to invoke
-     the renderer rather than carrying its own inlined ``subs = {...}``
-     dict.
-  3. The plugin SessionStart materialiser, via caller (1).
+INSTALL_REDESIGN Phase 4 — the template is fully DE-PARAMETERIZED: the
+managed rules are install-level, carrying no per-project ``{{TOKEN}}``
+placeholders (project-specific values are resolved from
+``.claude/zskills-config.json`` at point of use via the canonical prelude).
+The substitution map therefore shrank to EMPTY and the render is a
+structural pass-through. The module survives (D24 — one renderer, both
+lanes) for two reasons:
 
-Because all three callers route through ``build_substitutions`` + ``apply``
-here, byte-equality across render paths is structurally guaranteed;
-``tests/test-managed-md-renderer-equivalence.sh`` is the canary that catches
-refactor regressions.
-
-The ``subs`` dict construction below was lifted VERBATIM from the inlined
-``subs = {...}`` Python block that previously lived in
-``tests/test-managed-md-up-to-date.sh`` (the 10-placeholder map). No
-behavioural change — just relocation into a single importable module.
+  1. ``apply``'s leftover-placeholder guard still fails the render loudly
+     if a ``{{TOKEN}}`` ever reappears (a regression in the shipped
+     template, or a consumer-authored template still carrying retired
+     tokens) — a broken ``{{...}}`` must never ship silently.
+  2. The renderer's call shape (``--config`` / no-config defaults) stays
+     stable for both lanes and for future map growth.
 """
 
 import re
 
 
-def _empty_or(value, fallback):
-    """Return ``fallback`` when ``value`` is None or the empty string."""
-    if value is None or value == "":
-        return fallback
-    return value
-
-
 def build_substitutions(cfg):
     """Return the placeholder -> value substitution map for ``cfg``.
 
-    ``cfg`` is the parsed ``.claude/zskills-config.json`` dict. The returned
-    dict keys are bare placeholder names (e.g. ``PROJECT_NAME``); ``apply``
-    wraps each in ``{{...}}`` before substituting.
+    ``cfg`` is the parsed config dict (project config, or the canonical
+    built-in defaults from ``zskills-defaults.json`` in no-config mode).
+    Post de-parameterization (INSTALL_REDESIGN Phase 4) the map is EMPTY —
+    the template carries no ``{{TOKEN}}`` placeholders. The ``cfg``
+    parameter is retained so the D24 caller contract (config in, map out)
+    is stable.
     """
-    ds = cfg.get("dev_server", {})
-    testing = cfg.get("testing", {})
-    ui = cfg.get("ui", {})
-    patterns = testing.get("file_patterns", [])
-    patterns_md = (
-        "\n".join(f"- `{p}`" for p in patterns)
-        if patterns
-        else "<!-- TODO: testing.file_patterns is empty -->"
-    )
-
-    return {
-        "PROJECT_NAME": cfg.get("project_name", ""),
-        "TIMEZONE": cfg.get("timezone", ""),
-        "DEFAULT_PORT": str(ds.get("default_port", "")),
-        "MAIN_REPO_PATH": ds.get("main_repo_path", ""),
-        "UNIT_TEST_CMD": testing.get("unit_cmd", ""),
-        "FULL_TEST_CMD": testing.get("full_cmd", ""),
-        "TEST_FILE_PATTERNS": patterns_md,
-        "DEV_SERVER_CMD": _empty_or(
-            ds.get("cmd", ""),
-            "<!-- TODO: dev_server.cmd not set in .claude/zskills-config.json -->",
-        ),
-        "AUTH_BYPASS": _empty_or(
-            ui.get("auth_bypass", ""),
-            "<!-- TODO: ui.auth_bypass not set in .claude/zskills-config.json -->",
-        ),
-        "SOURCE_LAYOUT": "<!-- TODO: SOURCE_LAYOUT has no config field; fill in project's architecture summary -->",
-    }
+    del cfg  # de-parameterized template: no config-derived placeholders
+    return {}
 
 
 def apply(template, subs):

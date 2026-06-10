@@ -231,6 +231,28 @@ finalize_prod_tree() {
   done
   _fpt_done "1A: agents/verifier.md + agents/implementer.md present"
 
+  # ── 1c. R-b — rules-delivery files must ship in every prod tree ──────────
+  # INSTALL_REDESIGN Phase 4 (branch R-b): the plugin lane delivers the
+  # managed rules at session start via hooks/session-rules-context.sh, which
+  # renders the de-parameterized CLAUDE_TEMPLATE.md through the canonical
+  # renderer. The renderer imports managed_rules_substitution.py, and its
+  # no-config mode loads the canonical zskills-defaults.json — staging the
+  # renderer alone would ship an ImportError, and dropping the defaults
+  # artifact would break every no-config consumer. Fail CLOSED if any of the
+  # three is missing; both publishers run this same assertion.
+  _fpt_log "R-b: asserting rules-delivery files present"
+  local _rb
+  for _rb in \
+    scripts/render-managed-rules.py \
+    scripts/managed_rules_substitution.py \
+    skills/update-zskills/scripts/zskills-defaults.json; do
+    if [ ! -f "$tree/$_rb" ]; then
+      echo "finalize_prod_tree: ERROR — missing R-b rules-delivery file: $tree/$_rb" >&2
+      return 1
+    fi
+  done
+  _fpt_done "R-b: renderer + substitution module + canonical defaults present"
+
   # ── 2. Shared dev-only strip set ─────────────────────────────────────────
   # build-*.sh release/dogfood tooling. Deleted from <tree>/scripts/ only.
   _fpt_log "stripping build-*.sh release tooling from $tree/scripts/"
