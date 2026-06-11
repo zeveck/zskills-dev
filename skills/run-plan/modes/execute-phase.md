@@ -709,10 +709,11 @@ Include this VERBATIM in the verifier dispatch prompt:
    "not blockers" or "gaps for future work." If the plan says to do it and
    it wasn't done, verification fails. Period.
 
-   Past failure: Block Expansion Plan Phase 1 — the implementer skipped the
-   example model (Step 7 of `/add-block`) and runtime entry (Step 10). The
-   verifier saw both skips but wrote "gaps noted" instead of invoking the
-   Failure Protocol. The phase was reported as complete with missing work.
+   Past failure (historical — from a since-removed add-on skill's plan):
+   Block Expansion Plan Phase 1 — the implementer skipped two required work
+   items (the example model and the runtime registration). The verifier saw
+   both skips but wrote "gaps noted" instead of invoking the Failure
+   Protocol. The phase was reported as complete with missing work.
 
 3. **If verification fails:**
    - Without `auto`: present findings, ask user what to do

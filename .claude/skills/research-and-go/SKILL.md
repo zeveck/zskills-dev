@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.06.03+582201"
+  version: "2026.06.11+d793c8"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -49,7 +49,7 @@ Do not proceed past this preflight without `Agent` access.
 
 Examples:
 - `/research-and-go Add physical modeling support for thermal and mechanical domains`
-- `/research-and-go Implement all missing block diagram tool blocks from the gap analysis`
+- `/research-and-go Implement all missing API endpoints from the gap analysis`
 - `/research-and-go Close the runtime deployment parity gap`
 
 ## Step 0 — Tracking Setup

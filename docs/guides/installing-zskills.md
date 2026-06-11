@@ -44,6 +44,12 @@ reports whether `git`, Python, and `gh` are present. Until you run it, a
 one-line greeting on startup reminds you, and the skills that write project
 state are blocked (read-only skills work immediately).
 
+> **Headless note:** in a non-interactive `claude -p` run, a pre-init gate
+> block comes back as an *empty success* (`num_turns: 0`) — the block
+> message explaining what to do is only rendered interactively. If a
+> headless invocation of a `/zs:` skill returns nothing, run the
+> `/zs:update-zskills` init first.
+
 > **If the install fails to clone with a git SSH error** — something like
 > `git@github.com: Permission denied (publickey)` followed by
 > `fatal: Could not read from remote repository` — your git is configured to
@@ -67,10 +73,13 @@ and more (see [Configuring zskills](zskills-config.md)). To switch to a
 review workflow (a worktree + pull request, with `main` locked), see
 [Landing mode](#landing-mode).
 
-**Install scope — prefer project-scoped enablement.** When the CLI asks where
-to enable the plugin (or when you pass a scope flag), choose the **project**
-scope. A user-scope install enables zskills in *every* project you open: its
-agent-rules context (~15KB) and the setup greeting then appear in projects
+**Install scope — prefer project-scoped enablement.** The headless CLI form
+(`claude plugin install zs@zskills`) does **not** prompt for a scope — it
+defaults to **user** scope. To get project scope, pass the scope flag
+explicitly: `claude plugin install --scope project zs@zskills` (`-s project`
+for short; the accepted values are `user`, `project`, or `local`). A
+user-scope install enables zskills in *every* project you open: its
+agent-rules context (~40KB) and the setup greeting then appear in projects
 that never asked for zskills. Nothing is written into those projects — the
 trade is context noise, not files — but project-scoped enablement avoids it
 entirely.
