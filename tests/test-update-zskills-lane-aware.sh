@@ -286,41 +286,50 @@ else
   fail "AC4. fail-soft failed: rc=$rc4 LANE=$LANE_OUT"
 fi
 
-# ── AC5 (W6.1/W6.2) — hard-refuse explicit install on the plugin lane ─────
+# ── AC5 (W6.1) — hard-refuse explicit install on the plugin lane ──────────
 # SKILL.md Step 0.7's W6.1 arm is prose+bash. Structural pins assert the
-# refuse prose + the load-bearing condition are present in BOTH copies, and
-# the refuse fence is executed directly to prove the gate logic.
-SWITCH="scripts/switch-install-path.sh"
+# refuse prose is present in BOTH copies, and the refuse fence is executed
+# directly to prove the gate logic. The refuse is UNCONDITIONAL since
+# INSTALL_REDESIGN Phase 7: the lane-switch machinery (and its W6.2
+# in-flight-marker carve-out) was deleted — no marker bypasses the refuse.
 
-# (a) Structural: the hard-refuse prose is present in SKILL.md + mirror and
-#     points at switch-install-path.sh (keyed on detect==plugin, NOT
-#     $CLAUDE_PLUGIN_ROOT).
+# (a) Structural: the unconditional hard-refuse prose is present in SKILL.md
+#     + mirror (keyed on detect==plugin), recommends the uninstall-one-lane
+#     model, and the Step 0.7 region carries NO marker carve-out fence.
+STEP07_REGION_M="$(awk '/^## Step 0\.7 — Lane check/{f=1} f{print} f&&/^## Bare-preset config-only short-circuit/{exit}' "$REPO_ROOT/$MIRROR")"
 for f in "$SKILL" "$MIRROR"; do
   if grep -q 'hard-refuse' "$REPO_ROOT/$f" \
-     && grep -q 'switch-install-path.sh --to-update-zskills' "$REPO_ROOT/$f" \
-     && grep -q 'switch-in-progress' "$REPO_ROOT/$f"; then
-    pass "AC5a. W6.1 hard-refuse prose + switch-in-progress carve-out present in $f"
+     && grep -q "refusing 'install' on the plugin lane" "$REPO_ROOT/$f" \
+     && grep -q 'uninstall' "$REPO_ROOT/$f"; then
+    pass "AC5a. W6.1 unconditional hard-refuse prose present in $f (uninstall-one-lane recommendation)"
   else
     fail "AC5a. W6.1 hard-refuse prose MISSING from $f"
   fi
 done
+# Regression (Phase 7): the refuse fence's condition is the bare
+# $MODE==install test — no second marker-file condition survives (source
+# AND mirror).
+if printf '%s\n' "$STEP07_REGION" | grep -q 'if \[ "\$MODE" = install \]; then' \
+   && printf '%s\n' "$STEP07_REGION_M" | grep -q 'if \[ "\$MODE" = install \]; then'; then
+  pass "AC5a2. refuse fence is the bare \$MODE==install test in source + mirror (carve-out-less)"
+else
+  fail "AC5a2. refuse fence is not the bare unconditional form in both copies"
+fi
 
-# (b) Execute the refuse fence's gate logic directly. The fence refuses when
-#     $MODE==install AND no switch-in-progress
-#     marker. Model the exact condition the branch uses.
+# (b) Execute the refuse fence's gate logic directly. The fence refuses
+#     whenever $MODE==install — unconditionally. Model the exact condition.
 refuse_gate() {
   # args: MODE PROJ
   local MODE="$1" PROJ="$2"
-  if [ "$MODE" = install ] \
-     && [ ! -f "$PROJ/.zskills/switch-in-progress" ]; then
+  if [ "$MODE" = install ]; then
     return 1   # refused
   fi
   return 0     # allowed
 }
 PR="$TMP/refuse"; mkdir -p "$PR/.zskills"
-# explicit install, no switch marker → REFUSE
+# explicit install → REFUSE
 if ! refuse_gate install "$PR"; then
-  pass "AC5b. explicit 'install' on plugin lane → refused (no switch marker)"
+  pass "AC5b. explicit 'install' on plugin lane → refused"
 else
   fail "AC5b. explicit install should have been refused"
 fi
@@ -330,19 +339,19 @@ if refuse_gate "" "$PR"; then
 else
   fail "AC5d. bare call wrongly refused"
 fi
-# explicit install WITH switch-in-progress marker → ALLOWED (carve-out)
+# REGRESSION (Phase 7): a present in-flight-lane-switch marker file no
+# longer bypasses the refuse — the carve-out died with the switch machinery.
 : > "$PR/.zskills/switch-in-progress"
-if refuse_gate install "$PR"; then
-  pass "AC5e. install + switch-in-progress marker → refuse SKIPPED (W6.2 carve-out)"
+if ! refuse_gate install "$PR"; then
+  pass "AC5e. install + stale lane-switch marker file → STILL refused (carve-out retired, Phase 7 regression pin)"
 else
-  fail "AC5e. switch-in-progress carve-out failed to skip the refuse"
+  fail "AC5e. a stale lane-switch marker file bypassed the refuse (retired carve-out resurfaced)"
 fi
 
 # (c) The refuse is keyed on detect==plugin, so it must NOT fire for
-#     update-zskills/dual/fresh. detect_install_state classification is
-#     already covered by test-sessionstart-dual-install-detect.sh; here we
-#     confirm the dev-repo-shaped case classifies NON-plugin (so the refuse
-#     never engages there even with an explicit install arg).
+#     mirror-bearing/fresh lanes. Confirm the dev-repo-shaped case
+#     classifies NON-plugin (so the refuse never engages there even with an
+#     explicit install arg).
 got="$(detect_install_state "$REPO_ROOT")"
 if [ "$got" != plugin ]; then
   pass "AC5f. dev-repo-shaped classifies $got (NON-plugin) → install never refused there"
@@ -350,34 +359,8 @@ else
   fail "AC5f. dev repo wrongly classified plugin (install would be refused — breaks dogfooding)"
 fi
 
-# ── AC6 (W6.2) — switch-install-path.sh --to-update-zskills marker lifecycle
-# The script WRITES .zskills/switch-in-progress at START and REMOVES it only
-# after the lane-lock is written LAST. Drive the full non-interactive switch
-# against a plugin fixture and assert: lock written == update-zskills AND the
-# marker is GONE at completion (so it cannot trip the refuse in steady state).
-P6="$TMP/switch-uz"
-base_fixture "$P6"
-write_sentinelled_hook "$P6/.claude/hooks/inject-bash-timeout.sh"
-write_sentinelled_managed "$P6/.claude/rules/zskills/managed.md"
-mkdir -p "$P6/.claude/agents"
-printf '%s\n' '---' '# zskills-materialised: 2026.05.0' 'name: v' '---' 'x' > "$P6/.claude/agents/verifier.md"
-out6=$(ZSKILLS_SWITCH_NONINTERACTIVE=1 ZSKILLS_SWITCH_PROJECT_DIR="$P6" \
-       bash "$REPO_ROOT/$SWITCH" --to-update-zskills 2>&1); rc6=$?
-if [ "$rc6" -eq 0 ]; then
-  pass "AC6a. switch-install-path.sh --to-update-zskills completed (rc=0)"
-else
-  fail "AC6a. switch exited rc=$rc6, output: $out6"
-fi
-if [ "$(cat "$P6/.claude/zskills-install-lane" 2>/dev/null)" = update-zskills ]; then
-  pass "AC6b. lane-lock written LAST = update-zskills"
-else
-  fail "AC6b. lane-lock not update-zskills: $(cat "$P6/.claude/zskills-install-lane" 2>/dev/null)"
-fi
-if [ ! -e "$P6/.zskills/switch-in-progress" ]; then
-  pass "AC6c. switch-in-progress marker removed after lock-write (no steady-state deadlock)"
-else
-  fail "AC6c. switch-in-progress marker leaked after completion"
-fi
+# (AC6 — the lane-switch marker lifecycle — was deleted in INSTALL_REDESIGN
+# Phase 7 with the lane-switch script: subject-removal.)
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

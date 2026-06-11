@@ -395,8 +395,10 @@ run_suite "test-cron-prefix-or-match.sh" "tests/test-cron-prefix-or-match.sh"
 run_suite "test-cron-fire-rule-dual-path.sh" "tests/test-cron-fire-rule-dual-path.sh"
 run_suite "test-skill-frontmatter-survival.sh" "tests/test-skill-frontmatter-survival.sh"
 
-# Phase 5 — bidirectional lane switch + hook double-fire conditional-skip shim.
-run_suite "test-switch-install-path.sh" "tests/test-switch-install-path.sh"
+# Phase 5 — hook double-fire conditional-skip shim. (The lane-switch suite
+# was deleted in INSTALL_REDESIGN Phase 7 with the switch machinery —
+# subject-removal; a consumer switches lanes by uninstalling one lane and
+# installing the other.)
 run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-skip-on-double-register.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests

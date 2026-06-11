@@ -110,7 +110,6 @@ SECTION_ORDER = {
         'docs/guides/workflows.md',
         'docs/guides/inspecting-and-monitoring.md',
         'docs/guides/zskills-config.md',
-        'docs/guides/switching-install-lanes.md',
         'docs/guides/tracking-overview.md',
     ],
     # Skill categories — curated importance order within each (NOT alphabetical).

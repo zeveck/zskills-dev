@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+b7ea8d"
+  version: "2026.06.10+c51e39"
 ---
 
 # Update Z Skills Infrastructure
@@ -15,7 +15,7 @@ dependencies.
 **Invocation:**
 
 ```
-/update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
+/update-zskills [install | --rerender | --migrate-paths]
                 [cherry-pick | locked-main-pr | direct]
 ```
 
@@ -49,37 +49,11 @@ was found and what was done about it.
   `.pre-paths-migration` already exists. The agent-runnable
   follow-up (path-config-upgrade prompt) handles `start-dev.sh` /
   `stop-dev.sh` rewrites and any cross-references in plan content.
-- `--switch-install-path={to-plugin|to-update-zskills}` — the supported
-  entry point for switching a consumer between the two install lanes
-  (the plugin lane and the legacy `/update-zskills` lane). This sub-mode
-  is a thin delegation: it runs
-  `bash scripts/switch-install-path.sh --to-plugin` (or
-  `--to-update-zskills`) and reports its output. (The lane-switch script
-  is a repo-root `scripts/` tool, not a skill-owned `$ZSK/scripts/` one —
-  it operates on the consumer's `.claude/` and is shared across both
-  lanes.) The script is
-  bidirectional and writes the lock file
-  `.claude/zskills-install-lane` LAST in BOTH directions (config/state
-  writes first, lock claim last — per CLAUDE.md `## Migration scripts`),
-  so an interrupted switch leaves the consumer re-runnable.
-    - `=to-plugin` — switch FROM the `/update-zskills` lane TO the plugin
-      lane: strips zskills hook entries from `.claude/settings.json` (via
-      `scripts/migrate-strip-settings.py`), basename-gated removal of the
-      mirrored `.claude/skills/<zskills>/`, `.claude/hooks/<zskills>.sh`,
-      and `.claude/rules/zskills/managed.md` (consumer-authored skills/
-      hooks are preserved), then writes `plugin` to the lock. The script
-      prints the `/plugin marketplace add` + `/plugin install zs@zskills`
-      steps the user runs in their Claude session.
-    - `=to-update-zskills` — switch FROM the plugin lane TO the
-      `/update-zskills` lane: sentinel-gated removal of the 5
-      plugin-materialised artifacts (only the ones STILL carrying a
-      `zskills-materialised:` sentinel — sentinel-less / re-installed
-      files are preserved), then writes `update-zskills` to the lock.
-    - Idempotent: invoking a direction whose lock already matches is a
-      no-op-with-INFO. Neither direction touches `.zskills/` runtime
-      state (claim markers etc. are lane-independent). See
-      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/guides/switching-install-lanes.md`
-      for the Abort/Rollback path.
+- (The former lane-switch sub-mode — and the lane-switch script it
+  delegated to — was deleted in INSTALL_REDESIGN Phase 7. There is no
+  scripted lane switch: a client is single-lane, and a consumer who wants
+  the other lane uninstalls one lane and installs the other — see the
+  install guide.)
 
 **Preset keywords (bare word, anywhere in the args):**
 
@@ -555,7 +529,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    ```markdown
    > **Path-config keys: FRESH-SCAFFOLD writes them; auto-backfill does NOT.**
    > A FRESH config scaffold (both lanes — this install's `Write` below and
-   > the plugin lane's SessionStart materialiser seed) DOES write
+   > the plugin lane's A3 init-interview seed from zskills-defaults.json) DOES write
    > `output.plans_dir = "docs/plans"`, `output.issues_dir = "docs/issues"`,
    > and `output.reports_dir = "docs/reports"`, so a brand-new consumer's
    > dashboard and plan-skills find plans in `docs/plans` out of the box.
@@ -966,8 +940,8 @@ so the user sees what was found before any modifications.
 This branch runs after the arg parser (Step 0.25), config read (Step 0.5),
 and the greenfield prompt (Step 0.6), and **at/above** the Default-Mode
 Smart-Detection fork below. Explicit `--migrate-paths` already
-short-circuited at Step 0.1; `--rerender` and `--switch-install-path` are a
-user *forcing* a config/lane action and are **not** intercepted by the
+short-circuited at Step 0.1; `--rerender` is a
+user *forcing* a config action and is **not** intercepted by the
 hard-refuse below. The destructive case this branch prevents is the *silent*
 flip of a pure-plugin consumer on a **bare** `/update-zskills` call: with no
 `.claude/skills/` mirror, the audit would see every skill/hook as "missing"
@@ -980,17 +954,14 @@ through as an "opt-in" mirror action. That carve-out is removed: a client is
 **single-lane**, so running `/update-zskills install` on a `detect ==
 plugin` consumer is never the right move — it would re-create the legacy
 mirror alongside the plugin and put the consumer into the dual state the rest
-of the system actively pushes to consolidate. The refuse points the user at
-`scripts/switch-install-path.sh` (the supported lane-switch path) and exits
-non-zero. **Keyed on `detect_install_state == plugin`, NOT
+of the system actively pushes to consolidate. The refuse is UNCONDITIONAL
+(the former in-flight-lane-switch marker carve-out died in INSTALL_REDESIGN
+Phase 7 with the lane-switch machinery) and exits non-zero; it points the
+user at the uninstall-one-lane-install-the-other model. **Keyed on
+`detect_install_state == plugin`, NOT
 `$CLAUDE_PLUGIN_ROOT`** — so the dev repo (which keeps its legacy mirror and
-classifies `update-zskills`) is never blocked, and dogfooding both lanes from
-this repo via `/update-zskills install` still works. The one carve-out: the
-refuse is **SKIPPED while a lane switch is in progress** (see the
-`switch-in-progress` marker below), so `switch-install-path.sh
---to-update-zskills` — which mandates `/plugin uninstall` → restart →
-`/update-zskills install` — does not deadlock against its own
-not-yet-completed switch.
+classifies as a mirror-bearing lane) is never blocked, and dogfooding both
+lanes from this repo via `/update-zskills install` still works.
 
 **Signal = `detect_install_state == plugin`**, NOT `$CLAUDE_PLUGIN_ROOT`.
 `lane == plugin` means "plugin-materialised artifacts present AND no legacy
@@ -1026,29 +997,22 @@ if [ -n "$DIS" ]; then . "$DIS"; LANE="$(detect_install_state "$MAIN_ROOT")"; fi
 gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
 
 - **W6.1 hard-refuse — explicit `install` on the plugin
-  lane.** If an explicit install arg was parsed (`$MODE == "install"`)
-  AND no lane switch is in progress, REFUSE and exit
-  non-zero. The `switch-in-progress` carve-out (W6.2) lets
-  `scripts/switch-install-path.sh --to-update-zskills` run its mandated
-  `/update-zskills install` step without tripping this refuse:
+  lane.** If an explicit install arg was parsed (`$MODE == "install"`),
+  REFUSE unconditionally and exit non-zero (the former W6.2
+  in-flight-lane-switch marker carve-out died in INSTALL_REDESIGN Phase 7
+  with the lane-switch machinery — no marker bypasses this refuse):
 
   ```bash
-  if [ "$MODE" = install ] \
-     && [ ! -f "${CLAUDE_PROJECT_DIR:-$PWD}/.zskills/switch-in-progress" ]; then
+  if [ "$MODE" = install ]; then
     echo "ERROR: refusing 'install' on the plugin lane." >&2
     echo "A client is single-lane. Running it here would re-create the legacy" >&2
     echo ".claude/skills mirror alongside the plugin (the dual state the system" >&2
-    echo "actively pushes to consolidate). To switch lanes, run:" >&2
-    echo "    bash scripts/switch-install-path.sh --to-update-zskills" >&2
-    echo "  (or /update-zskills --switch-install-path=to-update-zskills)" >&2
+    echo "actively pushes to consolidate). To switch lanes, uninstall the" >&2
+    echo "plugin (/plugin uninstall zs@zskills), restart, then run" >&2
+    echo "/update-zskills install -- see the install guide." >&2
     exit 1
   fi
   ```
-
-  (The `switch-install-path.sh --to-update-zskills` flow writes
-  `.zskills/switch-in-progress` at its START and removes it only after the
-  lane-lock is written LAST, so this skip is active exactly for the duration
-  of an in-flight switch and not in steady state.)
 
 - **If a preset arg was parsed (`$PRESET_ARG` non-empty):** apply it
   **config-only** via the existing **Step F — Apply Preset** call (it is
@@ -1140,14 +1104,10 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
     user-owned and still consume the notice. The notice is consumed exactly
     once on every path, so the offer never repeats (W6.3 no-nag lesson).
 
-  - **Mid-window caveat (known transient, converges at Phase 7):** while
-    the SessionStart materialiser is still alive, every sentinelled
-    artifact removed here is re-materialised at the next session start,
-    and an accepted config removal is re-seeded with the notice re-touched
-    (so the offer re-fires on a later run). This re-pollution per session
-    is EXPECTED, not an A1.5 defect; it becomes permanent cleanup when
-    Phase 7 deletes the materialiser. Do NOT edit the materialiser to
-    avoid it.
+  - The retired SessionStart materialiser was deleted in INSTALL_REDESIGN
+    Phase 7, so nothing re-creates the removed residue: every cleanup here
+    is permanent (the mid-window per-session re-pollution that existed
+    while the materialiser was still alive is gone).
 
   - Include everything removed (`$ZS_REMOVED_ARTIFACTS`, the config/schema/
     notice if cured) in the arm's final summary.
@@ -1195,9 +1155,9 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
     THIS run, also skip — the consumer chose zero-config; re-offering
     immediately would contradict the choice (a later bare run re-offers
     via the update arm). Otherwise:
-    - **A config already exists** (commonly: the still-live materialiser
-      seeded one before init could run — a known transient that dies in
-      Phase 7): say *"A config already exists at
+    - **A config already exists** (commonly: residue from the retired
+      pre-redesign installer's auto-seed that A1.5 conservatively kept, or
+      a user-created file): say *"A config already exists at
       `.claude/zskills-config.json` (it may have been auto-seeded) —
       review it, especially `testing.unit_cmd`/`full_cmd` and
       `execution.landing`."* Keep it on any answer — init NEVER clobbers
@@ -1395,8 +1355,9 @@ preset: if `$PRESET_ARG` is non-empty AND `$MODE` is NOT `install`, jump to
 pull, no fill) and exit there. Otherwise (no preset, or `install <preset>`)
 proceed to **Default Mode — Smart Detection** / Fill-All-Gaps **unchanged**.
 The `dual` case is intentionally NOT given its own arm — the mirror already
-exists, so gap-fill is a non-destructive update, and the materialiser +
-`switch-install-path` already own dual detection/warning/recovery;
+exists, so gap-fill is a non-destructive update, and verify-install's
+`lane.dual-unsupported` FAIL already owns dual detection/warning (the
+recovery is uninstall-one-lane-install-the-other);
 `/update-zskills` must not add its own dual handling.
 
 `managed.md` is not touched by this branch — because the plugin arm skips

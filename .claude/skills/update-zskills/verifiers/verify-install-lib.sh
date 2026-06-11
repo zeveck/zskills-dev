@@ -734,7 +734,7 @@ vi_run_cheap() {
       vi_check_legacy "$proj"
       ;;
     dual)
-      vi_emit FAIL "lane.dual-unsupported" "dual install (plugin + legacy mirror) is NOT a supported client state — run scripts/switch-install-path.sh"
+      vi_emit FAIL "lane.dual-unsupported" "dual install (plugin + legacy mirror) is NOT a supported client state — a client is single-lane: uninstall one lane and reinstall the other (see the install guide)"
       vi_check_legacy "$proj"
       ;;
     none)

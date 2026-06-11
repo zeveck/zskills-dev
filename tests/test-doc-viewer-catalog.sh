@@ -201,7 +201,6 @@ docs/guides/installing-zskills.md
 docs/guides/workflows.md
 docs/guides/inspecting-and-monitoring.md
 docs/guides/zskills-config.md
-docs/guides/switching-install-lanes.md
 docs/guides/tracking-overview.md'
 ACTUAL_GUIDES_PATHS=$(awk '
   /section: "Guides"/  { in_sec=1; next }

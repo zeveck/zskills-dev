@@ -26,7 +26,6 @@ export const DOCS_CATALOG = [
       { name: "Z Skills Workflows", path: "docs/guides/workflows.md" },
       { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/inspecting-and-monitoring.md" },
       { name: "Configuring zskills", path: "docs/guides/zskills-config.md" },
-      { name: "Switching install lanes", path: "docs/guides/switching-install-lanes.md" },
       { name: "How tracking keeps pipelines safe", path: "docs/guides/tracking-overview.md" }
     ]
   },

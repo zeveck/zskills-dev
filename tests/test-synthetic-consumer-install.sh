@@ -423,7 +423,7 @@ fi
 
 # (The former cases 8a–8c — the materialiser dual-install WARN-site
 # consistency regression — were deleted in INSTALL_REDESIGN Phase 7:
-# subject-removal; both the materialiser and switch-install-path.sh are
+# subject-removal; both the materialiser and the lane-switch script are
 # gone, so the WARN sites they pinned no longer exist.)
 
 # ── Sandbox-isolation self-check: the real repo's settings.json (if any) and
