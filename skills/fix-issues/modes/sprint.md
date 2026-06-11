@@ -169,7 +169,7 @@ worktrees) and PR #329 (the cap-check used to run AFTER the sprint
 worktree gate, so a defer-all that appended to `SPRINT_REPORT.md` stranded
 the write in a worktree that never shipped — sprint-level `/land-pr` is in
 Phase 6, past the `exit 0`). Fix: move the gate up here and skip
-`.landed status: landed` worktrees from the count. The partial-dispatch
+`.zskills/landed status: landed` worktrees from the count. The partial-dispatch
 arm (when 0 < SLOTS < N_REQUESTED) moves to its own spot in Phase 3 —
 it needs `TO_DISPATCH` which Phase 2 builds.
 
@@ -185,7 +185,7 @@ fi
 # execution.max_concurrent_worktrees field is absent or malformed).
 
 # Count live fix/issue-* worktrees across the repo, SKIPPING any whose
-# `.landed` marker says `status: landed`. Done-but-uncleaned worktrees
+# `.zskills/landed` marker says `status: landed`. Done-but-uncleaned worktrees
 # (every PR that ever merged through /fix-issues whose dir wasn't swept
 # by /cleanup-merged yet) used to trip the cap; the awk/while shape
 # below filters them out. Both PR-mode (`fix/issue-NNN`) and
@@ -197,7 +197,9 @@ LIVE_COUNT=$(
   git worktree list --porcelain \
     | awk '/^worktree /{wt=$2} /^branch refs\/heads\/fix[/-]issue-/{print wt}' \
     | while read -r wt; do
-        if [ -f "$wt/.landed" ] && grep -q '^status: landed' "$wt/.landed"; then
+        # Dual-read (Phase 8): .zskills/landed first, legacy .landed fallback.
+        lm="$wt/.zskills/landed"; [ -f "$lm" ] || lm="$wt/.landed"
+        if [ -f "$lm" ] && grep -q '^status: landed' "$lm"; then
           continue
         fi
         echo X
@@ -1573,14 +1575,16 @@ fi
 # $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
 # execution.max_concurrent_worktrees field is absent or malformed).
 
-# Recount live fix/issue-* worktrees, skipping `.landed status: landed`
+# Recount live fix/issue-* worktrees, skipping `.zskills/landed status: landed`
 # entries (same predicate as the Phase 1 defer-all gate — see that block
 # for the why; this is the symmetric per-batch trim).
 LIVE_COUNT=$(
   git worktree list --porcelain \
     | awk '/^worktree /{wt=$2} /^branch refs\/heads\/fix[/-]issue-/{print wt}' \
     | while read -r wt; do
-        if [ -f "$wt/.landed" ] && grep -q '^status: landed' "$wt/.landed"; then
+        # Dual-read (Phase 8): .zskills/landed first, legacy .landed fallback.
+        lm="$wt/.zskills/landed"; [ -f "$lm" ] || lm="$wt/.landed"
+        if [ -f "$lm" ] && grep -q '^status: landed' "$lm"; then
           continue
         fi
         echo X
@@ -1620,7 +1624,7 @@ Notes:
 - The awk/while predicate matches BOTH the PR-mode pattern
   `fix/issue-NNN` and the cherry-pick/direct-mode pattern
   `fix-issue-NNN` (bracket alternation `fix[/-]issue-`), and skips
-  any worktree whose `.landed` marker reads `status: landed` — those
+  any worktree whose `.zskills/landed` marker reads `status: landed` — those
   are done-but-uncleaned cleanup artifacts, not live work.
 - The cap can be raised by editing `execution.max_concurrent_worktrees` in
   `.claude/zskills-config.json`. Raise above 3 only on hosts with ample
@@ -1721,7 +1725,7 @@ echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 ```
 
 The echo associates the orchestrator session with this pipeline (read by hook
-from transcript). Each worktree's `.zskills-tracked` file is written
+from transcript). Each worktree's `.zskills/tracked` file is written
 atomically by `create-worktree.sh --pipeline-id` during worktree
 materialisation (see "Worktree setup" below).
 
@@ -2072,8 +2076,8 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     fi
   fi
   # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
-  # underlying safe add, .zskills-tracked (from --pipeline-id), and
-  # .worktreepurpose writes. The orchestrator does NOT separately write
+  # underlying safe add, .zskills/tracked (from --pipeline-id), and
+  # .zskills/worktreepurpose writes. The orchestrator does NOT separately write
   # the tracking marker — the worktree directory does not exist until
   # create-worktree.sh materialises it, so any pre-dispatch write would
   # fail.
@@ -2336,8 +2340,8 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   fi
   # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
   # underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
-  # --allow-resume), .zskills-tracked (from --pipeline-id), and
-  # .worktreepurpose writes.
+  # --allow-resume), .zskills/tracked (from --pipeline-id), and
+  # .zskills/worktreepurpose writes.
 
   # Promote scratchpad row into the per-issue worktree's tracker file. This
   # commit is orchestrator-owned (not the impl agent's) so the row lands even
@@ -2462,7 +2466,7 @@ trigger the bg+Monitor stall pattern.
 For grouped interrelated issues (same root cause or same files from
 Phase 2 grouping), pick the LOWEST issue number as the branch identifier
 (`fix/issue-NNN`) and include all grouped issues in that one worktree.
-The `.landed` marker's `issue:` field records the primary issue; group
+The `.zskills/landed` marker's `issue:` field records the primary issue; group
 members are listed separately in the sprint report.
 
 ### Post-execute tracking
@@ -2915,7 +2919,7 @@ if [ -x "$INFLIGHT_HELPER" ]; then
 fi
 ```
 
-Also remove `.zskills-tracked` from each worktree that was used.
+Also remove `.zskills/tracked` from each worktree that was used.
 
 ## Failure Protocol
 

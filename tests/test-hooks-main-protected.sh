@@ -349,8 +349,9 @@ EOF
 
   # Run hook in main_tmpdir cwd, with NO REPO_ROOT override so is_on_main
   # exercises extract_cd_target. LOCAL_ROOT/TRACKING_ROOT are set to the
-  # main repo so the tracking guard reads from the fixture (no .zskills-tracked
-  # there → tracking enforcement skipped, isolating this test to extract_cd_target).
+  # main repo so the tracking guard reads from the fixture (no .zskills/tracked
+  # or legacy .zskills-tracked there → tracking enforcement skipped,
+  # isolating this test to extract_cd_target).
   local result
   result=$(echo "$json" | (
     cd "$main_tmpdir" &&

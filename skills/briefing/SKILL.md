@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.06.10+9bc1e4"
+  version: "2026.06.10+2d6836"
 ---
 
 # /briefing — Project Status Briefing
@@ -261,7 +261,7 @@ fi
 
 It aggregates two signals, by descending fidelity:
 
-- **`.landed` markers** (strong) — the `source:` field names the producing
+- **`.zskills/landed` markers** (strong) — the `source:` field names the producing
   skill; `status:`/`ci:`/`pr_state:` distinguish a SUCCESSFUL land (status
   `landed`/`full`, or `pr_state: MERGED` / `ci: pass`) from a mere attempt.
   These are gitignored and live in `/tmp` worktrees, so this is a rolling
@@ -269,7 +269,7 @@ It aggregates two signals, by descending fidelity:
 - **`gh pr list --state merged`** (weaker, labeled) — durable backfill
   beyond the on-disk window, but attributes by conventional-commit scope
   (subsystem), not by skill. The output labels this signal as such; it never
-  overrides a `.landed` count.
+  overrides a `.zskills/landed` count.
 
 Source variants are canonicalized to one skill name (e.g. `fix-issues`,
 `fix-issues-sprint`, `fix-issues-pr-mode-*` → `fix-issues`). The report
@@ -290,19 +290,19 @@ The agent runs `"$PYTHON" "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" <s
 | `verify`    | Text     | Pre-formatted verification checklist     |
 | `current`   | Text     | Pre-formatted in-flight status           |
 | `worktrees-status` | Text | Cleanup readiness report             |
-| `dogfooding` | Text | Per-skill successful-usage counts (`.landed` source: + labeled gh backfill) |
+| `dogfooding` | Text | Per-skill successful-usage counts (`.zskills/landed` source: + labeled gh backfill) |
 
 ## Worktree Categories
 
 Each worktree is classified into exactly one category:
 
-- **`landed-full`** — `.landed` file with `status: full` (fix-issues cherry-pick, all commits on main) or `status: landed` (run-plan cherry-pick or merged PR)
-- **`landed-partial`** — `.landed` file with `status: partial` (some commits skipped, needs review)
-- **`landed-pr-ready`** — `.landed` file with `status: pr-ready` (PR is open; worktree is safe to remove, remote branch must NOT be deleted — it supports the open PR)
-- **`landed-pr-needs-attention`** — `.landed` file with `status: pr-ci-failing`, `status: pr-failed`, `status: conflict`, `status: pr-state-unknown`, `status: failed`, `status: direct-push-failed`, or `status: direct-verify-failed` (PR-mode or failure-class markers that need manual action)
-- **`done-needs-review`** — No `.landed`, has commits, inactive > 2 hours
-- **`possibly-active`** — No `.landed`, modified within last 2 hours
-- **`empty`** — No `.landed`, zero commits ahead of main
+- **`landed-full`** — `.zskills/landed` file with `status: full` (fix-issues cherry-pick, all commits on main) or `status: landed` (run-plan cherry-pick or merged PR)
+- **`landed-partial`** — `.zskills/landed` file with `status: partial` (some commits skipped, needs review)
+- **`landed-pr-ready`** — `.zskills/landed` file with `status: pr-ready` (PR is open; worktree is safe to remove, remote branch must NOT be deleted — it supports the open PR)
+- **`landed-pr-needs-attention`** — `.zskills/landed` file with `status: pr-ci-failing`, `status: pr-failed`, `status: conflict`, `status: pr-state-unknown`, `status: failed`, `status: direct-push-failed`, or `status: direct-verify-failed` (PR-mode or failure-class markers that need manual action)
+- **`done-needs-review`** — No `.zskills/landed`, has commits, inactive > 2 hours
+- **`possibly-active`** — No `.zskills/landed`, modified within last 2 hours
+- **`empty`** — No `.zskills/landed`, zero commits ahead of main
 - **`named`** — Not an `agent-*` worktree (e.g., physics module)
 - **`orphaned`** — Directory exists on disk but not in `git worktree list`
 

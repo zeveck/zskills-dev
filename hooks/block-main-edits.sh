@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
@@ -194,11 +194,15 @@ REL="${RESOLVED_FILE#$MAIN_ROOT/}"
 # tracked content (gitignore'd), so writes here don't pollute main's working
 # tree from git's perspective and don't cause the `git checkout` /
 # `git stash` cascades that motivated this hook. Keep this list narrow.
+# Phase 8 root-turd consolidation: the live marker paths (.zskills/tracked,
+# .zskills/landed, .zskills/worktreepurpose) are covered by the .zskills/*
+# arm. The three legacy root arms stay for the dual-read transition window
+# (pre-move worktrees / orchestrator flows may still touch them).
 case "$REL" in
-  .zskills/*)        exit 0 ;;  # tracking, audit, issues, dev-server state, monitor runtime
-  .zskills-tracked)  exit 0 ;;  # worktree pipeline-id marker
-  .landed)           exit 0 ;;  # worktree landed marker
-  .worktreepurpose)  exit 0 ;;  # worktree purpose marker
+  .zskills/*)        exit 0 ;;  # tracking, audit, issues, dev-server state, monitor runtime, worktree markers
+  .zskills-tracked)  exit 0 ;;  # legacy worktree pipeline-id marker (transition window)
+  .landed)           exit 0 ;;  # legacy worktree landed marker (transition window)
+  .worktreepurpose)  exit 0 ;;  # legacy worktree purpose marker (transition window)
 esac
 
 # ── Deny ─────────────────────────────────────────────────────────────────
@@ -215,8 +219,10 @@ this change into a worktree:
   - Manual: \\\`/create-worktree\\\` then operate inside the returned path
 
 Allowed on main (not blocked): paths under \\\`.zskills/\\\` (tracking,
-audit, issues, dev-server state), and the gitignored worktree-state markers
-\\\`.zskills-tracked\\\`, \\\`.landed\\\`, \\\`.worktreepurpose\\\`.
+audit, issues, dev-server state, and the worktree-state markers
+\\\`.zskills/tracked\\\`, \\\`.zskills/landed\\\`, \\\`.zskills/worktreepurpose\\\`),
+plus the legacy gitignored root markers \\\`.zskills-tracked\\\`,
+\\\`.landed\\\`, \\\`.worktreepurpose\\\` (dual-read transition window).
 
 To disable this gate project-wide, set \\\`execution.main_protected: false\\\`
 in \\\`.claude/zskills-config.json\\\`.

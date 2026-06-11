@@ -1,8 +1,10 @@
 #!/bin/bash
-# land-phase.sh — Post-landing cleanup: verify .landed, extract logs, remove worktree
+# land-phase.sh — Post-landing cleanup: verify the landed marker, extract logs, remove worktree
 # Usage: bash $(basename "$0") <worktree-path>
 #
-# Prerequisites: orchestrator already cherry-picked, ran tests, wrote .landed marker.
+# Prerequisites: orchestrator already cherry-picked, ran tests, wrote the
+# landed marker (.zskills/landed via write-landed.sh; legacy root .landed is
+# still read during the Phase 8 transition window).
 # This script handles the mechanical cleanup. Idempotent — safe to re-run.
 
 WORKTREE_PATH="$1"
@@ -24,14 +26,22 @@ if [ -z "$MAIN_ROOT" ] || [ "$MAIN_ROOT" = "/" ]; then
   exit 1
 fi
 
-# 1. Verify .landed marker (proof work is on main — refuse without it)
-if [ ! -f "$WORKTREE_PATH/.landed" ]; then
-  echo "ERROR: No .landed marker in $WORKTREE_PATH. Cannot clean up without proof of landing."
+# 1. Verify landed marker (proof work is on main — refuse without it).
+# Root-turd consolidation (INSTALL_REDESIGN Phase 8): the writer
+# (write-landed.sh) now writes .zskills/landed; dual-read here covers
+# worktrees created before the move (old root .landed) for the transition
+# window. New path wins when both exist.
+LANDED_MARKER="$WORKTREE_PATH/.zskills/landed"
+if [ ! -f "$LANDED_MARKER" ]; then
+  LANDED_MARKER="$WORKTREE_PATH/.landed"
+fi
+if [ ! -f "$LANDED_MARKER" ]; then
+  echo "ERROR: No landed marker in $WORKTREE_PATH (checked .zskills/landed and legacy .landed). Cannot clean up without proof of landing."
   exit 1
 fi
-if ! grep -qE 'status: (landed|pr-ready)' "$WORKTREE_PATH/.landed"; then
-  echo "ERROR: .landed marker does not say 'status: landed' or 'status: pr-ready'. Current status:"
-  cat "$WORKTREE_PATH/.landed"
+if ! grep -qE 'status: (landed|pr-ready)' "$LANDED_MARKER"; then
+  echo "ERROR: landed marker does not say 'status: landed' or 'status: pr-ready' ($LANDED_MARKER). Current status:"
+  cat "$LANDED_MARKER"
   exit 1
 fi
 
@@ -58,7 +68,9 @@ BRANCH=$(git -C "$WORKTREE_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || echo
 # Ephemeral pipeline files that agents should leave UNTRACKED. If any of
 # these are tracked, the run-plan / verifier prompts leaked them into a
 # commit — that's a contract violation to surface, not silently work around.
-EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked")
+# Phase 8 root-turd consolidation: new .zskills/-relative marker paths added;
+# the old root basenames stay during the dual-read transition window.
+EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked" ".zskills/worktreepurpose" ".zskills/tracked")
 for f in "${EPHEMERAL_FILES[@]}"; do
   if [ -f "$WORKTREE_PATH/$f" ]; then
     # git ls-files exits 0 and prints a path if tracked; empty if not tracked
@@ -88,13 +100,37 @@ if [ -d "$TEST_OUT_DIR" ]; then
   fi
 fi
 
-# .landed is also untracked, so it blocks `git worktree remove`. Remove it
-# right before removal, but SAVE its content so we can restore on failure
-# (preserving proof-of-landing for retry/diagnosis).
-LANDED_CONTENT=$(cat "$WORKTREE_PATH/.landed")
-if ! rm "$WORKTREE_PATH/.landed"; then
-  echo "ERROR: Failed to rm $WORKTREE_PATH/.landed"
+# The landed marker is also untracked, so it blocks `git worktree remove`.
+# Remove it right before removal, but SAVE its content so we can restore on
+# failure (preserving proof-of-landing for retry/diagnosis).
+LANDED_CONTENT=$(cat "$LANDED_MARKER")
+if ! rm "$LANDED_MARKER"; then
+  echo "ERROR: Failed to rm $LANDED_MARKER"
   exit 1
+fi
+
+# Phase 8 worktree-removal hazard: after the root-turd consolidation the
+# worktree's .zskills/ DIR holds the (gitignored, untracked) markers and any
+# other per-checkout runtime state — all of which block `git worktree
+# remove`. An agent-typed `rm -rf <wt>/.zskills` is BLOCKED by the
+# recursive-rm fence in block-unsafe-project.sh, so land-phase.sh owns this
+# cleanup internally (script internals are invisible to the command-token
+# hook). Refuse if anything under .zskills/ is git-TRACKED — same contract
+# violation as the EPHEMERAL_FILES check above.
+if [ -d "$WORKTREE_PATH/.zskills" ]; then
+  tracked_zs=$(git -C "$WORKTREE_PATH" ls-files .zskills 2>/dev/null)
+  if [ -n "$tracked_zs" ]; then
+    printf '%s\n' "$LANDED_CONTENT" > "$LANDED_MARKER"
+    echo "ERROR: tracked files exist under $WORKTREE_PATH/.zskills/ — an agent committed runtime state:"
+    printf '%s\n' "$tracked_zs"
+    echo "git rm them from the feature branch and re-land. Landed marker restored. Refusing to proceed."
+    exit 1
+  fi
+  if ! rm -rf "$WORKTREE_PATH/.zskills"; then
+    printf '%s\n' "$LANDED_CONTENT" > "$LANDED_MARKER"
+    echo "ERROR: Failed to remove $WORKTREE_PATH/.zskills — landed marker restored for retry."
+    exit 1
+  fi
 fi
 
 # Confirm worktree working tree is clean before removal — otherwise
@@ -102,24 +138,25 @@ fi
 # that only check exit code. Use git status --porcelain to detect any
 # staged/unstaged changes or untracked files we didn't anticipate.
 if [ -n "$(git -C "$WORKTREE_PATH" status --porcelain 2>/dev/null)" ]; then
-  # Restore .landed so the marker isn't lost while we report
-  printf '%s\n' "$LANDED_CONTENT" > "$WORKTREE_PATH/.landed"
+  # Restore the landed marker so it isn't lost while we report
+  mkdir -p "$(dirname "$LANDED_MARKER")"
+  printf '%s\n' "$LANDED_CONTENT" > "$LANDED_MARKER"
   echo "ERROR: Worktree $WORKTREE_PATH is not clean — cannot safely remove."
   echo "Current dirty state:"
   git -C "$WORKTREE_PATH" status --porcelain | head -20
   echo ""
-  echo ".landed marker restored for retry. Investigate dirty state before re-running."
+  echo "Landed marker restored for retry. Investigate dirty state before re-running."
   exit 1
 fi
 
 if ! git worktree remove "$WORKTREE_PATH"; then
-  # Restore .landed so retry is possible
-  mkdir -p "$WORKTREE_PATH"
-  printf '%s\n' "$LANDED_CONTENT" > "$WORKTREE_PATH/.landed"
+  # Restore the landed marker so retry is possible
+  mkdir -p "$(dirname "$LANDED_MARKER")"
+  printf '%s\n' "$LANDED_CONTENT" > "$LANDED_MARKER"
   echo "ERROR: Failed to remove worktree $WORKTREE_PATH"
   echo "Contents:"
   ls -A "$WORKTREE_PATH" 2>/dev/null | head -20
-  echo ".landed marker restored for retry."
+  echo "Landed marker restored for retry."
   exit 1
 fi
 

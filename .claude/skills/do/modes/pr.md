@@ -119,7 +119,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # /do expects a fresh branch per task — no legitimate resume.
 # --pipeline-id passes $PIPELINE_ID explicitly; the script sanitizes it
 # again internally (idempotent on already-safe inputs) and writes the
-# sanitized value to the worktree's .zskills-tracked. No env var reliance,
+# sanitized value to the worktree's .zskills/tracked. No env var reliance,
 # no cross-invocation pollution.
 WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
   --prefix do \
@@ -133,9 +133,9 @@ if [ "$RC" -ne 0 ]; then
   exit "$RC"
 fi
 # create-worktree.sh has now written $PIPELINE_ID (sanitized) to
-# $WORKTREE_PATH/.zskills-tracked.
+# $WORKTREE_PATH/.zskills/tracked.
 ```
-Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills-tracked` file in the worktree is the single source of truth.
+Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills/tracked` file in the worktree is the single source of truth.
 
 **Step A5.5 — Claim the issue(s) (when `${#ISSUE_NUMS[@]} -gt 0`).** Now
 that `PIPELINE_ID="do.${TASK_SLUG}"` is set (A4) and the worktree exists
@@ -227,7 +227,8 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-cat > "$WORKTREE_PATH/.landed" <<LANDED
+mkdir -p "$WORKTREE_PATH/.zskills"
+cat > "$WORKTREE_PATH/.zskills/landed" <<LANDED
 status: conflict
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: do
@@ -302,7 +303,7 @@ VALIDATE_EXIT=$?
 
 On `VALIDATE_EXIT=1` — or when the verifier agent reports a verification
 FAILURE it could not resolve (tests still failing, diff unsound) — STOP.
-Do NOT push and do NOT dispatch `/land-pr`. Write the `.landed` marker
+Do NOT push and do NOT dispatch `/land-pr`. Write the `.zskills/landed` marker
 (`status: pr-failed`) and release any acquired issue claim(s) before
 exiting, reusing Step A6's failure shape:
 
@@ -313,7 +314,8 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-con
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-cat > "$WORKTREE_PATH/.landed" <<LANDED
+mkdir -p "$WORKTREE_PATH/.zskills"
+cat > "$WORKTREE_PATH/.zskills/landed" <<LANDED
 status: pr-failed
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: do
@@ -348,7 +350,7 @@ Only when verification is clean do you continue to Step A7.
 **Step A7 — Compose PR title and body BEFORE invoking /land-pr:**
 
 `/land-pr` owns rebase, push, PR creation, CI polling, fix-cycle, and the
-`.landed` marker write (canonical schema, including `pr-state-unknown` on
+`.zskills/landed` marker write (canonical schema, including `pr-state-unknown` on
 exhausted `gh pr view` retries). `/do pr` is responsible only for the
 title/body composition and the fix-cycle agent's task-context slot.
 
@@ -407,7 +409,7 @@ BODY
 **Step A8 — Dispatch `/land-pr` (canonical caller loop):**
 
 `/do pr` no longer owns rebase, push, PR creation, CI polling, or the
-`.landed` write — those move to `/land-pr` (see `skills/land-pr/SKILL.md`).
+`.zskills/landed` write — those move to `/land-pr` (see `skills/land-pr/SKILL.md`).
 `/do pr` gains a fix-cycle on CI failure (drift fix) — the fix-cycle
 agent's `<CALLER_WORK_CONTEXT>` slot is filled with the original task
 description.
@@ -547,7 +549,7 @@ while :; do
     rebase-conflict)
       # <CALLER_REBASE_CONFLICT_HANDLER> — /do pr is single-task with no
       # plan context, so no agent-assisted resolution path. /land-pr
-      # already wrote `.landed status=conflict` and aborted the rebase —
+      # already wrote `.zskills/landed status=conflict` and aborted the rebase —
       # break and surface to user.
       echo "/land-pr returned rebase-conflict. Resolve manually in $WORKTREE_PATH and re-run \`/do pr\` (or land manually)." >&2
       LAND_OUTCOME=$STATUS
@@ -736,7 +738,7 @@ if [ -x "$INFLIGHT_HELPER" ]; then
 fi
 ```
 
-**Note on the `.landed` schema:** `/land-pr` writes the canonical schema
+**Note on the `.zskills/landed` schema:** `/land-pr` writes the canonical schema
 (per its WI 1.11) — additive over the previous `/do pr` schema. Existing
 fields (`status`, `date`, `source`, `branch`, `pr`) are all preserved;
 new fields (`method`, `pr_state`, `merge_requested`, `merge_reason`,

@@ -5,9 +5,9 @@ Land each verified fix via one PR per issue with rebase, push, CI polling, and a
 
 When `LANDING_MODE == pr`, landing replaces cherry-pick with **per-issue
 `/land-pr` dispatch**. Each fixed issue is handled independently: one
-branch, one PR, one `.landed` marker per worktree. A failure on one
+branch, one PR, one `.zskills/landed` marker per worktree. A failure on one
 issue (rebase conflict, CI failure, PR creation error) does NOT block
-the others — `/land-pr` writes that issue's `.landed` marker and the
+the others — `/land-pr` writes that issue's `.zskills/landed` marker and the
 caller loop `continue`s to the next issue.
 
 **Auto-flag gating.** Rebase, push, PR creation, **CI polling, and the fix cycle ALL run regardless of `$AUTO`** — they're either low-risk (review-surfacing) or reversible (the fix cycle pushes commits to the feature branch, which the user can revert). Goal: by the time the user reviews the PR, it is as clean as the agent could get it.
@@ -16,7 +16,7 @@ Only the final `gh pr merge --auto --squash` call is gated on `$AUTO` — and th
 
 **Per-issue /land-pr dispatch.** `/fix-issues pr` no longer owns
 rebase, push, PR creation, CI polling, the fix cycle, the merge call,
-or the `.landed` marker write — those all move to `/land-pr` (see
+or the `.zskills/landed` marker write — those all move to `/land-pr` (see
 `skills/land-pr/SKILL.md`). What stays in `/fix-issues pr`:
 
 - The outer `for issue in "${FIXED_ISSUES[@]}"` loop (per-issue scope).
@@ -37,12 +37,12 @@ have verified commits on `fix/issue-NNN`.
 - `$AUTO = $AUTO` (auto-merge gated on caller's `--auto` flag, passed
   through to `/land-pr` via `--auto`)
 - `$ISSUE_NUM = $ISSUE_NUM` (passed through via `--issue=$ISSUE_NUM`;
-  `/land-pr` writes it into the `.landed` marker's `issue:` field)
+  `/land-pr` writes it into the `.zskills/landed` marker's `issue:` field)
 - `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (per-issue body is composed
   once before the loop and never refreshed)
 - `<CALLER_REBASE_CONFLICT_HANDLER>` = no agent-assisted resolution at
   per-issue scope (each issue has its own narrow worktree); break and
-  let `/land-pr`'s `.landed status=conflict` marker stand
+  let `/land-pr`'s `.zskills/landed status=conflict` marker stand
 - `<DISPATCH_FIX_CYCLE_AGENT_HERE>` = issue body (`gh issue view`) +
   change summary
 
@@ -189,7 +189,7 @@ BODY
         # <CALLER_REBASE_CONFLICT_HANDLER> — /fix-issues pr is per-issue
         # scope with a narrow worktree and no broader plan context, so
         # no agent-assisted resolution path. /land-pr already wrote
-        # `.landed status=conflict` (with `issue: $ISSUE_NUM` per
+        # `.zskills/landed status=conflict` (with `issue: $ISSUE_NUM` per
         # --issue passthrough) and aborted the rebase — break out of
         # the inner loop and `continue` to the next issue.
         echo "/land-pr returned rebase-conflict for issue #$ISSUE_NUM. Resolve manually in $WORKTREE_PATH or re-run." >&2
@@ -362,7 +362,7 @@ sed -i "s/^status: started$/status: $SPRINT_OUTCOME/" \
   "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.fix-issues.$SPRINT_ID"
 ```
 
-**`.landed` status values for PR mode** (`/land-pr`-owned, per its WI
+**`.zskills/landed` status values for PR mode** (`/land-pr`-owned, per its WI
 1.11 canonical schema and WI 1.12 status mapping table — same as
 `/run-plan`, `/commit pr`, and `/do pr`):
 

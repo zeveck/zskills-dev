@@ -3,8 +3,8 @@
 #
 # Owns: prefix-derived path, optional --branch-name override, optional
 # pre-flight prune+fetch+ff-merge (suppressible), worktree-add-safe.sh
-# invocation with TOCTOU-race remap, sanitized .zskills-tracked write,
-# and optional .worktreepurpose write. Prints the final worktree path
+# invocation with TOCTOU-race remap, sanitized .zskills/tracked write,
+# and optional .zskills/worktreepurpose write. Prints the final worktree path
 # on stdout (exactly one line). All progress/errors go to stderr.
 #
 # Exit codes: 1-10 reserved for create-worktree.sh; 11-19 reserved for ensure-worktree.sh; 20+ reserved for future helpers.
@@ -343,22 +343,48 @@ if [ "$WAS_RC" -ne 0 ]; then exit "$WAS_RC"; fi
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1a.10 — Post-create write: sanitise the explicit --pipeline-id value
-# and write it to .zskills-tracked. The flag is validated required at
-# argument-parse time (see top of script); we sanitise again here so an
-# already-clean ID is a no-op but a caller passing a dirty string still
-# produces a safe value.
+# and write it to .zskills/tracked (root-turd consolidation, INSTALL_REDESIGN
+# Phase 8 — was the root .zskills-tracked; readers dual-read for the
+# transition window). The flag is validated required at argument-parse time
+# (see top of script); we sanitise again here so an already-clean ID is a
+# no-op but a caller passing a dirty string still produces a safe value.
 # ──────────────────────────────────────────────────────────────────
 PIPELINE_ID=$(bash "$SCRIPT_DIR/sanitize-pipeline-id.sh" "$PIPELINE_ID_OVERRIDE")
 
-# WI 1a.11 — Rollback on .zskills-tracked write failure.
-if ! printf '%s\n' "$PIPELINE_ID" > "$WT_PATH/.zskills-tracked"; then
+# WI 1a.11 — Rollback on marker write failure.
+if ! mkdir -p "$WT_PATH/.zskills"; then
+  echo "create-worktree: post-create write failed — worktree rolled back" >&2
+  git -C "$MAIN_ROOT" worktree remove --force "$WT_PATH" 1>&2 || true
+  exit 8
+fi
+
+# Belt-and-braces with init's gitignore-first A2 umbrella: ensure .zskills/
+# is ignored in this checkout. NEVER append to the tracked .gitignore here
+# (that would dirty the fresh worktree) — the shared $GIT_COMMON_DIR/info/
+# exclude covers every worktree without touching tracked content.
+# Best-effort: a failure never blocks worktree creation.
+if ! git -C "$WT_PATH" check-ignore -q .zskills/probe 2>/dev/null; then
+  _common_dir=$(git -C "$WT_PATH" rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$_common_dir" ]; then
+    case "$_common_dir" in
+      /*) : ;;
+      *) _common_dir="$WT_PATH/$_common_dir" ;;
+    esac
+    mkdir -p "$_common_dir/info" 2>/dev/null \
+      && echo ".zskills/" >> "$_common_dir/info/exclude" 2>/dev/null \
+      || echo "create-worktree: WARN: could not ensure .zskills/ git-exclusion (non-fatal)" >&2
+  fi
+fi
+unset _common_dir
+
+if ! printf '%s\n' "$PIPELINE_ID" > "$WT_PATH/.zskills/tracked"; then
   echo "create-worktree: post-create write failed — worktree rolled back" >&2
   git -C "$MAIN_ROOT" worktree remove --force "$WT_PATH" 1>&2 || true
   exit 8
 fi
 
 if [ -n "$PURPOSE" ]; then
-  if ! printf '%s\n' "$PURPOSE" > "$WT_PATH/.worktreepurpose"; then
+  if ! printf '%s\n' "$PURPOSE" > "$WT_PATH/.zskills/worktreepurpose"; then
     echo "create-worktree: post-create write failed — worktree rolled back" >&2
     git -C "$MAIN_ROOT" worktree remove --force "$WT_PATH" 1>&2 || true
     exit 8

@@ -2427,6 +2427,67 @@ rm -rf "$CC_TMP"
 echo ""
 
 # ---------------------------------------------------------------------------
+# _list_worktrees landed-marker dual-read (INSTALL_REDESIGN Phase 8).
+# collect.py resolves .zskills/landed → legacy root .landed LOCALLY (it must
+# not depend on the loaded briefing copy having _marker_path — the briefing
+# is path-imported from a configurable main_root and may be an older copy).
+# The stub briefing below deliberately has NO _marker_path, pinning exactly
+# that version-skew coupling. Three cases: new-path only, old-path fallback,
+# new-wins-when-both.
+# ---------------------------------------------------------------------------
+echo "=== _list_worktrees: landed-marker dual-read (Phase 8) ==="
+
+DR_TMP=$(mktemp -d)
+mkdir -p "$DR_TMP/wt-new/.zskills" "$DR_TMP/wt-old" "$DR_TMP/wt-both/.zskills"
+printf 'status: landed\n'   > "$DR_TMP/wt-new/.zskills/landed"
+printf 'status: pr-ready\n' > "$DR_TMP/wt-old/.landed"
+printf 'status: landed\n'   > "$DR_TMP/wt-both/.zskills/landed"
+printf 'status: partial\n'  > "$DR_TMP/wt-both/.landed"
+
+DR_OUT=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys, types
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+
+root = pathlib.Path("'"$DR_TMP"'")
+# Stub briefing: an OLDER copy with classify_worktrees + parse_landed but
+# deliberately NO _marker_path helper (the version-skew case the local
+# dual-read exists for).
+stub = types.SimpleNamespace(
+    classify_worktrees=lambda repo_root=None: [
+        {"path": str(root / d), "branch": d, "category": "agent", "mtime": None,
+         "ahead": 0, "behind": 0}
+        for d in ("wt-new", "wt-old", "wt-both")
+    ],
+    parse_landed=lambda text: {"status": text.split(":", 1)[1].strip()},
+)
+c._BRIEFING_MODULE = stub  # pre-seed the cache so _load_briefing returns the stub
+out = c._list_worktrees(root, [])
+for wt in out:
+    name = pathlib.Path(wt["path"]).name
+    landed = wt["landed"] or {}
+    print(name + "=" + str(landed.get("status", "<none>")))
+' 2>&1)
+if printf '%s\n' "$DR_OUT" | grep -q '^wt-new=landed$'; then
+  pass "_list_worktrees dual-read: new path .zskills/landed read"
+else
+  fail "_list_worktrees dual-read new path: got '$DR_OUT'"
+fi
+if printf '%s\n' "$DR_OUT" | grep -q '^wt-old=pr-ready$'; then
+  pass "_list_worktrees dual-read: legacy root .landed fallback read"
+else
+  fail "_list_worktrees dual-read old-path fallback: got '$DR_OUT'"
+fi
+if printf '%s\n' "$DR_OUT" | grep -q '^wt-both=landed$'; then
+  pass "_list_worktrees dual-read: new path wins when both markers exist"
+else
+  fail "_list_worktrees dual-read new-wins: got '$DR_OUT'"
+fi
+rm -rf "$DR_TMP"
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

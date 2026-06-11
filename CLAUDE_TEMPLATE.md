@@ -228,10 +228,11 @@ Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and revi
 
 - **NEVER apply worktree changes to main without explicit user approval.** Do not `git apply`, `git merge`, copy files, or otherwise move worktree changes into the main working directory unless the user says to. This is the whole point of using worktrees.
 - **NEVER remove worktrees that contain changes.** The user may want to review, cherry-pick, or discard them individually. Only clean up worktrees the user has approved or explicitly told you to remove.
-- **Verify EACH worktree before removing.** Never batch-remove worktrees without checking each one. The fastest check: does `<worktree>/.landed` exist with `status: full`? If yes, it's safe -- all commits are on main and logs were extracted. If no `.landed` marker: verify manually with (1) `git log main..<branch>`, (2) `git status` in the worktree, (3) is it a long-running branch? Named/long-running worktrees are NOT sprint artifacts -- do not remove them. Present results and let the user approve.
-- **ALWAYS write a `.landed` marker when worktree work is cherry-picked to main.** Without this marker, worktrees pile up because cleanup tools can't tell which are safe to remove. Write it immediately after successful cherry-pick (source the canonical prelude first so `$TIMEZONE` resolves from `timezone` in `.claude/zskills-config.json`; UTC when unset):
+- **Verify EACH worktree before removing.** Never batch-remove worktrees without checking each one. The fastest check: does `<worktree>/.zskills/landed` exist with `status: full` (older worktrees may carry the legacy `<worktree>/.landed` instead -- check both, new path first)? If yes, it's safe -- all commits are on main and logs were extracted. If no landed marker: verify manually with (1) `git log main..<branch>`, (2) `git status` in the worktree, (3) is it a long-running branch? Named/long-running worktrees are NOT sprint artifacts -- do not remove them. Present results and let the user approve.
+- **ALWAYS write a `.zskills/landed` marker when worktree work is cherry-picked to main.** Without this marker, worktrees pile up because cleanup tools can't tell which are safe to remove. Write it immediately after successful cherry-pick (source the canonical prelude first so `$TIMEZONE` resolves from `timezone` in `.claude/zskills-config.json`; UTC when unset):
   ```bash
-  cat > "<worktree-path>/.landed" <<LANDED
+  mkdir -p "<worktree-path>/.zskills"
+  cat > "<worktree-path>/.zskills/landed" <<LANDED
   status: full
   date: $(TZ=${TIMEZONE:-UTC} date -Iseconds)
   source: <skill-name>
@@ -390,7 +391,7 @@ to main. Use PR mode or feature branches.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `update-zskills` skill's `scripts/clear-tracking.sh` (under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror) lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via the `.zskills/tracked` marker file -- hooks also read the legacy root `.zskills-tracked` for worktrees created before the path consolidation -- or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills/tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `update-zskills` skill's `scripts/clear-tracking.sh` (under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror) lets the user manually clear stale tracking state -- agents are blocked from running it directly.
 
 ## Claiming work items
 

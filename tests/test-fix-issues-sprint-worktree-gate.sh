@@ -185,17 +185,19 @@ fi
 
 # ─────────────────────────────────────────────────────────────────
 # Assertion 7: behavioural — the cap-check predicate must SKIP
-# worktrees whose `.landed` marker reads `status: landed`. We
-# extract the predicate code block from the SKILL.md, build a
-# fake `git worktree list --porcelain` fixture with three entries
-# (one landed, one un-landed, one not-fix-issue), eval the
-# predicate against it, and assert LIVE_COUNT == 1.
+# worktrees whose landed marker reads `status: landed`. The marker is
+# dual-read (Phase 8): .zskills/landed first, legacy root .landed
+# fallback. We extract the predicate code block from the SKILL.md,
+# build a fake `git worktree list --porcelain` fixture with four
+# entries (one landed via the NEW path, one landed via the LEGACY
+# path, one un-landed, one not-fix-issue), eval the predicate against
+# it, and assert LIVE_COUNT == 1.
 #
 # This locks the EXACT predicate behaviour, not just structural
 # presence — the reviewer-flagged gap from the bug report.
 # ─────────────────────────────────────────────────────────────────
 echo ""
-echo "=== predicate behaviour: skip .landed status: landed ==="
+echo "=== predicate behaviour: skip landed worktrees (dual-read) ==="
 
 # Extract the awk/while predicate block from the SKILL.md (defer-all
 # gate). Pull the lines between `LIVE_COUNT=$(` and the matching `)`.
@@ -210,17 +212,21 @@ else
   else
     PRED_BODY=$(sed -n "${PRED_START},${PRED_END}p" "$FI_SKILL")
 
-    # Build a temp dir with three fake worktrees:
-    #   wt-landed   — fix-issue-1, .landed says `status: landed` (SKIP)
-    #   wt-active   — fix-issue-2, no .landed                    (COUNT)
-    #   wt-other    — feature/foo, not a fix branch              (SKIP)
+    # Build a temp dir with four fake worktrees:
+    #   wt-landed     — fix-issue-1, NEW-path .zskills/landed says
+    #                   `status: landed`                          (SKIP)
+    #   wt-landed-old — fix-issue-3, LEGACY root .landed says
+    #                   `status: landed` (dual-read fallback)     (SKIP)
+    #   wt-active     — fix-issue-2, no landed marker             (COUNT)
+    #   wt-other      — feature/foo, not a fix branch             (SKIP)
     TMP_PRED=$(mktemp -d /tmp/cap-predicate-test.XXXXXX)
     trap 'rm -rf "$TMP_PRED"' EXIT
 
-    mkdir -p "$TMP_PRED/wt-landed" "$TMP_PRED/wt-active" "$TMP_PRED/wt-other"
-    printf 'status: landed\ndate: 2026-05-17\n' > "$TMP_PRED/wt-landed/.landed"
-    # wt-active has no .landed file
-    # wt-other has no .landed file
+    mkdir -p "$TMP_PRED/wt-landed/.zskills" "$TMP_PRED/wt-landed-old" "$TMP_PRED/wt-active" "$TMP_PRED/wt-other"
+    printf 'status: landed\ndate: 2026-05-17\n' > "$TMP_PRED/wt-landed/.zskills/landed"
+    printf 'status: landed\ndate: 2026-05-17\n' > "$TMP_PRED/wt-landed-old/.landed"
+    # wt-active has no landed marker
+    # wt-other has no landed marker
 
     # Stub `git worktree list --porcelain` to print our fixture.
     cat > "$TMP_PRED/git" <<EOF
@@ -229,6 +235,9 @@ if [ "\$1" = "worktree" ] && [ "\$2" = "list" ] && [ "\$3" = "--porcelain" ]; th
   cat <<PORC
 worktree $TMP_PRED/wt-landed
 branch refs/heads/fix/issue-1
+
+worktree $TMP_PRED/wt-landed-old
+branch refs/heads/fix/issue-3
 
 worktree $TMP_PRED/wt-active
 branch refs/heads/fix-issue-2
@@ -247,9 +256,9 @@ EOF
     ACTUAL=$(PATH="$TMP_PRED:$PATH" bash -c "$PRED_BODY"$'\necho "$LIVE_COUNT"' 2>&1 | tail -1)
 
     if [ "$ACTUAL" = "1" ]; then
-      pass "predicate excludes .landed status: landed (LIVE_COUNT=1 from fixture: 1 landed + 1 active + 1 non-fix)"
+      pass "predicate excludes landed worktrees via dual-read (LIVE_COUNT=1 from fixture: 1 new-path landed + 1 legacy-path landed + 1 active + 1 non-fix)"
     else
-      fail "predicate behaviour wrong: expected LIVE_COUNT=1, got '$ACTUAL' (fixture: 1 landed fix-issue + 1 active fix-issue + 1 non-fix branch)"
+      fail "predicate behaviour wrong: expected LIVE_COUNT=1, got '$ACTUAL' (fixture: 2 landed fix-issues [new+legacy path] + 1 active fix-issue + 1 non-fix branch)"
     fi
   fi
 fi

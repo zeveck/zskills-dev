@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.10+ddccb8"
+  version: "2026.06.10+6dc07c"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -1133,7 +1133,7 @@ Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invoca
      refusal or conflict: STOPs and reports — does NOT `--abort`, stash,
      or force-resolve.
    - Runs the full test suite after the cherry-picks land.
-   - Writes the `.landed` marker on the worktree (`status: full`, source
+   - Writes the `.zskills/landed` marker on the worktree (`status: full`, source
      `commit-land`, with the list of cherry-picked hashes).
 
    On a clean return from `/commit land`:
@@ -1249,12 +1249,12 @@ Status: pr-ready | pr-ci-failing | landed
 - **Push failure (auth, remote, etc.):** stop, report the error.
 - **Task is bigger than expected:** stop, suggest `/run-plan` instead.
   Ask the user before continuing.
-- **PR mode: rebase conflict:** write `.landed` with `status: conflict`,
+- **PR mode: rebase conflict:** write `.zskills/landed` with `status: conflict`,
   report to user, direct them to inspect `$WORKTREE_PATH`.
-- **PR mode: CI failure:** write `.landed` with `status: pr-ci-failing`,
+- **PR mode: CI failure:** write `.zskills/landed` with `status: pr-ci-failing`,
   report the failure. Do NOT dispatch fix agents.
 - **PR mode: implementation agent fails without committing:** write
-  `.landed` with `status: conflict` and exit with an error message.
+  `.zskills/landed` with `status: conflict` and exit with an error message.
 - **If stuck on anything:** report the state and ask the user for
   guidance. Do not retry the same approach in a loop.
 - **Release the issue claim(s) on every abandon path (worktree/direct modes).**

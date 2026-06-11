@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.03+cc70d4"
+  version: "2026.06.10+a49ae6"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -55,7 +55,7 @@ Optional: `--auto` (bool, default false), `--worktree-path`,
 `--landed-source` (default `land-pr`), `--ci-timeout` (default 600),
 `--no-monitor` (skip CI poll, return after create), `--pr <num>` (resume
 mode: skip rebase/push/create, jump to monitor), `--issue <num>`
-(passes through to `.landed` schema), `--tracking-id <id>` (when present,
+(passes through to `.zskills/landed` schema), `--tracking-id <id>` (when present,
 write `fulfilled.land-pr.<id>` on successful merge to satisfy a parent
 skill's `requires.land-pr.<id>` marker — `/run-plan` PR mode passes this;
 the other 3 callers do not, preserving their no-fulfillment behavior).
@@ -181,10 +181,10 @@ REBASE_STDERR_FILE=<path-or-empty>      # sidecar file with stderr from Step 6b 
 Caller parsing pattern: see `references/caller-loop-pattern.md`. Never
 `source` the result file — use the allow-list line-by-line parser.
 
-## Canonical `.landed` schema (WI 1.11)
+## Canonical `.zskills/landed` schema (WI 1.11)
 
-When `--worktree-path` is supplied, `/land-pr` writes a `.landed` marker
-at `<worktree>/.landed` via `bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh"`.
+When `--worktree-path` is supplied, `/land-pr` writes a `.zskills/landed` marker
+at `<worktree>/.zskills/landed` via `bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh"`.
 The schema is canonical across all callers:
 
 ```text
@@ -202,7 +202,7 @@ reason: <optional>      # short token: rebase-conflict-too-many-files, ci-fix-cy
 conflict_files: <optional>  # space-separated paths; present for status=conflict (small lists only)
 ```
 
-`/run-plan` may write its own `.landed` for the pre-`/land-pr`
+`/run-plan` may write its own `.zskills/landed` for the pre-`/land-pr`
 "rebase-conflict-too-many-files" case (when it bails before invoking
 `/land-pr`). The schema is the same in both write paths.
 
@@ -285,7 +285,7 @@ if [ -z "$PR_RESUME" ]; then
 
   if [ "$REBASE_RC" -eq 10 ]; then
     STATUS="rebase-conflict"
-    # Jump to step 9 (compose .landed + result file).
+    # Jump to step 9 (compose .zskills/landed + result file).
   elif [ "$REBASE_RC" -eq 11 ]; then
     STATUS="rebase-failed"
     # Jump to step 9.
@@ -975,16 +975,16 @@ if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ] && [ -n "$WORKT
 fi
 ```
 
-### Step 8 — Compose `.landed` (auto-detect worktree if `--worktree-path` omitted)
+### Step 8 — Compose `.zskills/landed` (auto-detect worktree if `--worktree-path` omitted)
 
-Use this **status mapping table** to derive `.landed`'s `status` field.
+Use this **status mapping table** to derive `.zskills/landed`'s `status` field.
 **Evaluation: top-down, first-match-wins.** Failure-exits and
 pre-conditions come first; CI_STATUS=fail and CI_STATUS=pending take
 precedence over MERGE_REQUESTED/PR_STATE rows because the
 merge-requested-but-CI-failed combo (auto-merge accepted but CI
 changed after) should NOT be reported as `landed`.
 
-| # | Condition (top-down, first match wins) | → `.landed status` |
+| # | Condition (top-down, first match wins) | → `.zskills/landed status` |
 |---|----------------------------------------|--------------------|
 | 1 | STATUS=rebase-conflict | conflict |
 | 1b | STATUS=auto-rebase-conflict | conflict |
@@ -1006,7 +1006,7 @@ worktree of the current repo (NOT the main worktree, which has no
 associated branch-of-work to mark), use it as the marker target. This
 closes the Issue #205 gap where orchestrator-direct `/land-pr` dispatch
 from inside a worktree but without `--worktree-path` silently skipped
-the `.landed` write. `--worktree-path` remains an explicit override.
+the `.zskills/landed` write. `--worktree-path` remains an explicit override.
 
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -1037,7 +1037,7 @@ if [ -z "$WORKTREE_PATH" ]; then
 fi
 
 if [ -n "$WORKTREE_PATH" ]; then
-  # Derive .landed status from the table above.
+  # Derive .zskills/landed status from the table above.
   LANDED_STATUS="pr-ready"  # default fallback
   case "$STATUS" in
     rebase-conflict|auto-rebase-conflict) LANDED_STATUS="conflict" ;;
@@ -1066,7 +1066,7 @@ if [ -n "$WORKTREE_PATH" ]; then
 
   # Metadata-only capture; on rare git failures (detached HEAD with
   # missing origin/$BASE_BRANCH ref) COMMITS_LIST stays empty rather than
-  # aborting .landed write. Stderr goes to a discarded log, not the
+  # aborting .zskills/landed write. Stderr goes to a discarded log, not the
   # null device — keeps the file inspectable post-mortem.
   #
   # Use `origin/$BASE_BRANCH` (NOT local `$BASE_BRANCH`): in multi-PR
@@ -1099,7 +1099,7 @@ fi
 
 Write the fulfillment marker ONLY when the caller passed `--tracking-id`
 AND the PR is actually merged on main. Match the row-6 gate from Step 8's
-`.landed` status-mapping table:
+`.zskills/landed` status-mapping table:
 
 > `MERGE_REQUESTED=true AND PR_STATE=MERGED AND CI_STATUS in {pass, none, skipped}`
 

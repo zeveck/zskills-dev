@@ -1568,8 +1568,9 @@ var BRANCH_SECTION_LABELS = {
 };
 
 // Four accurate buckets:
-//   active      — local branch WITH a live worktree, no .landed marker
-//   landed      — local branch WITH a worktree carrying a .landed marker
+//   active      — local branch WITH a live worktree, no landed marker
+//   landed      — local branch WITH a worktree carrying a landed marker
+//                 (.zskills/landed; legacy root .landed read via dual-read)
 //   local       — local branch with NO worktree (was mislabeled "remote-only")
 //   remote-only — branch on origin but NOT checked out locally (was invisible)
 // The collector tags each branch with `locality` ("local"|"remote-only"|
@@ -2323,7 +2324,7 @@ function renderTruncationBanner(body) {
 // ------------------------------------------------------------- worktrees
 
 function landedPillClass(status) {
-  // Canonical `.landed` status vocabulary (tests/test-landed-status-vocabulary.sh):
+  // Canonical landed-marker status vocabulary (tests/test-landed-status-vocabulary.sh):
   //   full, landed                                            -> green  (landed-full)
   //   partial                                                 -> orange (landed-partial)
   //   pr-ready                                                -> blue   (landed-pr-ready)

@@ -1,0 +1,9 @@
+# tests/zskills-dir-tracked-allowlist.txt — paths under .zskills/ that may
+# legitimately be force-tracked (git-tracked) despite the umbrella
+# .gitignore. (Renamed from zskills-tracked-allowlist.txt in INSTALL_REDESIGN
+# Phase 8 — the old name read as an allowlist for the .zskills/tracked
+# pipeline marker, which it is not.)
+# Format: one path per line. Lines starting with # are comments.
+# AT MIGRATION TIME (issue #217): this file is empty by design — no
+# exemptions. Future legitimate force-adds (e.g., a zskills-versions.lock
+# schema file) add entries here.

@@ -68,10 +68,10 @@ RC=$RC"
   fi
 fi
 
-# ── Surface 2: .landed-status scan classification ───────────────────
+# ── Surface 2: landed-status scan classification (dual-read) ────────
 # Extract the Step 6 worktree-scan loop (the `for wt in` block through its
 # matching `done`). It is self-contained: it shells out to `git worktree
-# list` and reads `.landed` files, so we drive it inside a real git sandbox
+# list` and reads landed markers (.zskills/landed, legacy .landed), so we drive it inside a real git sandbox
 # with REAL `git worktree add` worktrees.
 SCAN_BLOCK=$(awk '
   /^for wt in \$\(git worktree list/{capture=1}
@@ -85,7 +85,7 @@ else
   pass "landed-scan: scan loop extracted from SKILL.md"
   # Parity gate on the case-arm fingerprints so source drift fails the test.
   if echo "$SCAN_BLOCK" | grep -qF 'failed|direct-push-failed|direct-verify-failed)' \
-     && echo "$SCAN_BLOCK" | grep -qF 'ACTIVE: $wt — no .landed marker'; then
+     && echo "$SCAN_BLOCK" | grep -qF 'ACTIVE: $wt — no landed marker'; then
     pass "landed-scan: case-arm + ACTIVE-else fingerprints present"
   else
     fail "landed-scan: fingerprint drift in scan block" "case arms changed"
@@ -99,11 +99,19 @@ else
     git config user.email t@t.t; git config user.name t
     git commit -q --allow-empty -m base
 
+    # Phase 8: live writers target .zskills/landed; the scan dual-reads
+    # (new path first, legacy root .landed fallback).
     mk_wt() { # name status
+      git worktree add -q -b "wt-$1" "$TMP/$1" main 2>/dev/null
+      mkdir -p "$TMP/$1/.zskills"
+      printf 'status: %s\n' "$2" > "$TMP/$1/.zskills/landed"
+    }
+    mk_wt_legacy() { # name status — pre-Phase-8 root marker (dual-read window)
       git worktree add -q -b "wt-$1" "$TMP/$1" main 2>/dev/null
       printf 'status: %s\n' "$2" > "$TMP/$1/.landed"
     }
     mk_wt safe-full full
+    mk_wt_legacy safe-full-legacy full
     mk_wt safe-landed landed
     mk_wt safe-prready pr-ready
     mk_wt attn-cifail pr-ci-failing
@@ -131,7 +139,8 @@ else
       fail "landed-scan: $3" "expected $2 for $1; out: $(grep "$1" "$TMP/scan.out" || echo none)"
     fi
   }
-  check_bucket "/safe-full" "SAFE" "status full -> SAFE"
+  check_bucket "/safe-full " "SAFE" "status full -> SAFE (new path)"
+  check_bucket "/safe-full-legacy" "SAFE" "status full -> SAFE (legacy root .landed, dual-read)"
   check_bucket "/safe-landed" "SAFE" "status landed -> SAFE"
   check_bucket "/safe-prready" "SAFE" "status pr-ready -> SAFE (worktree only)"
   check_bucket "/attn-cifail" "NEEDS ATTENTION" "status pr-ci-failing -> NEEDS ATTENTION"
@@ -143,7 +152,7 @@ else
   check_bucket "/failed-directverify" "FAILED" "status direct-verify-failed -> FAILED"
   check_bucket "/partial-land" "PARTIAL" "status partial -> PARTIAL"
   check_bucket "/weird-status" "UNKNOWN" "unrecognized status -> UNKNOWN catch-all"
-  check_bucket "/active" "ACTIVE" "no .landed marker -> ACTIVE (else branch)"
+  check_bucket "/active" "ACTIVE" "no landed marker -> ACTIVE (else branch)"
 fi
 
 # ── Surface 3: PIPELINE_ID sanitization ─────────────────────────────

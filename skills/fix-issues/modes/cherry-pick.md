@@ -72,7 +72,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
           done
         fi
         ```
-     b. Write `.landed` marker (atomic):
+     b. Write `.zskills/landed` marker (atomic):
         ```bash
         if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
           export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -145,7 +145,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
   9. **Update `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`** — mark which fixes were landed (add a
      `Landed` column or update status).
   10. **Auto-remove fully landed worktrees** — for each worktree with
-      `status: full` in `.landed`:
+      `status: full` in `.zskills/landed`:
       ```bash
       # Logs already extracted in step 5a. Double-check for stragglers:
       if [ -d "<worktree>/.claude/logs" ]; then
@@ -157,10 +157,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
       # Check for real uncommitted work (not artifacts)
       DIRTY=$(git -C "<worktree>" diff --name-only HEAD)
       UNTRACKED=$(git -C "<worktree>" status --porcelain | \
-        grep -v '\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
+        grep -v '\.zskills\|\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
 
       if [ -z "$DIRTY" ] && [ -z "$UNTRACKED" ]; then
-        rm -f "<worktree>/.landed" "<worktree>/.worktreepurpose"
+        rm -f "<worktree>/.zskills/landed" "<worktree>/.zskills/worktreepurpose" "<worktree>/.zskills/tracked" \
+           "<worktree>/.landed" "<worktree>/.worktreepurpose"  # legacy root paths: dual-read window
         git worktree remove "<worktree>"
         git branch -d "<branch>" 2>/dev/null
       else

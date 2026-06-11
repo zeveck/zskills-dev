@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+4ffe2b"
+  version: "2026.06.10+5eb00d"
 ---
 
 # Update Z Skills Infrastructure
@@ -748,7 +748,7 @@ found, missing otherwise.
 | 5 | Never discard others' changes | `"discard"` AND `"changes"` AND `"didn't make"` |
 | 6 | Protect untracked files | `"protect untracked"` or `"git stash -u"` |
 | 7 | Feature-complete commits | `"feature-complete"` AND `"trace"` AND `"imports"` |
-| 8 | Landed marker check | `".landed"` AND `"status: full"` |
+| 8 | Landed marker check | `".zskills/landed"` AND `"status: full"` |
 | 9 | Worktree verify before remove | `"worktree"` AND `"batch-remove"` |
 | 10 | Never defer hard parts | `"defer"` AND `"hard parts"` AND `"future phases"` |
 | 11 | Correctness over speed | `"correctness over speed"` or `"correctness, not speed"` |
@@ -791,7 +791,7 @@ Check each Tier-1 script at its owner's path — NOT at root `scripts/`:
 - `.claude/skills/update-zskills/scripts/clear-tracking.sh`
 - `.claude/skills/commit/scripts/land-phase.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for atomic post-landing cleanup
 - `.claude/skills/run-plan/scripts/post-run-invariants.sh` — referenced by `/run-plan` as mandatory end-of-run gate (7 invariants)
-- `.claude/skills/commit/scripts/write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
+- `.claude/skills/commit/scripts/write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.zskills/landed` marker writes
 - `.claude/skills/create-worktree/scripts/worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
 - `.claude/skills/create-worktree/scripts/create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
 - `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do` before persisting ID)
@@ -1144,6 +1144,24 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
         echo "Init did NOT complete (no init-done marker was written). Remove the override and re-run /zs:update-zskills." >&2
         exit 1 ;;
     esac
+    ```
+
+  - **A2.5 — one-shot main-root marker migrate (INSTALL_REDESIGN Phase 8
+    root-turd consolidation).** If a legacy root `.zskills-tracked` marker
+    exists at the MAIN repo root, move it to its consolidated home at
+    `.zskills/tracked`. MAIN ROOT ONLY — init NEVER walks or mutates
+    sibling worktrees (their markers live for the worktree's lifetime and
+    are covered by readers' dual-read fallback). Never-clobber: if the new
+    path already exists, leave both untouched (dual-read prefers the new
+    path; the stale root file is inert):
+
+    ```bash
+    if [ -f "$CLAUDE_PROJECT_DIR/.zskills-tracked" ] \
+       && [ ! -e "$CLAUDE_PROJECT_DIR/.zskills/tracked" ]; then
+      mkdir -p "$CLAUDE_PROJECT_DIR/.zskills"
+      mv "$CLAUDE_PROJECT_DIR/.zskills-tracked" "$CLAUDE_PROJECT_DIR/.zskills/tracked" \
+        || echo "WARN: could not migrate .zskills-tracked to .zskills/tracked (non-fatal; hooks dual-read the old path)" >&2
+    fi
     ```
 
   - **A3 — optional config interview (plugin-lane init arm ONLY — the

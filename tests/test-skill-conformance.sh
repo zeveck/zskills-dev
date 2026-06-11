@@ -266,7 +266,7 @@ check_fixed run-plan "cp worktree slug (single-phase)" '"${PLAN_SLUG}-phase-${PH
 check_fixed run-plan "cp worktree slug (finish-mode)"  '"${PLAN_SLUG}"'
 check_fixed run-plan "pr worktree path"             'WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-'
 check_fixed run-plan "pipeline-id echo"             'ZSKILLS_PIPELINE_ID=run-plan.'
-check_fixed run-plan ".zskills-tracked write"       '.zskills-tracked'
+check_fixed run-plan ".zskills/tracked write"      '.zskills/tracked'
 check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-tests/'
 check       run-plan "test capture redirect"        '\$TEST_OUT/(\$TEST_OUTPUT_FILE|\$\{TEST_OUTPUT_FILE:-\.test-results\.txt\})" 2>&1'
 check_fixed run-plan "compute-cron-fire invocation" 'bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/compute-cron-fire.sh"'
@@ -3273,7 +3273,7 @@ echo "=== .zskills/ umbrella cleanliness (issue #217) ==="
 # Allow-list: empty today, but exists so future legitimate force-adds (e.g., a
 # zskills-versions.lock file) can be added by editing the file rather than
 # editing this assertion. Format: one path per line, # for comments.
-ALLOWLIST="$REPO_ROOT/tests/zskills-tracked-allowlist.txt"
+ALLOWLIST="$REPO_ROOT/tests/zskills-dir-tracked-allowlist.txt"
 if [ -f "$ALLOWLIST" ]; then
   allowed=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | sort -u)
 else

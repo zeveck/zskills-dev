@@ -1,7 +1,7 @@
 #!/bin/bash
 # tests/test-land-pr-worktree-detect.sh — regression tests for Issue #205.
 #
-# /land-pr Step 8 (`Compose .landed`) was previously gated on
+# /land-pr Step 8 (`Compose .zskills/landed`) was previously gated on
 # `--worktree-path`; when a caller omitted that arg but ran the skill
 # from inside a worktree, the marker was silently skipped. The fix
 # auto-detects worktree status from cwd via:

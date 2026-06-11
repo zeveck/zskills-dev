@@ -190,7 +190,7 @@ while :; do
     rebase-conflict)
       # <CALLER_REBASE_CONFLICT_HANDLER> — /commit pr has no worktree and
       # no plan context, so no agent-assisted resolution path. /land-pr
-      # already wrote `.landed status=conflict` (or printed equivalent
+      # already wrote `.zskills/landed status=conflict` (or printed equivalent
       # diagnostics) and aborted the rebase — break and surface to user.
       echo "/land-pr returned rebase-conflict. Resolve manually and re-run \`/commit pr\`." >&2
       LAND_OUTCOME=$STATUS
@@ -328,7 +328,7 @@ rm -f "$TRACK_DIR/requires.land-pr.$BRANCH_SLUG"
   Without `auto`, `LAND_ARGS` omits `--auto` and the PR settles at
   `pr-ready` after CI passes; with `auto`, `--auto` is appended and
   `/land-pr` invokes `gh pr merge --auto --squash`.
-- Write `.landed` markers (`/commit pr` has no worktree)
+- Write `.zskills/landed` markers (`/commit pr` has no worktree)
 - Run Phases 1–5 (all commits must already exist — clean tree is required)
 
 **After the caller loop exits, exit.** Skip Phases 1–5 and 7.

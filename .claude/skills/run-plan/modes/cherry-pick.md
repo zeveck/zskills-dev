@@ -148,7 +148,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      Re-run the phase after the conflicting code is resolved on main.
 
   5. **Mark worktree as landed:**
-     Write `.landed` marker (atomic: `.tmp` → `mv`):
+     Write `.zskills/landed` marker (atomic: `.tmp` → `mv`):
      ```bash
      if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
        export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -174,7 +174,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      fi
      bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
      ```
-     This script handles everything: verifies `.landed` marker, extracts
+     This script handles everything: verifies `.zskills/landed` marker, extracts
      logs to main's `.claude/logs/` (MUST succeed — exits 1 on failure),
      removes the worktree, and deletes the branch. Idempotent — safe to
      re-run if interrupted.

@@ -102,7 +102,7 @@ LANDED
   echo "  1. cd $WORKTREE_PATH"
   echo "  2. git rebase origin/main"
   echo "  3. Resolve conflicts, git add, git rebase --continue"
-  echo "  4. rm .landed"
+  echo "  4. rm .zskills/landed"
   echo "  5. Re-run /run-plan"
   echo "=========================================="
   exit 1
@@ -188,7 +188,7 @@ LANDED
   echo "  1. cd $WORKTREE_PATH"
   echo "  2. git rebase origin/main"
   echo "  3. Resolve conflicts, git add, git rebase --continue"
-  echo "  4. rm .landed"
+  echo "  4. rm .zskills/landed"
   echo "  5. Re-run /run-plan"
   echo "=========================================="
   exit 1
@@ -307,7 +307,7 @@ printf '%s\n' "$PR_BODY" > "$BODY_FILE"
 **`/land-pr` dispatch (caller loop):**
 
 `/run-plan` no longer owns push, PR creation, CI polling, fix-cycle, auto-merge,
-or the `.landed` marker for the success / push-failed / CI-failing paths.
+or the `.zskills/landed` marker for the success / push-failed / CI-failing paths.
 Those move to `/land-pr` (see `skills/land-pr/SKILL.md`). `/run-plan`'s
 remaining responsibilities here are:
 
@@ -320,9 +320,9 @@ remaining responsibilities here are:
    AND conflict-files count ≤ 5 (WI 2.3).
 3. Fix-cycle agent dispatch with plan context when `CI_STATUS=fail` and
    `$ATTEMPT < $MAX` (WI 2.4).
-4. The pre-`/land-pr` "rebase-conflict-too-many-files" `.landed` write
+4. The pre-`/land-pr` "rebase-conflict-too-many-files" `.zskills/landed` write
    (already handled by the rebase points 1 and 2 blocks above; `/run-plan`
-   does NOT write `.landed` for any other path — `/land-pr` does).
+   does NOT write `.zskills/landed` for any other path — `/land-pr` does).
 
 **ADAPTIVE_CRON_BACKOFF Mode A interaction (per WI 2.5a):** while the loop
 below is running, `/land-pr`'s synchronous CI monitoring (`pr-monitor.sh`,
@@ -331,7 +331,7 @@ keep this orchestrator turn open. Cron `*/1` fires arriving in that window
 hit `/run-plan`'s Step 0 pre-flight, increment the per-phase
 `in-progress-defers.<phase>` counter, and step the cadence down at boundary
 fires `C+1 ∈ {1, 10, 16, 26}`. The phase still finishes correctly — Step 0
-defers, the original turn writes `.landed` via `/land-pr`. No code change
+defers, the original turn writes `.zskills/landed` via `/land-pr`. No code change
 needed here; the adaptive machinery (`SKILL.md:421-566`) is correct by design.
 
 ```bash
@@ -385,7 +385,7 @@ while :; do
   # consumes it on initial PR creation.
   #
   # Recovery paths (per WI 2.1; all gracefully degrade — none escalate to
-  # `.landed conflict` because the feature-branch plan-tracker commit is
+  # `.zskills/landed conflict` because the feature-branch plan-tracker commit is
   # the source of truth and the PR body is a convenience surface):
   #   - gh-pr-view-failed: NOTICE, retry once, NOTICE-and-skip on second fail.
   #   - body-markers-missing: NOTICE-and-skip ("expected for PRs not opened
@@ -456,7 +456,7 @@ while :; do
       # rebase will be a no-op since the conflict is resolved.
       #
       # On > 5 files OR agent failure: /land-pr already wrote
-      # `.landed status=conflict` (per its WI 1.11 status table row 1)
+      # `.zskills/landed status=conflict` (per its WI 1.11 status table row 1)
       # via write-landed.sh; just `break`.
 
       CONFLICT_FILES_LIST_PATH="${LP[CONFLICT_FILES_LIST]:-}"
@@ -493,7 +493,7 @@ while :; do
         #   Conflict file list: $CONFLICT_FILES_LIST_PATH
         #
         # If the agent reports success → `continue` to re-invoke /land-pr.
-        # If the agent reports failure → `break`; /land-pr's `.landed
+        # If the agent reports failure → `break`; /land-pr's `.zskills/landed
         # conflict` marker stands.
         #
         # (The agent dispatch is conceptual prose — at runtime, the
@@ -508,7 +508,7 @@ while :; do
                # treat as too-many-files and let /land-pr's marker stand.
       else
         echo "Conflict count $CONFLICT_COUNT > 5 (or empty list); skipping agent-assisted resolution."
-        # /land-pr already wrote .landed status=conflict.
+        # /land-pr already wrote .zskills/landed status=conflict.
       fi
       break ;;
 
@@ -635,15 +635,15 @@ CLEANUP_PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 rm -f "$CLEANUP_MAIN_ROOT/.zskills/tracking/$CLEANUP_PIPELINE_ID/requires.land-pr.$TRACKING_ID"
 ```
 
-**`.landed` status values for PR mode (`/land-pr`-owned):**
+**`.zskills/landed` status values for PR mode (`/land-pr`-owned):**
 
-`/land-pr` writes `.landed` for all paths after rebase succeeds — push-failed,
+`/land-pr` writes `.zskills/landed` for all paths after rebase succeeds — push-failed,
 CI-failing, landed, pr-ready, etc. — using its WI 1.11 canonical schema and
 WI 1.12 status mapping table (top-down, first-match-wins). `/run-plan` writes
-`.landed` only for the pre-`/land-pr` "rebase-conflict-too-many-files" case
+`.zskills/landed` only for the pre-`/land-pr` "rebase-conflict-too-many-files" case
 (see rebase points 1 and 2 above).
 
-| Scenario | `.landed status` | Writer |
+| Scenario | `.zskills/landed status` | Writer |
 |----------|-----------------|--------|
 | PR merged (auto-merge accepted, PR_STATE=MERGED) | `landed` | /land-pr |
 | PR open, CI passed, awaiting review | `pr-ready` | /land-pr |

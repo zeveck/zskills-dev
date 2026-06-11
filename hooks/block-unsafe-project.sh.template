@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.3
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -371,7 +371,8 @@ extract_transcript() {
 
 # Extract the cd target from the command (e.g., "cd /tmp/worktree && git push")
 # Hooks run in the main repo CWD, not the agent's cd target. This helper
-# lets us find .zskills-tracked in the correct directory for worktree agents.
+# lets us find the .zskills/tracked pipeline marker (legacy .zskills-tracked
+# during the dual-read window) in the correct directory for worktree agents.
 #
 # Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).
 # Drift gate: tests/test-hook-helper-drift.sh.
@@ -865,8 +866,11 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
   # Pipeline association guard: determine if this session belongs to a tracked
   # pipeline and extract its pipeline ID for scoping.
   #
-  # Tier 1: .zskills-tracked file in LOCAL repo root (worktree agents).
+  # Tier 1: pipeline-id marker file in LOCAL repo root (worktree agents).
   #   Written by orchestrator before dispatching — cannot be skipped by agent.
+  #   Dual-read (INSTALL_REDESIGN Phase 8): .zskills/tracked is the live
+  #   path; the legacy root .zskills-tracked is read as fallback for
+  #   worktrees created before the consolidation. New path wins when both.
   #
   # Tier 2: ZSKILLS_PIPELINE_ID=<id> in transcript (orchestrators on main).
   #   Orchestrator echoes this early in execution. The transcript is a stable
@@ -881,9 +885,11 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
-  # Tier 1: .zskills-tracked file in LOCAL repo root (worktree agents)
-  if [ -f "$LOCAL_ROOT/.zskills-tracked" ]; then
-    PIPELINE_ID=$(cat "$LOCAL_ROOT/.zskills-tracked" 2>/dev/null | tr -d '[:space:]')
+  # Tier 1: pipeline-id marker in LOCAL root (worktree agents) — dual-read
+  TRACKED_MARKER="$LOCAL_ROOT/.zskills/tracked"
+  [ -f "$TRACKED_MARKER" ] || TRACKED_MARKER="$LOCAL_ROOT/.zskills-tracked"
+  if [ -f "$TRACKED_MARKER" ]; then
+    PIPELINE_ID=$(cat "$TRACKED_MARKER" 2>/dev/null | tr -d '[:space:]')
     if [ -n "$PIPELINE_ID" ]; then
       TRACKING_SESSION_HAS_PIPELINE=true
     fi
@@ -996,9 +1002,11 @@ if is_git_subcommand_in_wrappers "$COMMAND" cherry-pick; then
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
-  # Tier 1: .zskills-tracked in LOCAL root (worktree agents)
-  if [ -f "$LOCAL_ROOT/.zskills-tracked" ]; then
-    PIPELINE_ID=$(cat "$LOCAL_ROOT/.zskills-tracked" 2>/dev/null | tr -d '[:space:]')
+  # Tier 1: pipeline-id marker in LOCAL root (worktree agents) — dual-read
+  TRACKED_MARKER="$LOCAL_ROOT/.zskills/tracked"
+  [ -f "$TRACKED_MARKER" ] || TRACKED_MARKER="$LOCAL_ROOT/.zskills-tracked"
+  if [ -f "$TRACKED_MARKER" ]; then
+    PIPELINE_ID=$(cat "$TRACKED_MARKER" 2>/dev/null | tr -d '[:space:]')
     if [ -n "$PIPELINE_ID" ]; then
       TRACKING_SESSION_HAS_PIPELINE=true
     fi
@@ -1060,9 +1068,11 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
-  # Tier 1: .zskills-tracked in LOCAL root (worktree agents)
-  if [ -f "$LOCAL_ROOT/.zskills-tracked" ]; then
-    PIPELINE_ID=$(cat "$LOCAL_ROOT/.zskills-tracked" 2>/dev/null | tr -d '[:space:]')
+  # Tier 1: pipeline-id marker in LOCAL root (worktree agents) — dual-read
+  TRACKED_MARKER="$LOCAL_ROOT/.zskills/tracked"
+  [ -f "$TRACKED_MARKER" ] || TRACKED_MARKER="$LOCAL_ROOT/.zskills-tracked"
+  if [ -f "$TRACKED_MARKER" ]; then
+    PIPELINE_ID=$(cat "$TRACKED_MARKER" 2>/dev/null | tr -d '[:space:]')
     if [ -n "$PIPELINE_ID" ]; then
       TRACKING_SESSION_HAS_PIPELINE=true
     fi

@@ -1109,7 +1109,16 @@ def _list_worktrees(
         return []
     out: List[Dict[str, Any]] = []
     for wt in wts:
-        landed_path = pathlib.Path(wt.get("path", "")) / ".landed"
+        # Dual-read (Phase 8 root-turd consolidation): .zskills/landed first,
+        # legacy root .landed fallback. Resolved locally — collect.py loads
+        # briefing.py from a configurable main_root, so an older briefing
+        # copy (without its _marker_path helper) must not break the scan.
+        wt_root = pathlib.Path(wt.get("path", ""))
+        landed_path = wt_root / ".zskills" / "landed"
+        if not landed_path.is_file():
+            legacy_path = wt_root / ".landed"
+            if legacy_path.is_file():
+                landed_path = legacy_path
         landed: Optional[Dict[str, Any]] = None
         try:
             if landed_path.is_file():

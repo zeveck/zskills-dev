@@ -6,7 +6,7 @@ Land each verified fix by rebasing its per-issue worktree branch (`fix-issue-NNN
 
 When `LANDING_MODE == direct`, landing replaces cherry-pick with **per-issue
 rebase + FF-merge + push**. Each fixed issue is handled independently: one
-branch, one FF-merge, one `.landed` marker per worktree. A failure on one
+branch, one FF-merge, one `.zskills/landed` marker per worktree. A failure on one
 issue (rebase conflict, FF refused, push error) does NOT block the others —
 mark that issue's status and continue to the next.
 
@@ -148,7 +148,7 @@ LANDED
     done
   fi
 
-  # --- Write .landed marker ---
+  # --- Write .zskills/landed marker ---
   cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: full
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
@@ -166,10 +166,11 @@ LANDED
   # --- Auto-remove fully landed worktree ---
   DIRTY=$(git -C "$WORKTREE_PATH" diff --name-only HEAD)
   UNTRACKED=$(git -C "$WORKTREE_PATH" status --porcelain | \
-    grep -v '\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
+    grep -v '\.zskills\|\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
 
   if [ -z "$DIRTY" ] && [ -z "$UNTRACKED" ]; then
-    rm -f "$WORKTREE_PATH/.landed" "$WORKTREE_PATH/.worktreepurpose"
+    rm -f "$WORKTREE_PATH/.zskills/landed" "$WORKTREE_PATH/.zskills/worktreepurpose" "$WORKTREE_PATH/.zskills/tracked" \
+      "$WORKTREE_PATH/.landed" "$WORKTREE_PATH/.worktreepurpose"  # legacy root paths: dual-read window
     git worktree remove "$WORKTREE_PATH"
     git branch -d "$BRANCH_NAME" 2>/dev/null
   else
@@ -203,7 +204,7 @@ $FULL_TEST_CMD
 
 If tests fail after all FF-merges land, invoke the **Failure Protocol** — do not leave broken code on main with the cron still running.
 
-**`.landed` status values for direct mode:**
+**`.zskills/landed` status values for direct mode:**
 
 | Scenario | status | method | reason |
 |----------|--------|--------|--------|

@@ -208,6 +208,36 @@ def parse_period(period):
 
 
 # ---------------------------------------------------------------------------
+# _marker_path — Phase 8 root-turd consolidation dual-read resolver
+# ---------------------------------------------------------------------------
+
+# Old root-turd filename for each consolidated marker. Writers now target
+# .zskills/<name>; readers probe the new path FIRST, then fall back to the
+# old root path (worktrees created before the move carry it for their whole
+# lifetime). THE single dual-read definition in this module — every marker
+# read below goes through it.
+_MARKER_OLD_NAMES = {
+    'landed': '.landed',
+    'worktreepurpose': '.worktreepurpose',
+    'tracked': '.zskills-tracked',
+}
+
+
+def _marker_path(root, name):
+    """Resolve a consolidated worktree marker: <root>/.zskills/<name> when it
+    exists, else the legacy root path (e.g. <root>/.landed). New path wins
+    when both exist. Returns the new path (which may not exist) when neither
+    does, so os.path.exists() checks downstream behave naturally."""
+    new_path = os.path.join(root, '.zskills', name)
+    if os.path.exists(new_path):
+        return new_path
+    old_path = os.path.join(root, _MARKER_OLD_NAMES[name])
+    if os.path.exists(old_path):
+        return old_path
+    return new_path
+
+
+# ---------------------------------------------------------------------------
 # parseLanded
 # ---------------------------------------------------------------------------
 
@@ -466,9 +496,9 @@ def classify_worktrees(repo_root=None):
             })
             continue
 
-        # Check for .worktreepurpose file
+        # Check for the worktreepurpose marker (dual-read)
         purpose = None
-        purpose_path = os.path.join(wt['path'], '.worktreepurpose')
+        purpose_path = _marker_path(wt['path'], 'worktreepurpose')
         if os.path.exists(purpose_path):
             try:
                 with open(purpose_path, 'r') as f:
@@ -476,8 +506,8 @@ def classify_worktrees(repo_root=None):
             except Exception:
                 pass
 
-        # Check for .landed file
-        landed_path = os.path.join(wt['path'], '.landed')
+        # Check for the landed marker (dual-read)
+        landed_path = _marker_path(wt['path'], 'landed')
         landed_data = None
         if os.path.exists(landed_path):
             try:
@@ -681,8 +711,8 @@ def get_worktree_mtime(wt_path, name, main_path):
             except Exception:
                 pass
 
-    # Fallback: check .landed file mtime if it exists
-    landed_path = os.path.join(wt_path, '.landed')
+    # Fallback: check the landed marker's mtime if it exists (dual-read)
+    landed_path = _marker_path(wt_path, 'landed')
     try:
         st = os.stat(landed_path)
         mtime_ms = st.st_mtime * 1000
@@ -2092,7 +2122,7 @@ def _scan_landed_markers(repo_root=None, search_roots=None):
         roots = [wt['path'] for wt in parse_worktree_list(porcelain)
                  if wt.get('path') and not wt.get('bare')]
     for root in roots:
-        landed_path = os.path.join(root, '.landed')
+        landed_path = _marker_path(root, 'landed')
         if os.path.isfile(landed_path):
             try:
                 with open(landed_path, 'r', encoding='utf-8') as f:

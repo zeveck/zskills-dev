@@ -147,7 +147,7 @@ write_pipeline_A_markers() {
   touch "$dir/step.run-plan.smoke-alpha.implement"
   touch "$dir/step.run-plan.smoke-alpha.verify"
   touch "$dir/step.run-plan.smoke-alpha.report"
-  printf '%s\n' "$PID_A" > "$REPO_A/.zskills-tracked"
+  mkdir -p "$REPO_A/.zskills" && printf '%s\n' "$PID_A" > "$REPO_A/.zskills/tracked"
 }
 
 write_pipeline_B_markers() {
@@ -157,7 +157,7 @@ write_pipeline_B_markers() {
   touch "$dir/step.fix-issues.smoke-beta.implement"
   touch "$dir/step.fix-issues.smoke-beta.verify"
   touch "$dir/step.fix-issues.smoke-beta.report"
-  printf '%s\n' "$PID_B" > "$REPO_B/.zskills-tracked"
+  mkdir -p "$REPO_B/.zskills" && printf '%s\n' "$PID_B" > "$REPO_B/.zskills/tracked"
 }
 
 write_pipeline_A_markers &
@@ -261,7 +261,7 @@ fi
 FLAT_REPO="$TMPDIR/repo-flat"
 bootstrap_repo "$FLAT_REPO"
 PID_FLAT="run-plan.legacy-holdout"
-printf '%s\n' "$PID_FLAT" > "$FLAT_REPO/.zskills-tracked"
+mkdir -p "$FLAT_REPO/.zskills" && printf '%s\n' "$PID_FLAT" > "$FLAT_REPO/.zskills/tracked"
 # Legacy flat marker — intentionally NOT inside a $PID_FLAT subdir.
 touch "$FLAT_REPO/.zskills/tracking/requires.verify-changes.legacy-holdout"
 # No subdir created for $PID_FLAT → subdir-only reader finds nothing.

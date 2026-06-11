@@ -181,6 +181,16 @@ run_init() {
     return 99   # simulated abort between A2 and A7
   fi
 
+  # ── A2.5 — one-shot main-root marker migrate (Phase 8 root-turd
+  # consolidation; mirrors the SKILL.md fence). Main root ONLY — never
+  # walks sibling worktrees. Never-clobber: when the new path already
+  # exists, both files are left untouched (dual-read prefers the new path).
+  if [ -f "$PROJ/.zskills-tracked" ] && [ ! -e "$PROJ/.zskills/tracked" ]; then
+    mkdir -p "$PROJ/.zskills"
+    mv "$PROJ/.zskills-tracked" "$PROJ/.zskills/tracked" \
+      || echo "WARN: could not migrate .zskills-tracked to .zskills/tracked (non-fatal; hooks dual-read the old path)" >&2
+  fi
+
   # ── A3 — optional config interview (init arm) ──
   # The accept fence runs ONLY on the "no config exists" interview path —
   # a pre-existing config is review/keep (never clobbered, never restamped).
@@ -667,6 +677,46 @@ ZSINIT_INTERVIEW=accept run_init "$P" >/dev/null 2>&1
 [ -f "$P/.claude/zskills-config.json" ] \
   && pass "10b. update arm offers config creation when none exists (A3 promise kept)" \
   || fail "10b. update arm did not seed on accept"
+
+# ── 11. A2.5 — one-shot main-root marker migrate (Phase 8) ─────────────────
+# 11a. Legacy root .zskills-tracked at the MAIN root migrates to
+# .zskills/tracked during init (between A2 and the lock write).
+P="$(new_proj a25-migrate)"
+printf 'run-plan.legacy-pipeline\n' > "$P/.zskills-tracked"
+run_init "$P" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && [ ! -e "$P/.zskills-tracked" ] \
+   && [ -f "$P/.zskills/tracked" ] \
+   && grep -qx 'run-plan.legacy-pipeline' "$P/.zskills/tracked"; then
+  pass "11a. A2.5 migrates root .zskills-tracked to .zskills/tracked (content intact)"
+else
+  fail "11a. A2.5 migrate: rc=$rc root-present=$([ -e "$P/.zskills-tracked" ] && echo yes || echo no) new-content='$(cat "$P/.zskills/tracked" 2>/dev/null)'"
+fi
+
+# 11b. Never-clobber: when .zskills/tracked already exists, BOTH files are
+# left untouched (dual-read prefers the new path; the stale root file is
+# inert).
+P="$(new_proj a25-noclobber)"
+mkdir -p "$P/.zskills"
+printf 'run-plan.new-pipeline\n' > "$P/.zskills/tracked"
+printf 'run-plan.stale-pipeline\n' > "$P/.zskills-tracked"
+run_init "$P" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] \
+   && grep -qx 'run-plan.new-pipeline' "$P/.zskills/tracked" \
+   && [ -f "$P/.zskills-tracked" ] \
+   && grep -qx 'run-plan.stale-pipeline' "$P/.zskills-tracked"; then
+  pass "11b. A2.5 never-clobber: existing .zskills/tracked wins; both files untouched"
+else
+  fail "11b. A2.5 never-clobber violated: new='$(cat "$P/.zskills/tracked" 2>/dev/null)' old='$(cat "$P/.zskills-tracked" 2>/dev/null)'"
+fi
+
+# 11c. No legacy marker → no-op (nothing created at either path).
+P="$(new_proj a25-absent)"
+run_init "$P" >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ] && [ ! -e "$P/.zskills/tracked" ] && [ ! -e "$P/.zskills-tracked" ]; then
+  pass "11c. A2.5 no-op when no legacy marker exists (no marker fabricated)"
+else
+  fail "11c. A2.5 fabricated a marker: new=$([ -e "$P/.zskills/tracked" ] && echo yes || echo no) old=$([ -e "$P/.zskills-tracked" ] && echo yes || echo no)"
+fi
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

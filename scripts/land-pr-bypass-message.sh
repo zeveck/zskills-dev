@@ -67,7 +67,7 @@ tree. That means a caller skill on this pipeline (e.g., /run-plan,
 land the PR via /land-pr - and you are running gh pr create / gh pr
 merge --auto directly instead. Don't do that. The caller pipeline
 expects /land-pr to do the work; bypassing it skips rebase, CI
-polling, the fix-cycle loop, the .landed marker, and the fulfilled
+polling, the fix-cycle loop, the .zskills/landed marker, and the fulfilled
 marker the pipeline needs to consider itself done.
 
 What to do:

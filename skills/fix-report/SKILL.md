@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.06.03+5b244a"
+  version: "2026.06.10+e9bd6b"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -157,7 +157,7 @@ Omit skip categories with zero items. Then list each fix with its status
 
 ### PR-aware reporting
 
-Scan every worktree's `.landed` marker for `method: pr`. These come from
+Scan every worktree's `.zskills/landed` marker for `method: pr`. These come from
 `/fix-issues <N> auto pr` runs — each fixed issue has its own
 `fix/issue-NNN` branch and a dedicated PR. The marker fields include:
 
@@ -269,7 +269,7 @@ until this gate is passed.
 Skip this step if all fixes were already auto-landed by `/fix-issues auto`.
 
 **PR mode fixes are landed via merge, not cherry-pick.** If a worktree's
-`.landed` marker has `method: pr`:
+`.zskills/landed` marker has `method: pr`:
 - `status: landed` — the PR was auto-merged; the fix is already on main
   via the merge commit. No cherry-pick needed.
 - `status: pr-ready` — the PR is open; direct the user to review and
@@ -351,13 +351,16 @@ Then for each approved issue:
 
 ## Step 6 — Worktree Cleanup
 
-Check all worktrees for `.landed` markers:
+Check all worktrees for `.zskills/landed` markers:
 
 ```bash
 for wt in $(git worktree list | awk '{print $1}' | tail -n +2); do
-  if [ -f "$wt/.landed" ]; then
-    STATUS=$(grep "^status:" "$wt/.landed" | cut -d' ' -f2)
-    PR_URL=$(grep "^pr:" "$wt/.landed" | cut -d' ' -f2)
+  # Dual-read (Phase 8): .zskills/landed first, legacy root .landed fallback.
+  LANDED_MARKER="$wt/.zskills/landed"
+  [ -f "$LANDED_MARKER" ] || LANDED_MARKER="$wt/.landed"
+  if [ -f "$LANDED_MARKER" ]; then
+    STATUS=$(grep "^status:" "$LANDED_MARKER" | cut -d' ' -f2)
+    PR_URL=$(grep "^pr:" "$LANDED_MARKER" | cut -d' ' -f2)
     case "$STATUS" in
       full|landed)
         echo "SAFE: $wt (status: $STATUS) ✓"
@@ -388,7 +391,7 @@ for wt in $(git worktree list | awk '{print $1}' | tail -n +2); do
         ;;
     esac
   else
-    echo "ACTIVE: $wt — no .landed marker ⚠"
+    echo "ACTIVE: $wt — no landed marker ⚠"
   fi
 done
 ```
@@ -401,7 +404,7 @@ Worktrees:
   wt-pr-789 — SAFE (worktree only): status: pr-ready, PR: https://github.com/... ✓
   wt-ci-101 — NEEDS ATTENTION: CI failing on PR https://github.com/... ⚠
   wt-789 — PARTIAL — skipped commits, needs review ⚠
-  physics module-phase4 — ACTIVE — no .landed marker (long-running dev) ⚠
+  physics module-phase4 — ACTIVE — no landed marker (long-running dev) ⚠
 
 Remove SAFE worktrees? (wt-123, wt-456, wt-pr-789)
 ```
@@ -416,7 +419,7 @@ only — do NOT delete the remote branch (it supports the open PR).
 **Never remove** worktrees with `status: pr-ci-failing`, `status: pr-failed`,
 `status: conflict`, `status: partial`, `status: failed`,
 `status: direct-push-failed`, `status: direct-verify-failed`, or ACTIVE
-worktrees (no `.landed`).
+worktrees (no landed marker at `.zskills/landed` or the legacy root `.landed`).
 
 After removing SAFE worktrees:
 ```bash

@@ -124,7 +124,7 @@ else
 fi
 # Failure-protocol cleanup runs from the orchestrator's main session — anchor
 # on $CLAUDE_PROJECT_DIR. PR-mode pipelines that wrote counters inside the
-# worktree get cleaned up by the worktree's own .landed flow.
+# worktree get cleaned up by the worktree's own .zskills/landed flow.
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
