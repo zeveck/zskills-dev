@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.11+b80a9b"
+  version: "2026.06.11+f62dee"
 ---
 
 # Update Z Skills Infrastructure
@@ -1309,7 +1309,9 @@ PY
     Then print the post-init footprint summary: exactly what was created
     (the `.zskills/` gitignore entry; the two `.zskills/` markers; the
     optional config + schema, only if accepted) and what A1.5 removed.
-    Exit 0.
+    End the summary with one line of commit guidance: commit the
+    `.gitignore` change (and `.claude/zskills-config.json` + its schema
+    sibling, if created); `.zskills/` stays untracked. Exit 0.
 
   **Update arm (init-done present) — A1.5 already ran; then:**
 
@@ -2405,6 +2407,11 @@ Per-skill versions:
   <name>          <metadata.version>  (new)
   <name>          <metadata.version>  (new)
   ...
+
+Commit the install: track the .claude/ files above (skills mirror, hooks,
+settings.json, rules, agents, config + schema), the scripts/ stubs, and the
+.gitignore change in git — the mirror IS the install. .zskills/ is runtime
+state; leave it untracked.
 
 Run /update-zskills to check for updates later.
 ```
