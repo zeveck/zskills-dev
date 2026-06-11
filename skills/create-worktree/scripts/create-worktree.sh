@@ -214,7 +214,34 @@ fi
 # against MAIN_ROOT, not the caller's CWD — the same invocation must yield
 # the same absolute path whether run from MAIN_ROOT, a subdirectory, or a
 # nested worktree. Absolute paths are unaffected.
-WT_PATH=$(cd "$MAIN_ROOT" && realpath -m "$RAW_PATH")
+#
+# Portability (#1156 item 1): macOS BSD `realpath` lacks `-m`, so the GNU
+# form `realpath -m` errors and leaves WT_PATH empty → worktree creation
+# dies on every Mac. Probe `realpath -m` by INVOCATION (the binary exists
+# at /usr/bin/realpath on BSD but rejects the flag; a `command -v` probe
+# misclassifies it as supported — same trap warn-config-drift.sh documents).
+# On fallback, canonicalize without requiring existence by resolving the
+# existing parent dir via `cd … && pwd` (the leaf may not exist yet) and
+# re-appending the basename — CWD-invariant because we cd into MAIN_ROOT first.
+WT_PATH=""
+if WT_PATH=$(cd "$MAIN_ROOT" && realpath -m "$RAW_PATH" 2>/dev/null) \
+     && [ -n "$WT_PATH" ]; then
+  :
+else
+  # Fallback: split into parent + leaf, resolve the (existing) parent.
+  _wt_parent=$(cd "$MAIN_ROOT" && cd "$(dirname "$RAW_PATH")" 2>/dev/null && pwd)
+  if [ -n "$_wt_parent" ]; then
+    WT_PATH="$_wt_parent/$(basename "$RAW_PATH")"
+  else
+    # Parent unresolvable: fall back to a CWD-invariant absolute join
+    # (MAIN_ROOT is already absolute). Absolute RAW_PATH passes through.
+    case "$RAW_PATH" in
+      /*) WT_PATH="$RAW_PATH" ;;
+      *)  WT_PATH="$MAIN_ROOT/$RAW_PATH" ;;
+    esac
+  fi
+  unset _wt_parent
+fi
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1a.6 — Branch resolution.

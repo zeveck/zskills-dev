@@ -170,11 +170,21 @@ ZSKILLS_DASHBOARD_COMPLETED_LIMIT=500
 # [^}] matches newlines, so this works on both compact and canonical
 # multi-line JSON. Issue #395 (same class as #400 fixed in #422).
 _zsk_extract_cascade_keys() {
+  # zsh portability (#1154): under zsh's snapshot-shell, `[[ =~ ]]` populates
+  # $match/$mbegin natively and leaves $BASH_REMATCH bash-incompatible (1 ==
+  # whole match, captures shifted) UNLESS both KSH_ARRAYS and BASH_REMATCH
+  # are set. LOCAL_OPTIONS scopes the change to this function so the caller's
+  # zsh options are untouched on return; the guard is a no-op under bash
+  # (no `setopt` builtin, ZSH_VERSION unset). Without this, every cascade key
+  # silently extracted empty under zsh and fell to built-in defaults.
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
   local _zsk_body="$1"
-  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*[{][^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     UNIT_TEST_CMD="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*[{][^}]*\"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     FULL_TEST_CMD="${BASH_REMATCH[1]}"
   fi
   if [[ "$_zsk_body" =~ \"timezone\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
@@ -182,15 +192,15 @@ _zsk_extract_cascade_keys() {
   fi
   # dev_server.cmd: scope via enclosing "dev_server" object to disambiguate
   # from any other "cmd" key (e.g. testing.cmd).
-  if [[ "$_zsk_body" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"dev_server\"[[:space:]]*:[[:space:]]*[{][^}]*\"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     DEV_SERVER_CMD="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"testing\"[[:space:]]*:[[:space:]]*[{][^}]*\"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     TEST_OUTPUT_FILE="${BASH_REMATCH[1]}"
   fi
   # commit.co_author: scope via enclosing "commit" object to disambiguate
   # from a hypothetical top-level "co_author".
-  if [[ "$_zsk_body" =~ \"commit\"[[:space:]]*:[[:space:]]*\{[^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"commit\"[[:space:]]*:[[:space:]]*[{][^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     COMMIT_CO_AUTHOR="${BASH_REMATCH[1]}"
   fi
 }
@@ -204,50 +214,61 @@ if [ -n "${HOME:-}" ] && [ -f "$_ZSK_USER_CFG" ]; then
   unset _ZSK_USER_BODY
 fi
 
-# ── Pass 2: PROJECT tier (a project match wins over the user tier) ─────────
-if [ -f "$_ZSK_CFG" ]; then
-  _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
-  _zsk_extract_cascade_keys "$_ZSK_CFG_BODY"
+# Project-tier-only key extraction (zskills_version + execution.*). Wrapped
+# in a function for the SAME zsh-portability reason as _zsk_extract_cascade_keys
+# (#1154): the LOCAL_OPTIONS-scoped KSH_ARRAYS/BASH_REMATCH guard only reverts
+# at function scope, so these matches must run inside a function (not at the
+# sourced top level, where the option flip would leak into the caller's shell).
+_zsk_extract_project_only_keys() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _zsk_body="$1"
   # zskills_version: top-level optional string. The installed-version
   # fingerprint of zskills (date+hash). PROJECT-TIER-ONLY (per-project
   # install stamp); falls back to .zskills/init-done below when absent.
-  if [[ "$_ZSK_CFG_BODY" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_zsk_body" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     ZSKILLS_VERSION="${BASH_REMATCH[1]}"
   fi
   # execution.max_concurrent_worktrees: integer (unquoted in JSON). Used by
   # /fix-issues to bound sprint-wide aggregate live worktrees (issue #295).
   # We accept any positive integer; if the value is malformed (non-integer
   # or <=0), keep the default of 3 from the initializer above.
-  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"max_concurrent_worktrees\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
-    _ZSK_MCW="${BASH_REMATCH[1]}"
-    if [ "$_ZSK_MCW" -ge 1 ] 2>/dev/null; then
-      ZSKILLS_MAX_CONCURRENT_WORKTREES="$_ZSK_MCW"
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"max_concurrent_worktrees\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    local _zsk_mcw="${BASH_REMATCH[1]}"
+    if [ "$_zsk_mcw" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_MAX_CONCURRENT_WORKTREES="$_zsk_mcw"
     fi
-    unset _ZSK_MCW
   fi
   # execution.dashboard_completed_days: integer, default 14, min 1. Used
   # by collect.py / Python via stdlib json (this resolver mirrors for
   # shell consumers). Same BASH_REMATCH scoping idiom as
   # max_concurrent_worktrees.
-  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"dashboard_completed_days\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
-    _ZSK_DCD="${BASH_REMATCH[1]}"
-    if [ "$_ZSK_DCD" -ge 1 ] 2>/dev/null; then
-      ZSKILLS_DASHBOARD_COMPLETED_DAYS="$_ZSK_DCD"
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"dashboard_completed_days\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    local _zsk_dcd="${BASH_REMATCH[1]}"
+    if [ "$_zsk_dcd" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_DASHBOARD_COMPLETED_DAYS="$_zsk_dcd"
     fi
-    unset _ZSK_DCD
   fi
   # execution.dashboard_completed_limit: integer, default 500, min 1.
   # Caps the bounded closed-issue fetch (D6 of completed-backlog-sections).
-  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"dashboard_completed_limit\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
-    _ZSK_DCL="${BASH_REMATCH[1]}"
-    if [ "$_ZSK_DCL" -ge 1 ] 2>/dev/null; then
-      ZSKILLS_DASHBOARD_COMPLETED_LIMIT="$_ZSK_DCL"
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"dashboard_completed_limit\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    local _zsk_dcl="${BASH_REMATCH[1]}"
+    if [ "$_zsk_dcl" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_DASHBOARD_COMPLETED_LIMIT="$_zsk_dcl"
     fi
-    unset _ZSK_DCL
   fi
+}
+
+# ── Pass 2: PROJECT tier (a project match wins over the user tier) ─────────
+if [ -f "$_ZSK_CFG" ]; then
+  _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
+  _zsk_extract_cascade_keys "$_ZSK_CFG_BODY"
+  _zsk_extract_project_only_keys "$_ZSK_CFG_BODY"
   unset _ZSK_CFG_BODY
 fi
 unset -f _zsk_extract_cascade_keys
+unset -f _zsk_extract_project_only_keys
 
 # ── ZSKILLS_VERSION fallback: the init-done marker's `version:` line ───────
 # Config-less consumers carry the installed version in the init-done marker

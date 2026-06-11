@@ -1210,6 +1210,50 @@ else
 fi
 rm -f -- "$ERR_26"
 
+# ────────────────────────────────────────────────────────────────────
+# Case 27 (#1156 item 1) — macOS BSD `realpath` lacks `-m`. The path
+# resolution at create-worktree.sh:217 must fall back (resolve existing
+# parent + re-append leaf) instead of leaving WT_PATH empty and killing
+# worktree creation. Simulate a BSD userland: a fake `realpath` on PATH
+# that rejects ANY invocation with `-m` (exit 1, like BSD), forcing the
+# fallback arm. The script must still emit the correct absolute WT_PATH
+# and create the worktree.
+# ────────────────────────────────────────────────────────────────────
+SLUG_27="${SLUG_BASE}-c27"
+WT_27="/tmp/${PROJECT_NAME}-${SLUG_27}"
+BR_27="wt-${SLUG_27}"
+register_wt "$WT_27"; register_branch "$BR_27"
+
+BSD_RP_DIR=$(mktemp -d /tmp/zskills-bsd-realpath-XXXXXX)
+REAL_RP=$(command -v realpath || true)
+cat > "$BSD_RP_DIR/realpath" <<BSDRP
+#!/bin/bash
+# Fake BSD realpath: reject the GNU-only -m flag.
+for a in "\$@"; do
+  if [ "\$a" = "-m" ]; then
+    echo "realpath: illegal option -- m" >&2
+    exit 1
+  fi
+done
+if [ -n "$REAL_RP" ]; then exec "$REAL_RP" "\$@"; fi
+exit 1
+BSDRP
+chmod +x "$BSD_RP_DIR/realpath"
+
+ERR_27=$(mktemp)
+STDOUT_27=$(PATH="$BSD_RP_DIR:$PATH" bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_27" 2>"$ERR_27")
+RC_27=$?
+if [ "$RC_27" -eq 0 ] && [ "$STDOUT_27" = "$WT_27" ] && [ -d "$WT_27" ]; then
+  pass "27 (#1156) BSD realpath (no -m): fallback resolves WT_PATH → '$STDOUT_27', worktree created"
+else
+  fail "27 (#1156) BSD realpath fallback: rc=$RC_27 stdout='$STDOUT_27' expected WT='$WT_27'"
+  echo "  --- stderr ---"; cat "$ERR_27"
+fi
+rm -f -- "$ERR_27"
+rm -rf "$BSD_RP_DIR"
+git -C "$MAIN_ROOT" worktree remove --force "$WT_27" 2>/dev/null || true
+git -C "$MAIN_ROOT" branch -D "$BR_27" 2>/dev/null || true
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
