@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/test-plugin-hooks-integrity.sh
 #
-# PLUGIN_LANE_VERIFICATION Phase 1 — three fail-closed static smokes closing
-# gaps the inspection found in existing plugin-lane coverage:
+# PLUGIN_LANE_VERIFICATION Phase 1 — fail-closed static smokes closing gaps
+# the inspection found in existing plugin-lane coverage:
 #
 #   Gap 1 — hooks.json registered-script existence/sibling gate.
 #           Every script registered in hooks/hooks.json must EITHER exist
@@ -17,16 +17,12 @@
 #           shim still FAILS. Conformance stamps the hook version but does NOT
 #           check shim-sourcing; this closes that.
 #
-#   Gap 3 — D3 bundled-fallback branch in hooks/session-start-materialise.sh.
-#           The consumer-PRESENT template branch is already covered by
-#           test-sessionstart-materialise.sh. The genuine gap is the
-#           consumer-ABSENT -> $PLUGIN bundled-fallback branch
-#           (`elif [ -f "$PLUGIN/CLAUDE_TEMPLATE.md" ]`). Drive it in a tmpdir
-#           with a fake $PLUGIN carrying a sentinel template and NO consumer
-#           CLAUDE_TEMPLATE.md, and assert managed.md renders from the bundled
-#           copy.
+#   (Gap 3 — the materialiser's D3 bundled-fallback branch — was deleted in
+#   INSTALL_REDESIGN Phase 7 as a subject-removal: the SessionStart
+#   materialiser no longer exists; setup is the explicit /zs:update-zskills
+#   init and rules delivery is the R-b session-rules-context.sh hook.)
 #
-# All three are pure static/hermetic — no network, no real `claude`, no real
+# All checks are pure static/hermetic — no network, no real `claude`, no real
 # $HOME. Each genuinely fails-closed when its invariant is violated (demonstrated
 # below in dev via synthetic-violation copies).
 
@@ -100,12 +96,10 @@ fi
 # Gap-2 shim-sourcing exclusions — hooks that legitimately do NOT source the
 # D16(a) conditional-skip shim:
 #
-#   session-start-materialise.sh — carries its OWN dual-install probe
-#     (detect-install-state.sh) and is NOT a double-fire-prone PreToolUse hook.
 #   block-unmaterialised-skill.sh (#1128) — a PLUGIN-ONLY UserPromptExpansion
 #     gate with no same-basename .claude/settings.json sibling, so it cannot
 #     double-fire and legitimately does NOT source the D16(a) shim.
-SHIM_EXCLUDE="session-start-materialise.sh block-unmaterialised-skill.sh"
+SHIM_EXCLUDE="block-unmaterialised-skill.sh"
 
 in_list() {
   # in_list <needle> <space-separated-list>
@@ -320,8 +314,9 @@ rm -f /tmp/.gap2.err
 # + the 2 session-logging hooks (log-session-stop, log-permission-request)
 # + inject-bash-timeout.sh (Layer-0, INSTALL_REDESIGN Phase 2 T-A)
 # + session-rules-context.sh (R-b rules delivery, INSTALL_REDESIGN Phase 4)
+# + session-start-greeting.sh (setup greeting, INSTALL_REDESIGN Phase 7)
 # must all be present, source the shim, and NOT be on any exclusion list.
-EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh log-session-stop.sh log-permission-request.sh inject-bash-timeout.sh session-rules-context.sh"
+EXPECTED_IN_TREE_SHIMMED="block-bad-cron.sh block-bypassed-land-pr.sh block-fix-issue-unclaimed.sh block-main-edits.sh block-run-plan-unclaimed.sh block-stale-skill-version.sh block-unsafe-generic.sh warn-config-drift.sh log-session-stop.sh log-permission-request.sh inject-bash-timeout.sh session-rules-context.sh session-start-greeting.sh"
 missing_expected=""
 for name in $EXPECTED_IN_TREE_SHIMMED; do
   # Must be registered, exist in-tree, source the shim, and not be excluded.
@@ -333,7 +328,7 @@ for name in $EXPECTED_IN_TREE_SHIMMED; do
   if in_list "$name" "$SHIM_EXCLUDE"; then missing_expected="$missing_expected $name(wrongly-excluded)"; continue; fi
 done
 if [ -z "$missing_expected" ]; then
-  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh + the 2 session-logging hooks + inject-bash-timeout.sh + session-rules-context.sh are registered, in-tree, shim-sourcing, and asserted (not excluded)"
+  pass "2b. all 7 in-tree block-*.sh + warn-config-drift.sh + the 2 session-logging hooks + inject-bash-timeout.sh + session-rules-context.sh + session-start-greeting.sh are registered, in-tree, shim-sourcing, and asserted (not excluded)"
 else
   fail "2b. expected shim-sourcing set incomplete:$missing_expected"
 fi
@@ -404,69 +399,9 @@ case "$(printf '%s' "$L0_LINE" | cut -f3)" in
     printf '      got: %s\n' "$L0_LINE" ;;
 esac
 
-# ──────────────────────────────────────────────────────────────────────────
-echo ""
-echo "=== Gap 3 — D3 bundled-fallback branch (materialiser, consumer-ABSENT) ==="
-
-# Drive the materialiser's `elif [ -f "$PLUGIN/CLAUDE_TEMPLATE.md" ]` fallback:
-# a tmpdir $PROJ with NO consumer CLAUDE_TEMPLATE.md, and a fake $PLUGIN whose
-# bundled CLAUDE_TEMPLATE.md carries a UNIQUE sentinel line. If managed.md
-# contains that sentinel, the bundled-fallback branch fired (the consumer-
-# present branch — already covered elsewhere — could NOT have produced it,
-# because $PROJ has no template).
-MAT="$REPO_ROOT/hooks/session-start-materialise.sh"
-TMP3="$(mktemp -d)"
-trap 'rm -rf "$TMP3"' EXIT
-
-PLUG="$TMP3/plugin"
-PROJ3="$TMP3/proj"
-mkdir -p "$PLUG/hooks/_lib" "$PLUG/scripts" "$PLUG/.claude-plugin" "$PROJ3"
-
-# Fake plugin wiring: copy only what the materialiser reaches.
-cp "$REPO_ROOT/hooks/_lib/detect-install-state.sh" "$PLUG/hooks/_lib/"
-cp "$REPO_ROOT/scripts/render-managed-rules.py" "$PLUG/scripts/"
-cp "$REPO_ROOT/scripts/managed_rules_substitution.py" "$PLUG/scripts/"
-cp "$REPO_ROOT/.claude-plugin/plugin.json" "$PLUG/.claude-plugin/"
-
-# Bundled template = the real template + a unique sentinel marker line. The
-# marker is plain prose (no {{...}}), so render-managed-rules.py passes it
-# through verbatim.
-BUNDLED_SENTINEL="ZSKILLS-BUNDLED-FALLBACK-SENTINEL-Phase1"
-{
-  printf '%s\n' "<!-- $BUNDLED_SENTINEL -->"
-  cat "$REPO_ROOT/CLAUDE_TEMPLATE.md"
-} > "$PLUG/CLAUDE_TEMPLATE.md"
-
-# Sanity: $PROJ3 must have NO consumer CLAUDE_TEMPLATE.md (so the present-branch
-# cannot fire). Assert it explicitly.
-if [ ! -f "$PROJ3/CLAUDE_TEMPLATE.md" ]; then
-  pass "3a. fixture: consumer \$PROJ has NO CLAUDE_TEMPLATE.md (forces the bundled-fallback branch)"
-else
-  fail "3a. fixture invalid: consumer CLAUDE_TEMPLATE.md present"
-fi
-
-# Run the materialiser against the fake plugin + consumer-absent project.
-MAT_ERR="$TMP3/mat.stderr"
-env CLAUDE_PROJECT_DIR="$PROJ3" CLAUDE_PLUGIN_ROOT="$PLUG" bash "$MAT" 2>"$MAT_ERR" || true
-
-MANAGED="$PROJ3/.claude/rules/zskills/managed.md"
-
-# 3b — managed.md was rendered at all.
-if [ -f "$MANAGED" ]; then
-  pass "3b. managed.md rendered in the consumer-absent case (config seeded + bundled template chosen)"
-else
-  fail "3b. managed.md NOT rendered in the consumer-absent case"
-  sed 's/^/      stderr: /' "$MAT_ERR"
-fi
-
-# 3c — managed.md carries the BUNDLED sentinel => the $PLUGIN/CLAUDE_TEMPLATE.md
-# fallback branch fired (the load-bearing assertion).
-if [ -f "$MANAGED" ] && grep -qF "$BUNDLED_SENTINEL" "$MANAGED"; then
-  pass "3c. managed.md rendered from the BUNDLED \$PLUGIN/CLAUDE_TEMPLATE.md (fallback branch fired)"
-else
-  fail "3c. managed.md did NOT come from the bundled template (fallback branch not exercised)"
-  [ -f "$MANAGED" ] && head -3 "$MANAGED" | sed 's/^/      /'
-fi
+# (Gap 3 — the materialiser bundled-fallback drive — was deleted in
+# INSTALL_REDESIGN Phase 7 with the SessionStart materialiser hook:
+# subject-removal.)
 
 # ──────────────────────────────────────────────────────────────────────────
 echo ""

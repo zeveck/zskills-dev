@@ -5,7 +5,7 @@
 # shapes).
 #
 # PLUGIN-LANE-ONLY. Registered solely in hooks/hooks.json under SessionStart
-# (alongside the materialiser's entry — multiple SessionStart hooks are
+# (alongside session-start-greeting.sh — multiple SessionStart hooks are
 # legal). There is intentionally NO .claude/hooks/ mirror and NO
 # .claude/settings.json sibling: the legacy /update-zskills lane delivers the
 # managed rules from disk (.claude/rules/zskills/managed.md, auto-loaded at
@@ -19,11 +19,12 @@
 # `additionalContext` is the MODEL channel — exactly what rules want.
 # `systemMessage` (the USER channel) is deliberately NOT co-emitted here:
 # combined-envelope co-delivery is ATTENDED-PENDING from Phase 1's Claim-3
-# sub-probe, and the greeting fold is Phase 7's concern.
+# sub-probe, so Phase 7 kept the greeting as its own SessionStart hook
+# (session-start-greeting.sh) instead of folding it in here.
 #
 # ZERO WRITES: the render goes to a mktemp file outside the project; nothing
 # is ever written into $CLAUDE_PROJECT_DIR. This is the R-b replacement for
-# the materialiser's managed.md write (which dies in Phase 7).
+# the retired materialiser's managed.md write (deleted in Phase 7).
 #
 # Guards (skip = exit 0 with NO output):
 #   1. Legacy mirror present (detect-style: detect_install_state returns

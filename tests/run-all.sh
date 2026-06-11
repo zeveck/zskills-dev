@@ -115,9 +115,10 @@ run_suite "test-resolve-python.sh" "tests/test-resolve-python.sh"
 run_suite "test-python-resolver-drift.sh" "tests/test-python-resolver-drift.sh"
 # #1086 — END-TO-END guard for the MS-Store broken-python3 stub class: puts a
 # broken `python3` FIRST on PATH (real `python` behind it) and runs the actual
-# materialiser + a /briefing skill-body fence, asserting both resolve via
-# $PYTHON and nothing runs real work through the stub. (Catches the python-
-# resolution class only; NOT a full Windows qual — see the file header.)
+# SessionStart rules hook + a /briefing skill-body fence, asserting both
+# resolve via $PYTHON and nothing runs real work through the stub. (Catches
+# the python-resolution class only; NOT a full Windows qual — see the file
+# header.)
 run_suite "test-broken-python3-stub-e2e.sh" "tests/test-broken-python3-stub-e2e.sh"
 run_suite "test-hooks-mirror-parity.sh" "tests/test-hooks-mirror-parity.sh"
 run_suite "test-skills-mirror-parity.sh" "tests/test-skills-mirror-parity.sh"
@@ -370,11 +371,12 @@ run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh
 # Session-logging capability — Stop/SubagentStop renderer + permission merge,
 # passive/fail-open PermissionRequest hook, and the session-logs.sh helper.
 run_suite "test-session-logging.sh" "tests/test-session-logging.sh"
-# Phase 2 — SessionStart materialiser + dual-install detection + renderer.
-run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
-run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
-run_suite "test-sessionstart-dual-install-detect.sh" "tests/test-sessionstart-dual-install-detect.sh"
-# #1119 — SessionStart greeting (systemMessage on stdout) toward /update-zskills.
+# (The materialiser / overwrite-guard / dual-install-detect suites were
+# deleted in INSTALL_REDESIGN Phase 7 — subject-removal with the SessionStart
+# materialiser hook; the D27 probe's survivors are covered via
+# detect-install-state.sh's callers.)
+# #1119 / Phase 7 — SessionStart setup greeting (systemMessage on stdout)
+# toward the one-time /zs:update-zskills init.
 run_suite "test-sessionstart-greeting.sh" "tests/test-sessionstart-greeting.sh"
 # INSTALL_REDESIGN Phase 4 (R-b) — SessionStart rules delivery via additionalContext.
 run_suite "test-session-rules-context.sh" "tests/test-session-rules-context.sh"
