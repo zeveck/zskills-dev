@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.4
+# zskills-hook-version: 2026.06.5
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -894,10 +894,40 @@ is_safe_destruct() {
   return 0
 }
 
+# Extract the single chain-segment of a compound command that matches a
+# given regex, so the literal-path safety check (is_safe_destruct) scopes
+# to the destructive command's OWN argv rather than the entire compound
+# (issue #1148). Splitting on chain operators mirrors
+# is_destruct_command_in_chain. Without this, a compound that ends in a
+# clean `rm -rf /tmp/<literal>` is wrongly blocked because an UNRELATED
+# earlier segment (a heredoc body, a `cat > marker` write) carries a
+# `$VAR` expansion. Emits the first matching segment on stdout; emits the
+# whole command unchanged if no segment matches (fail-safe: the broader
+# text is then checked, never less).
+destruct_segment() {
+  local cmd="$1" regex="$2"
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if [[ "$seg" =~ $regex ]]; then
+      printf '%s' "$seg"
+      return 0
+    fi
+  done <<< "$normalized"
+  printf '%s' "$cmd"
+}
+
 # rm -r / rm -rf (any flag combo that implies recursion)
 RM_RECURSIVE='rm[[:space:]]+(-[a-zA-Z]*r[a-zA-Z]*|--recursive)'
 if [[ "$COMMAND" =~ $RM_RECURSIVE ]]; then
-  if ! is_safe_destruct "$COMMAND"; then
+  # Scope the literal-path check to the rm segment's own argv (issue
+  # #1148) — not the whole compound, whose other segments may carry
+  # unrelated $VAR expansions (heredocs, marker writes).
+  if ! is_safe_destruct "$(destruct_segment "$COMMAND" "$RM_RECURSIVE")"; then
     block_with_reason "BLOCKED: recursive rm requires a literal /tmp/<name> path. Variables (empty-expansion = rm -rf \\\"\\\"), wildcards, or paths outside /tmp/ are unsafe. Delete specific files by name, use a literal /tmp/ path, or ask the user."
   fi
 fi
@@ -916,10 +946,55 @@ if [[ "$COMMAND" =~ rsync[[:space:]]+.*--delete ]]; then
   fi
 fi
 
-# xargs rm / xargs find -delete (pipeline-driven destruction)
-if [[ "$COMMAND" =~ xargs[[:space:]]+.*(rm|-delete) ]]; then
-  if ! is_safe_destruct "$COMMAND"; then
-    block_with_reason "BLOCKED: xargs rm / xargs -delete requires a literal /tmp/<name> path."
+# xargs <destructive-cmd> (pipeline-driven destruction). Only deny when the
+# command xargs INVOKES is itself destructive (issue #1148) — a read-only
+# target such as `git ls-files -z | xargs -0 grep -nirE '<pat>'` must pass.
+# We parse the command word that follows `xargs` and its own flags (xargs
+# flags are skipped, including the value-taking ones), then deny iff that
+# word is one of the recursive/destructive verbs reused from the covered-ops
+# list above (rm / find … -delete; mv/chmod/chown/dd/truncate/shred are the
+# wider destructive family). `xargs find … -delete` is caught by the trailing
+# -delete check.
+#
+# Returns 0 (destructive) / 1 (read-only or no xargs). Sets nothing.
+xargs_target_destructive() {
+  local seg="$1"
+  # Isolate the text from the `xargs` token onward.
+  [[ "$seg" =~ (^|[[:space:]\|])xargs([[:space:]].*)?$ ]] || return 1
+  local rest="${seg#*xargs}"
+  local -a toks
+  # shellcheck disable=SC2206
+  read -ra toks <<< "$rest"
+  local i=0 n=${#toks[@]}
+  # Skip xargs' own flags. Value-taking short flags: -n -P -s -L -I -d -E -a.
+  # Long flags with =VALUE are single tokens; long flags with separate values
+  # are rare for xargs and conservatively treated as 1-token (worst case we
+  # mis-skip and the verb check simply doesn't match -> read-only verdict,
+  # which only ever ALLOWS — the deny path stays conservative).
+  while [[ $i -lt $n ]]; do
+    case "${toks[$i]}" in
+      -n|-P|-s|-L|-I|-d|-E|-a) ((i+=2)) ;;     # flag + separate value
+      -*) ((i+=1)) ;;                          # bundled/long flag (one token)
+      *) break ;;
+    esac
+  done
+  local verb="${toks[$i]:-}"
+  verb="${verb##*/}"   # strip any path prefix (e.g. /bin/rm)
+  case "$verb" in
+    # Unconditionally destructive verbs.
+    rm|mv|chmod|chown|dd|truncate|shred) return 0 ;;
+    # find / rsync are destructive only with their delete flags — a bare
+    # `xargs find -print` / `xargs rsync` (no --delete) is read-only and
+    # must pass, matching the original rule that keyed on the -delete token.
+    find)  [[ "$rest" == *-delete* ]] && return 0; return 1 ;;
+    rsync) [[ "$rest" == *--delete* ]] && return 0; return 1 ;;
+    *) return 1 ;;
+  esac
+}
+if [[ "$COMMAND" =~ xargs ]]; then
+  XARGS_SEG="$(destruct_segment "$COMMAND" 'xargs')"
+  if xargs_target_destructive "$XARGS_SEG" && ! is_safe_destruct "$XARGS_SEG"; then
+    block_with_reason "BLOCKED: xargs into a destructive command (rm / mv / chmod / find -delete / …) requires a literal /tmp/<name> path. Read-only xargs targets (grep, cat, ls, …) are allowed."
   fi
 fi
 

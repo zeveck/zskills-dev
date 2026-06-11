@@ -418,6 +418,45 @@ expect_deny "xargs rm outside /tmp" "find . -name foo | xargs rm"
 expect_allow "rm single file" "rm some-file.txt"
 expect_allow "rm -f single file" "rm -f some-file.txt"
 
+# 8a. issue #1148 — two PreToolUse false-positives in the destructive-op gate.
+#
+# FP1: a read-only sweep that pipes into a NON-destructive command (grep,
+# cat, ls, sed-without-i, ...) must be ALLOWED. The pre-fix rule keyed on
+# the bare presence of `rm` / `-delete` anywhere after `xargs`, so a verbatim
+# zero-reference sweep `git ls-files -z | xargs -0 grep -nirE '<pat>'` was
+# wrongly denied (the substring `-nirE` / pattern text tripped it). The fix
+# parses the command xargs INVOKES and only denies destructive targets.
+expect_allow "1148-FP1: xargs grep sweep (read-only target)" \
+  "git ls-files -z | xargs -0 grep -nirE 'some-pattern'"
+expect_allow "1148-FP1b: xargs cat (read-only)" "find . -name '*.txt' | xargs cat"
+expect_allow "1148-FP1c: xargs ls (read-only)" "echo foo | xargs ls -l"
+expect_allow "1148-FP1d: xargs grep, multi-flag + extended regex pattern" \
+  "git ls-files -z | xargs -0 grep -nirE 'foo|bar[0-9]+'"
+expect_allow "1148-FP1e: xargs find -print (no -delete)" \
+  "echo /tmp/x | xargs -I{} find {} -print"
+
+# FP2: a compound command whose OTHER segments carry unrelated $VAR
+# expansions (heredocs, marker writes) but which ENDS in a clean recursive
+# rm of a literal /tmp/<name> path must be ALLOWED. Pre-fix, is_safe_destruct
+# scanned the entire compound text, so any $VAR anywhere poisoned the literal
+# /tmp/ rm. The fix scopes the literal-path check to the rm segment's own argv.
+expect_allow "1148-FP2: compound w/ \$VAR then literal /tmp rm" \
+  "echo \"writing \$MARKER\" > /tmp/m.txt && rm -rf /tmp/tmp.XgijuOCd8g"
+expect_allow "1148-FP2b: marker write w/ \$PIPELINE_ID then literal /tmp rm" \
+  "mkdir -p \$WORKDIR; touch \$WORKDIR/.done; rm -r /tmp/zskills-build-123"
+
+# Real protections must STILL fire (do not weaken):
+#   - xargs INTO a destructive command outside /tmp/ -> DENY
+#   - a recursive rm whose OWN argv is a variable path -> DENY
+expect_deny "1148-NEG1: xargs rm outside /tmp (still denied)" \
+  "find . -name foo | xargs rm -rf"
+expect_deny "1148-NEG2: xargs into rm of \$VAR (still denied)" \
+  "echo x | xargs rm -rf \$VICTIM"
+expect_deny "1148-NEG3: compound ending in variable-path rm (still denied)" \
+  "echo \"ok \$X\" > /tmp/m.txt && rm -rf \$DOOMED"
+expect_deny "1148-NEG4: xargs chmod outside /tmp (destructive target)" \
+  "find . | xargs chmod 000"
+
 # 9. git add . / -A / --all
 expect_deny "git add ." "git add . "
 expect_deny "git add -A" "git add -A"
