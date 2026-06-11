@@ -152,18 +152,21 @@ section "write-landed.sh: rc-checked atomic marker writes (3 cases)"
 
 WRITE_LANDED="$REPO_ROOT/skills/commit/scripts/write-landed.sh"
 
-# Case 1: happy path — cat body into helper, .landed ends up with correct content.
+# Case 1: happy path — cat body into helper, .zskills/landed ends up with
+# correct content (Phase 8 root-turd consolidation: the writer targets the
+# NEW path only; the old root .landed must NOT be written).
 wl_primary=$(setup_fixture_repo)
 wl_worktree=$(mktemp -u)
 FIXTURE_DIRS+=("$wl_worktree")
 git -C "$wl_primary" worktree add -q "$wl_worktree" -b canary/wl-happy
 if printf 'status: landed\ndate: now\n' | bash "$WRITE_LANDED" "$wl_worktree" \
-   && [ -f "$wl_worktree/.landed" ] \
-   && grep -qxF 'status: landed' "$wl_worktree/.landed" \
-   && [ ! -f "$wl_worktree/.landed.tmp" ]; then
-  pass "write-landed.sh happy path: .landed written, .tmp cleaned"
+   && [ -f "$wl_worktree/.zskills/landed" ] \
+   && grep -qxF 'status: landed' "$wl_worktree/.zskills/landed" \
+   && [ ! -f "$wl_worktree/.zskills/landed.tmp" ] \
+   && [ ! -f "$wl_worktree/.landed" ]; then
+  pass "write-landed.sh happy path: .zskills/landed written, .tmp cleaned, no root .landed"
 else
-  fail "write-landed.sh happy path — .landed content or .tmp-cleanup wrong"
+  fail "write-landed.sh happy path — .zskills/landed content, .tmp-cleanup, or new-path-only wrong"
 fi
 
 # Case 2: missing/bad worktree arg — exit 1 with specific error.
@@ -195,25 +198,27 @@ expect_script_exit \
   "ERROR: Worktree $dirty_worktree is not clean — cannot safely remove." \
   bash -c "cd \"$dirty_primary\" && bash \"$SCRIPT\" \"$dirty_worktree\""
 
-section "land-phase.sh: tracked ephemeral rejected (4 cases)"
+section "land-phase.sh: tracked ephemeral rejected (6 cases)"
 # Array-drift guard: confirm skills/commit/scripts/land-phase.sh still lists exactly the
-# four ephemeral names we cover below. If the script's list drifts from
-# this plan's list, fail loudly so test authors update this phase rather
-# than silently passing against a changed list.
-EXPECTED_EPHEMERAL='EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked")'
+# six ephemeral names we cover below (Phase 8: 4 legacy root names kept for
+# the dual-read window + the 2 new .zskills/-relative marker paths). If the
+# script's list drifts from this plan's list, fail loudly so test authors
+# update this phase rather than silently passing against a changed list.
+EXPECTED_EPHEMERAL='EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked" ".zskills/worktreepurpose" ".zskills/tracked")'
 if grep -qxF "$EXPECTED_EPHEMERAL" "$REPO_ROOT/skills/commit/scripts/land-phase.sh"; then
   pass "array-drift guard: skills/commit/scripts/land-phase.sh EPHEMERAL_FILES matches plan"
 else
   fail "array-drift guard: skills/commit/scripts/land-phase.sh EPHEMERAL_FILES does NOT match plan list — update this phase"
 fi
 
-for eph in ".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked"; do
+for eph in ".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked" ".zskills/worktreepurpose" ".zskills/tracked"; do
   eph_primary=$(setup_fixture_repo)
   eph_worktree=$(mktemp -u)
   FIXTURE_DIRS+=("$eph_worktree")
   git -C "$eph_primary" worktree add -q "$eph_worktree" -b "canary/eph"
   # Commit the ephemeral file into the feature branch so it is tracked in
   # the worktree when land-phase.sh runs.
+  mkdir -p "$eph_worktree/$(dirname "$eph")"
   printf 'tracked ephemeral\n' > "$eph_worktree/$eph"
   git -C "$eph_worktree" add -- "$eph"
   git -C "$eph_worktree" commit -q -m "add tracked ephemeral $eph"
@@ -237,7 +242,10 @@ ca_worktree=$(mktemp -u)
 FIXTURE_DIRS+=("$ca_worktree")
 git -C "$ca_primary" worktree add -q "$ca_worktree" -b "canary/ls-a"
 git -C "$ca_worktree" push -q origin canary/ls-a
-printf 'status: landed\n' > "$ca_worktree/.landed"
+# NEW-path marker (Phase 8): success path must work with .zskills/landed +
+# land-phase's internal .zskills/ dir cleanup before worktree removal.
+mkdir -p "$ca_worktree/.zskills"
+printf 'status: landed\n' > "$ca_worktree/.zskills/landed"
 expect_script_exit \
   "ls-remote Case A (rc=0 → delete): success, worktree removed" \
   0 \
@@ -254,6 +262,8 @@ cb_worktree=$(mktemp -u)
 FIXTURE_DIRS+=("$cb_worktree")
 git -C "$cb_primary" worktree add -q "$cb_worktree" -b "canary/ls-b"
 # Intentionally do NOT push canary/ls-b to origin.
+# OLD-path marker only (dual-read transition window): the gate must still
+# read the legacy root .landed for worktrees created before Phase 8.
 printf 'status: landed\n' > "$cb_worktree/.landed"
 expect_script_exit \
   "ls-remote Case B (rc=2 → absent): success, skipping delete" \
@@ -307,6 +317,35 @@ if [ "$tc_rc" -eq 0 ] && [ ! -d "$tc_tmpdir" ]; then
   pass "/tmp test-output dir cleanup: rc=0 and $tc_tmpdir removed"
 else
   fail "/tmp test-output dir cleanup — rc=$tc_rc (want 0); dir still present? [ -d \"$tc_tmpdir\" ]=$([ -d "$tc_tmpdir" ] && echo yes || echo no); output: $tc_out"
+fi
+
+section "Phase 8 round-trip: create → .zskills markers → land → removable (1 case)"
+# INSTALL_REDESIGN Phase 8 AC: full worktree pipeline round-trip — create
+# (markers under .zskills/), write .zskills/landed via write-landed.sh, then
+# land-phase.sh's internal .zskills/ cleanup lets `git worktree remove`
+# succeed despite the untracked marker directory.
+rt_primary=$(setup_fixture_repo)
+rt_origin=$(setup_bare_origin)
+git -C "$rt_primary" remote add origin "$rt_origin"
+git -C "$rt_primary" push -q origin HEAD:refs/heads/main
+rt_root=$(mktemp -d)
+FIXTURE_DIRS+=("$rt_root")
+rt_wt="$rt_root/rt-canary"
+rt_out=$(cd "$rt_primary" && bash "$REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh" \
+  --pipeline-id "canary.roundtrip.$$" --no-preflight --purpose "phase 8 round trip" \
+  --root "$rt_root" rt-canary 2>&1 >/dev/null); rt_rc=$?
+if [ "$rt_rc" -eq 0 ] \
+   && [ -f "$rt_wt/.zskills/tracked" ] \
+   && grep -qxF "canary.roundtrip.$$" "$rt_wt/.zskills/tracked" \
+   && [ -f "$rt_wt/.zskills/worktreepurpose" ] \
+   && [ ! -e "$rt_wt/.zskills-tracked" ] && [ ! -e "$rt_wt/.worktreepurpose" ] \
+   && printf 'status: landed\n' | bash "$WRITE_LANDED" "$rt_wt" \
+   && [ -f "$rt_wt/.zskills/landed" ] \
+   && rt_land_out=$(cd "$rt_primary" && bash "$SCRIPT" "$rt_wt" 2>&1) \
+   && [ ! -d "$rt_wt" ]; then
+  pass "Phase 8 round-trip: .zskills/ markers written, worktree landed + removed"
+else
+  fail "Phase 8 round-trip — create rc=$rt_rc; create stderr: $rt_out; land output: ${rt_land_out:-<not reached>}; wt still present? $([ -d "$rt_wt" ] && echo yes || echo no)"
 fi
 
 section "worktree-add-safe.sh: poisoned-branch discrimination (6 cases)"
@@ -502,14 +541,15 @@ expect_script_exit \
   bash -c "cd \"$i5a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug canary-5 --plan-file \"\""
 
 # Negative case: create the report, assert rc=0.
-# Path-config migration (Phase 3.11, interpretation A): post-migration
-# the script resolves REPORT_PATH to $ZSKILLS_AUDIT_DIR/plan-<slug>.md,
-# which the helper resolves to .zskills/audit/. The fixture moves to
-# match the new canonical location — this is NOT weakening the test,
-# it's tracking the spec change.
+# Path-config migration (Phase 3.11, interpretation A): the script
+# resolves REPORT_PATH to $ZSKILLS_REPORTS_DIR/plan-<slug>.md. Since
+# INSTALL_REDESIGN Phase 5 the no-config built-in default for
+# reports_dir is docs/reports (was the legacy .zskills/audit), so this
+# fixture (whose config is `{}`) creates the report there — this is NOT
+# weakening the test, it's tracking the Phase 5 spec change.
 i5b_primary=$(setup_fixture_repo)
-mkdir -p "$i5b_primary/.zskills/audit"
-touch "$i5b_primary/.zskills/audit/plan-canary-5.md"
+mkdir -p "$i5b_primary/docs/reports"
+touch "$i5b_primary/docs/reports/plan-canary-5.md"
 i5b_out=$(cd "$i5b_primary" && bash "$INVARIANTS_SCRIPT" \
   --worktree "" --branch "" --landed-status "" \
   --plan-slug canary-5 --plan-file "" 2>&1); i5b_rc=$?
@@ -613,11 +653,12 @@ else
   fail "invariant #7 Case C — rc=$i7c_rc (want 0); squash-divergence WARN present? out: $i7c_out"
 fi
 
-section "post-run-invariants.sh: #8 pr-state-unknown (3 cases)"
-# Invariant #8 fires when a worktree's .landed recorded an UNKNOWN PR state
-# (gh pr view rate-limited during land-phase). Contract string with Phase 1's
-# writer: anchored '^status: pr-state-unknown$'. The guard
-# [ -f "$WORKTREE_PATH/.landed" ] short-circuits when no marker exists.
+section "post-run-invariants.sh: #8 pr-state-unknown (5 cases)"
+# Invariant #8 fires when a worktree's landed marker recorded an UNKNOWN PR
+# state (gh pr view rate-limited during land-phase). Contract string with
+# Phase 1's writer: anchored '^status: pr-state-unknown$'. The marker is
+# dual-read (Phase 8): .zskills/landed first, legacy root .landed fallback;
+# the [ -f ... ] guard short-circuits when no marker exists at either path.
 #
 # Isolation note: invariant #1 fires whenever WORKTREE_PATH points at an
 # existing directory. #8's tests necessarily set WORKTREE_PATH to a dir
@@ -626,7 +667,8 @@ section "post-run-invariants.sh: #8 pr-state-unknown (3 cases)"
 # overall rc — because #1 is out-of-scope for this section and has its
 # own dedicated canary above.
 
-# Case 1 — fire: .landed with status: pr-state-unknown → #8 in stderr, rc=1.
+# Case 1 — fire (OLD path, dual-read fallback): root .landed with
+# status: pr-state-unknown → #8 in stderr, rc=1.
 # #1 also fires (worktree dir exists); rc=1 either way, substring check is
 # the load-bearing assertion.
 i8a_primary=$(setup_fixture_repo)
@@ -634,10 +676,37 @@ i8a_worktree=$(mktemp -d /tmp/canary-phase2-inv8-1.XXXXXX)
 FIXTURE_DIRS+=("$i8a_worktree")
 printf 'status: pr-state-unknown\n' > "$i8a_worktree/.landed"
 expect_script_exit \
-  "invariant #8 fire: .landed has status: pr-state-unknown" \
+  "invariant #8 fire (old-path fallback): .landed has status: pr-state-unknown" \
   1 \
   "INVARIANT-FAIL (#8): $i8a_worktree/.landed has status: pr-state-unknown" \
   bash -c "cd \"$i8a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i8a_worktree\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
+
+# Case 1b — fire (NEW path): .zskills/landed with status: pr-state-unknown
+# → #8 in stderr, rc=1.
+i8d_primary=$(setup_fixture_repo)
+i8d_worktree=$(mktemp -d /tmp/canary-phase2-inv8-1b.XXXXXX)
+FIXTURE_DIRS+=("$i8d_worktree")
+mkdir -p "$i8d_worktree/.zskills"
+printf 'status: pr-state-unknown\n' > "$i8d_worktree/.zskills/landed"
+expect_script_exit \
+  "invariant #8 fire (new path): .zskills/landed has status: pr-state-unknown" \
+  1 \
+  "INVARIANT-FAIL (#8): $i8d_worktree/.zskills/landed has status: pr-state-unknown" \
+  bash -c "cd \"$i8d_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i8d_worktree\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
+
+# Case 1c — precedence: BOTH paths exist, new says pr-state-unknown, old
+# says pr-ready → new path wins → #8 fires naming the NEW path.
+i8e_primary=$(setup_fixture_repo)
+i8e_worktree=$(mktemp -d /tmp/canary-phase2-inv8-1c.XXXXXX)
+FIXTURE_DIRS+=("$i8e_worktree")
+mkdir -p "$i8e_worktree/.zskills"
+printf 'status: pr-state-unknown\n' > "$i8e_worktree/.zskills/landed"
+printf 'status: pr-ready\n' > "$i8e_worktree/.landed"
+expect_script_exit \
+  "invariant #8 precedence: new path wins when both markers exist" \
+  1 \
+  "INVARIANT-FAIL (#8): $i8e_worktree/.zskills/landed has status: pr-state-unknown" \
+  bash -c "cd \"$i8e_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i8e_worktree\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
 
 # Case 2 — silent on pr-ready: .landed present but status differs → no #8
 # (assert absence of #8 substring regardless of overall rc; #1 fires and
@@ -892,7 +961,7 @@ mkdir -p "$tn1_repo/.zskills/tracking/draft-plan.foo"
 touch "$tn1_repo/.zskills/tracking/run-plan.foo/requires.verify-changes.foo"
 touch "$tn1_repo/.zskills/tracking/draft-plan.foo/requires.verify-changes.foo"
 touch "$tn1_repo/.zskills/tracking/draft-plan.foo/fulfilled.verify-changes.foo"
-printf 'run-plan.foo\n' > "$tn1_repo/.zskills-tracked"
+mkdir -p "$tn1_repo/.zskills" && printf 'run-plan.foo\n' > "$tn1_repo/.zskills/tracked"
 tn1_out=$(run_tracking_hook "$tn1_repo")
 assert_tracking_deny \
   "concurrent-same-slug: run-plan.foo cannot see draft-plan.foo fulfillment" \
@@ -926,13 +995,13 @@ else
 fi
 # And hook enforcement finds an unfulfilled requires under the dotted subdir.
 touch "$tn3_repo/.zskills/tracking/run-plan.a.b.c/requires.verify-changes.a.b.c"
-printf 'run-plan.a.b.c\n' > "$tn3_repo/.zskills-tracked"
+mkdir -p "$tn3_repo/.zskills" && printf 'run-plan.a.b.c\n' > "$tn3_repo/.zskills/tracked"
 tn3_out=$(run_tracking_hook "$tn3_repo")
 assert_tracking_deny \
   "dots-in-tracking-id: hook finds marker under flat dotted subdir" \
   "$tn3_out" "verify-changes.a.b.c"
 
-# Case 4 — Empty PIPELINE_ID: session has no .zskills-tracked AND no
+# Case 4 — Empty PIPELINE_ID: session has no pipeline marker AND no
 # ZSKILLS_PIPELINE_ID in transcript. The hook's pipeline-association guard
 # skips enforcement entirely (TRACKING_SESSION_HAS_PIPELINE=false). Even
 # with unfulfilled markers in a subdir, commit is allowed.
@@ -941,17 +1010,17 @@ mkdir -p "$tn4_repo/.zskills/tracking/run-plan.orphan"
 touch "$tn4_repo/.zskills/tracking/run-plan.orphan/requires.verify-changes.orphan"
 # Transcript has test command but NO ZSKILLS_PIPELINE_ID line.
 printf 'npm run test:all\n' > "$tn4_repo/.transcript"
-# No .zskills-tracked either.
+# No pipeline marker (either path) either.
 tn4_out=$(run_tracking_hook "$tn4_repo")
 assert_tracking_allow \
-  "empty-PIPELINE_ID: no .zskills-tracked + no transcript id → enforcement skipped" \
+  "empty-PIPELINE_ID: no pipeline marker + no transcript id → enforcement skipped" \
   "$tn4_out"
 
 # Case 5 — Missing subdir: PIPELINE_ID set but the subdir doesn't exist
 # (fresh pipeline, no markers written yet). The `[ -d $PIPELINE_SUBDIR ]`
 # guard skips the subdir loop. No flat markers either → allow.
 tn5_repo=$(setup_tracking_fixture)
-printf 'run-plan.nosubdir\n' > "$tn5_repo/.zskills-tracked"
+mkdir -p "$tn5_repo/.zskills" && printf 'run-plan.nosubdir\n' > "$tn5_repo/.zskills/tracked"
 # Intentionally do NOT mkdir .zskills/tracking/run-plan.nosubdir/
 tn5_out=$(run_tracking_hook "$tn5_repo")
 assert_tracking_allow \
@@ -963,7 +1032,7 @@ assert_tracking_allow \
 # continue` handles the unexpanded literal pattern safely.
 tn6_repo=$(setup_tracking_fixture)
 mkdir -p "$tn6_repo/.zskills/tracking/run-plan.empty"
-printf 'run-plan.empty\n' > "$tn6_repo/.zskills-tracked"
+mkdir -p "$tn6_repo/.zskills" && printf 'run-plan.empty\n' > "$tn6_repo/.zskills/tracked"
 tn6_out=$(run_tracking_hook "$tn6_repo")
 assert_tracking_allow \
   "glob-no-match: empty subdir, glob unexpanded, [ -e ] continues, hook allows" \
@@ -976,7 +1045,7 @@ tn7_repo=$(setup_tracking_fixture)
 mkdir -p "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-120000-issuea"
 mkdir -p "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-130000-issueb"
 touch "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-120000-issuea/requires.run-plan.123"
-printf 'fix-issues.sprint-20260417-130000-issueb\n' > "$tn7_repo/.zskills-tracked"
+mkdir -p "$tn7_repo/.zskills" && printf 'fix-issues.sprint-20260417-130000-issueb\n' > "$tn7_repo/.zskills/tracked"
 tn7_out=$(run_tracking_hook "$tn7_repo")
 assert_tracking_allow \
   "fix-issues sprint isolation: sprint B not blocked by sprint A's unfulfilled requires" \
@@ -990,7 +1059,7 @@ tn8_repo=$(setup_tracking_fixture)
 mkdir -p "$tn8_repo/.zskills/tracking/research-and-go.cooling"
 touch "$tn8_repo/.zskills/tracking/research-and-go.cooling/meta.run-plan.1"
 touch "$tn8_repo/.zskills/tracking/research-and-go.cooling/meta.draft-plan.1"
-printf 'research-and-go.cooling\n' > "$tn8_repo/.zskills-tracked"
+mkdir -p "$tn8_repo/.zskills" && printf 'research-and-go.cooling\n' > "$tn8_repo/.zskills/tracked"
 tn8_out=$(run_tracking_hook "$tn8_repo")
 assert_tracking_allow \
   "meta.* prefix: metadata files do not match requires.* glob, no enforcement fires" \
@@ -1009,7 +1078,7 @@ printf 'skill: child-skill\nparent: parent-skill\nblock: Gain\ndate: 2026-04-26T
   > "$tn9_repo/.zskills/tracking/parent-skill.Gain/requires.child-skill.Gain"
 printf 'skill: child-skill\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:05:00-04:00\n' \
   > "$tn9_repo/.zskills/tracking/parent-skill.Gain/fulfilled.child-skill.Gain"
-printf 'parent-skill.Gain\n' > "$tn9_repo/.zskills-tracked"
+mkdir -p "$tn9_repo/.zskills" && printf 'parent-skill.Gain\n' > "$tn9_repo/.zskills/tracked"
 tn9_out=$(run_tracking_hook "$tn9_repo")
 assert_tracking_allow \
   "delegation pair: requires + fulfilled co-located in PIPELINE_ID subdir → allow" \
@@ -1022,7 +1091,7 @@ tn10_repo=$(setup_tracking_fixture)
 mkdir -p "$tn10_repo/.zskills/tracking/parent-skill.Integrator"
 printf 'skill: child-skill\nparent: parent-skill\nblock: Integrator\ndate: 2026-04-26T10:00:00-04:00\n' \
   > "$tn10_repo/.zskills/tracking/parent-skill.Integrator/requires.child-skill.Integrator"
-printf 'parent-skill.Integrator\n' > "$tn10_repo/.zskills-tracked"
+mkdir -p "$tn10_repo/.zskills" && printf 'parent-skill.Integrator\n' > "$tn10_repo/.zskills/tracked"
 tn10_out=$(run_tracking_hook "$tn10_repo")
 assert_tracking_deny \
   "delegation-pair missing fulfillment: requires.child-skill.Integrator unfulfilled → deny" \
@@ -1043,7 +1112,7 @@ printf 'skill: child-skill\nname: Gain\nstatus: completed\ndate: 2026-04-26T10:0
   > "$tn11_repo/.zskills/tracking/parent-skill.Gain/fulfilled.child-skill.Gain"
 printf 'skill: child-skill\nparent: parent-skill\nblock: Integrator\ndate: 2026-04-26T11:00:00-04:00\n' \
   > "$tn11_repo/.zskills/tracking/parent-skill.Integrator/requires.child-skill.Integrator"
-printf 'parent-skill.Gain\n' > "$tn11_repo/.zskills-tracked"
+mkdir -p "$tn11_repo/.zskills" && printf 'parent-skill.Gain\n' > "$tn11_repo/.zskills/tracked"
 tn11_out=$(run_tracking_hook "$tn11_repo")
 assert_tracking_allow \
   "cross-name isolation: Gain not blocked by Integrator's unmet requires" \

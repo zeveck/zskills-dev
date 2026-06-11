@@ -31,7 +31,7 @@ up:
 
 | | **Live state** (what's happening *now*) | **Durable record** (what *happened*) |
 |---|---|---|
-| **Where** | `.zskills/claims/`, `current_phase` chips, crons, `.landed` | `fulfilled.*` markers, plan reports, git history |
+| **Where** | `.zskills/claims/`, `current_phase` chips, crons, `.zskills/landed` | `fulfilled.*` markers, plan reports, git history |
 | **Lifetime** | exists only while a pipeline is in flight; released or removed when it finishes | persists across runs; survives cleanup |
 | **Answers** | "is anything running? is it stuck?" | "what has this project shipped, by which skill, when?" |
 | **Read it with** | `/briefing`, the dashboard, `ls .zskills/claims` | `fulfilled.*` files, `/session-report`, `docs/reports/` |
@@ -231,13 +231,15 @@ bash skills/run-plan/scripts/claim-plan.sh release <slug> --require-pipeline <pi
 
 ---
 
-## 4. `.landed` — per-worktree landing state
+## 4. `.zskills/landed` — per-worktree landing state
 
-When a pipeline lands work it writes a `.landed` file in the worktree. It is
-**not** a tracking marker — it records worktree state, and it's the fastest way
-to tell whether a leftover worktree is safe to remove.
+When a pipeline lands work it writes a `.zskills/landed` file in the worktree.
+It is **not** a tracking marker — it records worktree state, and it's the
+fastest way to tell whether a leftover worktree is safe to remove.
 
 ```bash
+cat <worktree>/.zskills/landed
+# (older worktrees may carry the legacy root marker instead)
 cat <worktree>/.landed
 ```
 
@@ -249,8 +251,8 @@ cat <worktree>/.landed
 | `conflict` / `pr-failed` | needs manual intervention |
 | `not-landed` | agent finished without landing |
 
-If a worktree has no `.landed`, check it manually before removing
-(`git log main..<branch>`, `git status`). See the Worktree Rules in
+If a worktree has no landed marker at either path, check it manually before
+removing (`git log main..<branch>`, `git status`). See the Worktree Rules in
 `CLAUDE.md`.
 
 ---
@@ -341,7 +343,9 @@ group can read/write:
 ls -d .zskills/claims/*/                                  # in-flight claims
 git worktree list                                          # active worktrees
 for w in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
-  [ -f "$w/.landed" ] && echo "$w: $(grep '^status:' "$w/.landed")"
+  for m in "$w/.zskills/landed" "$w/.landed"; do           # new path first, legacy fallback
+    [ -f "$m" ] && { echo "$w: $(grep '^status:' "$m")"; break; }
+  done
 done                                                       # landing state per worktree
 
 # --- durable: what happened ---
@@ -368,6 +372,6 @@ is never touched.
 - [`tracking-overview.md`](tracking-overview.md) — how markers gate commits,
   with worked examples and a troubleshooting section.
 - [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md) — the
-  marker naming scheme, delegation semantics, and `.landed` semantics.
+  marker naming scheme, delegation semantics, and landed-marker semantics.
 - [`docs/guides/workflows.md`](workflows.md) — end-to-end workflows (§11 is the
   short Status & monitoring index this guide expands on).

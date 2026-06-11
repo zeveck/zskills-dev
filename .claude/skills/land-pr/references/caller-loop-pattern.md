@@ -116,7 +116,7 @@ while :; do
       # Caller-specific: if conflict-file count is small, dispatch
       # agent-assisted rebase resolution at orchestrator level, then
       # `continue` to re-invoke /land-pr. If too large or no agent
-      # path, break and let the caller's .landed conflict marker stand.
+      # path, break and let the caller's .zskills/landed conflict marker stand.
       #
       #   <CALLER_REBASE_CONFLICT_HANDLER>
       #

@@ -321,8 +321,52 @@ def _resolve_main_root(repo_root: Any) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 
 
+def _read_json_dict(path: pathlib.Path) -> Dict[str, Any]:
+    """Load a JSON file expected to hold an object. {} on any failure."""
+    text = _read_text(path)
+    if text is None:
+        return {}
+    try:
+        loaded = json.loads(text)
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_zskills_config(main_root: pathlib.Path) -> Dict[str, Any]:
+    """Config cascade (INSTALL_REDESIGN Phase 5): project > user > built-ins.
+
+    Per-key SHALLOW merge at the top level: built-in defaults loaded from
+    the canonical skills/update-zskills/scripts/zskills-defaults.json
+    (always LOADED, never a copied dict), overlaid by the user tier
+    (~/.claude/zskills-config.json), overlaid by the project tier
+    (<main_root>/.claude/zskills-config.json). `execution.*` is
+    PROJECT-TIER-ONLY across the whole cascade (safety carve-out — a
+    user-level file must not weaken a project's repo discipline), so the
+    user tier's `execution` key is dropped before merging. Missing or
+    malformed tiers contribute nothing (fail-open).
+
+    SYNC NOTE: intentionally duplicated as briefing.py:load_zskills_config
+    and server.py:_load_zskills_config (separate processes, no shared
+    module) — keep the three in sync.
+    """
+    defaults_path = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / "update-zskills" / "scripts" / "zskills-defaults.json"
+    )
+    merged = {k: v for k, v in _read_json_dict(defaults_path).items()
+              if k != "_comment"}
+    user = _read_json_dict(
+        pathlib.Path.home() / ".claude" / "zskills-config.json")
+    user.pop("execution", None)
+    merged.update(user)
+    merged.update(_read_json_dict(
+        main_root / ".claude" / "zskills-config.json"))
+    return merged
+
+
 def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
-    """Resolve audit / plans / issues dirs from zskills-config.json.
+    """Resolve audit / plans / issues dirs through the Phase 5 cascade.
 
     Mirrors the bash zskills-paths.sh helper, briefing.py:read_zskills_paths,
     and server.py:_resolve_paths.
@@ -334,35 +378,30 @@ def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
     server.py:_resolve_paths — they are intentional duplicates per Phase 4
     helper-share decision (separate processes, no shared module).
 
-    Missing/malformed config -> silent empty fallback (legacy `plans`).
+    No config at either tier -> built-in defaults (docs/plans | docs/issues
+    | docs/reports via zskills-defaults.json). The leaf-level `or` literals
+    below only fire for a PARTIAL output block surviving the shallow merge
+    (or a missing defaults JSON) and match zskills-defaults.json output.*.
     """
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    text = _read_text(cfg_path)
-    cfg: Any = {}
-    if text is not None:
-        try:
-            cfg = json.loads(text)
-        except Exception:
-            cfg = {}
+    cfg = _load_zskills_config(main_root)
     output = cfg.get("output", {}) if isinstance(cfg, dict) else {}
     if not isinstance(output, dict):
         output = {}
-    plans_rel = output.get("plans_dir") or "plans"
-    issues_rel = output.get("issues_dir") or "plans"
-    reports_rel = output.get("reports_dir")  # absent → legacy fallback
+    plans_rel = output.get("plans_dir") or "docs/plans"
+    issues_rel = output.get("issues_dir") or "docs/issues"
+    reports_rel = output.get("reports_dir") or "docs/reports"
 
     def _resolve(rel: str) -> pathlib.Path:
         p = pathlib.Path(rel)
         return p if p.is_absolute() else main_root / rel
 
     audit_dir = main_root / ".zskills" / "audit"
-    reports_dir = _resolve(reports_rel) if reports_rel else audit_dir
 
     return {
         "plans_dir": _resolve(plans_rel),
         "issues_dir": _resolve(issues_rel),
         "audit_dir": audit_dir,
-        "reports_dir": reports_dir,
+        "reports_dir": _resolve(reports_rel),
     }
 
 
@@ -1070,7 +1109,16 @@ def _list_worktrees(
         return []
     out: List[Dict[str, Any]] = []
     for wt in wts:
-        landed_path = pathlib.Path(wt.get("path", "")) / ".landed"
+        # Dual-read (Phase 8 root-turd consolidation): .zskills/landed first,
+        # legacy root .landed fallback. Resolved locally — collect.py loads
+        # briefing.py from a configurable main_root, so an older briefing
+        # copy (without its _marker_path helper) must not break the scan.
+        wt_root = pathlib.Path(wt.get("path", ""))
+        landed_path = wt_root / ".zskills" / "landed"
+        if not landed_path.is_file():
+            legacy_path = wt_root / ".landed"
+            if legacy_path.is_file():
+                landed_path = legacy_path
         landed: Optional[Dict[str, Any]] = None
         try:
             if landed_path.is_file():
@@ -1097,21 +1145,12 @@ def _list_worktrees(
 
 
 def _read_protected_branches(main_root: pathlib.Path) -> set:
-    """Read `cleanup.protected_branches` from .claude/zskills-config.json.
+    """Read `cleanup.protected_branches` via the Phase 5 config cascade.
 
     This is the SAME set `/cleanup-merged` honors (exact-name match). Absent
     config / block / non-list → empty set. Never raises.
     """
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    text = _read_text(cfg_path)
-    if text is None:
-        return set()
-    try:
-        cfg = json.loads(text)
-    except Exception:
-        return set()
-    if not isinstance(cfg, dict):
-        return set()
+    cfg = _load_zskills_config(main_root)
     cleanup = cfg.get("cleanup", {})
     if not isinstance(cleanup, dict):
         return set()
@@ -1125,19 +1164,10 @@ def _branch_fetch_ttl(main_root: pathlib.Path) -> float:
     """Resolve the git-fetch throttle TTL (seconds).
 
     Default `BRANCH_FETCH_TTL`; overridable via
-    `dashboard.branch_fetch_ttl_seconds` in zskills-config.json. Malformed →
+    `dashboard.branch_fetch_ttl_seconds` (Phase 5 config cascade). Malformed →
     default.
     """
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    text = _read_text(cfg_path)
-    if text is None:
-        return BRANCH_FETCH_TTL
-    try:
-        cfg = json.loads(text)
-    except Exception:
-        return BRANCH_FETCH_TTL
-    if not isinstance(cfg, dict):
-        return BRANCH_FETCH_TTL
+    cfg = _load_zskills_config(main_root)
     dash = cfg.get("dashboard", {})
     if not isinstance(dash, dict):
         return BRANCH_FETCH_TTL
@@ -2795,7 +2825,10 @@ DEFAULT_DASHBOARD_COMPLETED_LIMIT = 500
 
 def _read_dashboard_completed_config(main_root: pathlib.Path) -> Tuple[int, int]:
     """Resolve `execution.dashboard_completed_days` and
-    `execution.dashboard_completed_limit` from `.claude/zskills-config.json`.
+    `execution.dashboard_completed_limit` via the Phase 5 config cascade.
+
+    `execution.*` is PROJECT-TIER-ONLY (the cascade helper drops the user
+    tier's `execution` key), so these stay project-or-default by design.
 
     Returns (days, limit). Missing / malformed / out-of-range values fall
     back to the documented defaults (14 / 500). No third-party JSON
@@ -2803,16 +2836,7 @@ def _read_dashboard_completed_config(main_root: pathlib.Path) -> Tuple[int, int]
     """
     days = DEFAULT_DASHBOARD_COMPLETED_DAYS
     limit = DEFAULT_DASHBOARD_COMPLETED_LIMIT
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    text = _read_text(cfg_path)
-    if text is None:
-        return days, limit
-    try:
-        cfg = json.loads(text)
-    except Exception:
-        return days, limit
-    if not isinstance(cfg, dict):
-        return days, limit
+    cfg = _load_zskills_config(main_root)
     execution = cfg.get("execution") if isinstance(cfg.get("execution"), dict) else {}
     raw_days = execution.get("dashboard_completed_days")
     raw_limit = execution.get("dashboard_completed_limit")

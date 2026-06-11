@@ -228,20 +228,26 @@ constructed ID to disk. The sanitizer collapses any character outside
 `[a-zA-Z0-9._-]` into `_` and truncates to 128 bytes — safe for
 filesystem and glob use.
 
-### OQ4 — `.landed` marker semantics
+### OQ4 — landed-marker semantics
 
-**Decision: `.landed` is NOT a tracking marker.**
+**Decision: the landed marker is NOT a tracking marker.**
 
-`.landed` is a separate artifact written at worktree-root by
+`.zskills/landed` is a separate artifact written in the worktree by
 `/commit land` and `.claude/skills/commit/scripts/write-landed.sh` when cherry-picked
 commits have been confirmed on `main`. It records landing state for
 worktree-cleanup tools; it does not participate in pre-commit
 enforcement and is not read by the hook's `requires.*`/`fulfilled.*`/
-`step.*` globs. It lives outside `.zskills/tracking/`.
+`step.*` globs. It lives alongside (not inside) `.zskills/tracking/`.
+(Writers moved it from the legacy worktree-root `.landed` in the
+INSTALL_REDESIGN Phase-8 root-turd consolidation; readers dual-read —
+new path first, legacy root fallback — for worktrees created before the
+move. The same consolidation moved the pipeline-association marker from
+root `.zskills-tracked` to `.zskills/tracked`, with the same dual-read
+window.)
 
-This plan does not touch `.landed` at all — neither its contents nor
-its location nor its writer. Any confusion that arises because
-`.landed` sounds tracking-ish is resolved by this explicit statement:
+This plan does not touch the landed marker at all — neither its contents
+nor its writer. Any confusion that arises because "landed" sounds
+tracking-ish is resolved by this explicit statement:
 it is a worktree-state artifact, not a scope-filtered marker.
 
 ## Migration strategy

@@ -49,7 +49,18 @@ expect_project_deny "rm /tmp/a -r .zskills/tracking/foo"
 expect_project_deny "rm -rf .zskills/issues"
 expect_project_deny "rm -rf .zskills/audit"
 expect_project_deny "rm -rf .zskills/tracking"
-expect_project_allow "rm -f .zskills-tracked (no recursive flag — passes broader regex too)" \
+# Phase 8 fence calculus (verified against the fence predicate: the block
+# requires a RECURSIVE flag token AND a `.zskills` substring in the same
+# shell command — plain `rm -f` carries no recursive flag and passes):
+#   - rm -f .zskills/tracked          → ALLOW (consolidated marker, non-recursive)
+#   - rm -rf .zskills                 → DENY  (recursive delete of the state tree)
+#   - rm -f .zskills-tracked          → ALLOW (legacy root marker, dual-read window)
+expect_project_allow "rm -f .zskills/tracked (Phase 8 marker — no recursive flag)" \
+  "rm -f .zskills/tracked"
+expect_project_allow "rm -f .zskills/landed .zskills/worktreepurpose (Phase 8 markers — no recursive flag)" \
+  "rm -f .zskills/landed .zskills/worktreepurpose"
+expect_project_deny "rm -rf .zskills"
+expect_project_allow "rm -f .zskills-tracked (legacy root marker, no recursive flag — passes broader regex too)" \
   "rm -f .zskills-tracked"
 expect_project_allow "rm -f x.zskills.bak (no recursive flag — recursive-flag clause gates the block regardless of path shape)" \
   "rm -f x.zskills.bak"
@@ -361,24 +372,24 @@ expect_project_allow "git commit -m test"
 teardown_project_test
 
 echo ""
-echo "=== Project hook: .zskills-tracked pipeline association ==="
+echo "=== Project hook: .zskills/tracked pipeline association ==="
 
-# Test: .zskills-tracked file associates agent with pipeline
+# Test: .zskills/tracked file associates agent with pipeline
 setup_project_test
-printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills/tracked"
 TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
 mkdir -p "$TD_DIR"
 touch "$TD_DIR/requires.verify-changes.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
-# Remove transcript so ONLY .zskills-tracked provides the association
+# Remove transcript so ONLY .zskills/tracked provides the association
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_deny "git commit -m test"
 teardown_project_test
 
-# Test: .zskills-tracked with fulfilled requirement allows commit
+# Test: .zskills/tracked with fulfilled requirement allows commit
 setup_project_test
-printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills/tracked"
 TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
 mkdir -p "$TD_DIR"
 touch "$TD_DIR/requires.verify-changes.thermal-domain"
@@ -389,7 +400,7 @@ printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_allow "git commit -m test"
 teardown_project_test
 
-# Test: no .zskills-tracked AND no pipeline in transcript → skip enforcement
+# Test: no pipeline marker AND no pipeline in transcript → skip enforcement
 setup_project_test
 TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
 mkdir -p "$TD_DIR"
@@ -406,7 +417,7 @@ echo "=== Project hook: pipeline scoping (subdir isolation) ==="
 
 # Test: Pipeline A's subdir does not block Pipeline B (disjoint subdirs)
 setup_project_test
-printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills/tracked"
 mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A"
 touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/requires.verify-changes.pipeline-A"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
@@ -417,7 +428,7 @@ teardown_project_test
 
 # Test: Same pipeline's subdir markers DO block
 setup_project_test
-printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills/tracked"
 mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
 touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
@@ -471,7 +482,7 @@ teardown_project_test
 
 # Test: Step scoping — pipeline B's impl marker (in B's subdir) doesn't block pipeline A
 setup_project_test
-printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills/tracked"
 mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
 touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/step.run-plan.pipeline-B.implement"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
@@ -484,7 +495,7 @@ teardown_project_test
 # invoked when the per-pipeline subdir is absent; removed in Phase 6).
 # Pipeline ID "plan" does NOT end ".run-plan.thermal-domain".
 setup_project_test
-printf 'plan\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'plan\n' > "$TEST_TMPDIR/.zskills/tracked"
 # Intentionally flat (no subdir). Exercises the transitional fallback path.
 touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
@@ -526,7 +537,7 @@ teardown_project_test
 
 # Test: git push with pipeline scoping (subdir isolation)
 setup_project_test
-printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills/tracked"
 mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
 touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 rm -f "$TEST_TMPDIR/.transcript"
@@ -771,8 +782,8 @@ LAND_TMPDIR=$(mktemp -d)
 LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
 LAND_RC=$?
 rm -rf "$LAND_TMPDIR"
-if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"No .landed marker"* ]]; then
-  pass "land-phase.sh: rejects no .landed marker (exit 1)"
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"No landed marker"* ]]; then
+  pass "land-phase.sh: rejects no landed marker at either path (exit 1)"
 else
   fail "land-phase.sh: no marker rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
 fi

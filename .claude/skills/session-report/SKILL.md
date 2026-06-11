@@ -7,7 +7,7 @@ description: >-
   worktrees), not conversation memory — items may have been completed in
   another session.
 metadata:
-  version: "2026.06.05+9613e1"
+  version: "2026.06.10+31aa9f"
 ---
 
 # /session-report — Session Intent vs. Actual State
@@ -73,7 +73,7 @@ that resolves the item:
 | PR opened | `gh pr view <N> --json state,mergeable,reviewDecision,statusCheckRollup` + `gh pr checks <N>`. |
 | PR merged | `gh pr view <N> --json state,mergeCommit` — confirm `MERGED` and the merge commit is on main. |
 | Bug fixed | `git log --oneline -10 -- <file>` for the fix commit; if a regression test was promised, grep for it. |
-| Worktree-based work | `cat <worktree>/.landed`; if missing, `git -C <worktree> log main..HEAD --oneline` and `git -C <worktree> status -s`. |
+| Worktree-based work | `cat <worktree>/.zskills/landed` (legacy worktrees: `<worktree>/.landed`); if missing, `git -C <worktree> log main..HEAD --oneline` and `git -C <worktree> status -s`. |
 | Queued action ("we'll run X later") | Did it get run this session? Check the most recent commits / PRs for evidence. If still queued, note it. |
 
 **Cross-session verification:** if conversation context says "we wrote X"

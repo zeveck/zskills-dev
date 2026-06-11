@@ -173,8 +173,8 @@ DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 # Create a requires marker (unfulfilled) inside the pipeline's subdir
 touch "$DIR/requires.verify-changes.alpha"
 
-# Write .zskills-tracked to associate this session with the pipeline
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+# Write the .zskills/tracked marker to associate this session with the pipeline
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 # Stage a code file (.js -- triggers code-file detection)
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -221,7 +221,7 @@ DIR_A=$(pipeline_subdir "$TEST_TMPDIR" "run-plan.pipeline-A")
 touch "$DIR_A/requires.verify-changes.pipeline-A"
 
 # Session is associated with pipeline B (different subdir, no markers yet)
-printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills/tracked"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -294,9 +294,9 @@ else
   mkdir -p "$WORKTREE_DIR/.claude/hooks"
   cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
 
-  # Write .zskills-tracked in the worktree
+  # Write the .zskills/tracked marker in the worktree
   PID="run-plan.thermal-domain"
-  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
+  mkdir -p "$WORKTREE_DIR/.zskills" && printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills/tracked"
 
   # Create tracking markers in the MAIN repo's per-pipeline subdir
   DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
@@ -340,12 +340,12 @@ teardown_repo
 #
 # Pre-fix, the commit-block LOCAL_ROOT resolution was worktree-blind:
 # the hook ran with CWD=main_repo and used `git rev-parse --show-toplevel`,
-# so .zskills-tracked in the worktree was never read → tracking
+# so the worktree's pipeline marker was never read → tracking
 # enforcement silently no-op'd for worktree commits.
 #
 # After fix: the hook calls extract_cd_target on the JSON command. For
 # `cd /tmp/wt && git commit`, the cd target → LOCAL_ROOT → worktree's
-# .zskills-tracked is read → enforcement fires.
+# the .zskills/tracked marker is read → enforcement fires.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -370,9 +370,9 @@ else
   mkdir -p "$WORKTREE_DIR/.claude/hooks"
   cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
 
-  # Write .zskills-tracked in the WORKTREE (Tier 1 source for LOCAL_ROOT).
+  # Write the .zskills/tracked marker in the WORKTREE (Tier 1 source for LOCAL_ROOT).
   PID="run-plan.cd-chain-pipeline"
-  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
+  mkdir -p "$WORKTREE_DIR/.zskills" && printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills/tracked"
 
   # Create an unfulfilled requires marker in the MAIN repo's per-pipeline subdir.
   DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
@@ -387,7 +387,7 @@ else
   # Build the JSON envelope simulating the agent's cd-chained command.
   # Critically: the bash script (hook) runs with CWD=$TEST_TMPDIR (main repo),
   # NOT the worktree. The hook must extract the cd target to find
-  # .zskills-tracked in the worktree.
+  # .zskills/tracked in the worktree.
   JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $WORKTREE_DIR && git commit -m test\"},\"transcript_path\":\"$WORKTREE_DIR/.transcript\"}"
 
   # Run hook from main repo CWD. No LOCAL_ROOT env override — the hook
@@ -398,7 +398,7 @@ else
 
   if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]] \
      && [[ "$HOOK_OUTPUT" == *"verify-changes.cd-chain"* ]]; then
-    pass "Test 3-cd-chain-a: cd-chained worktree commit blocked by worktree's .zskills-tracked + main's unfulfilled marker"
+    pass "Test 3-cd-chain-a: cd-chained worktree commit blocked by worktree's .zskills/tracked + main's unfulfilled marker"
   else
     fail "Test 3-cd-chain-a: cd-chained worktree commit should be blocked; got: $HOOK_OUTPUT"
   fi
@@ -427,12 +427,12 @@ teardown_repo
 # `bash -c 'cd /tmp/wt && git commit'`) but extract_cd_target still
 # only inspected the OUTER command (first token = bash/eval, not cd).
 # So LOCAL_ROOT fell back to the hook's ambient main-repo CWD; the
-# worktree's .zskills-tracked was never read; tracking-marker
+# worktree's pipeline marker was never read; tracking-marker
 # enforcement silently no-op'd for wrapped worktree commits.
 #
 # After #427: extract_cd_target recursively unwraps one wrapper layer
 # (bounded depth 3) and resolves the inner `cd <wt>` target. LOCAL_ROOT
-# → worktree → .zskills-tracked read → enforcement fires.
+# → worktree → .zskills/tracked read → enforcement fires.
 #
 # Three wrapper shapes covered: bash -c '<inner>', sh -c "<inner>",
 # eval '<inner>'.
@@ -464,7 +464,7 @@ for wrapper_case in bash-c sh-c eval; do
   cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
 
   PID="run-plan.wrapper-$wrapper_case-pipeline"
-  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
+  mkdir -p "$WORKTREE_DIR/.zskills" && printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills/tracked"
 
   DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
   touch "$DIR_T/requires.verify-changes.wrapper-$wrapper_case"
@@ -477,7 +477,7 @@ for wrapper_case in bash-c sh-c eval; do
   # must (1) classify the wrapped git commit via
   # is_git_subcommand_in_wrappers, then (2) extract the cd target from
   # the inner `cd <wt> && git commit` via the wrapper-recursive
-  # extract_cd_target (#427), then (3) read .zskills-tracked from the
+  # extract_cd_target (#427), then (3) read .zskills/tracked from the
   # worktree, then (4) find the unfulfilled marker → DENY.
   case "$wrapper_case" in
     bash-c) INNER="cd $WORKTREE_DIR && git commit -m test"; OUTER="bash -c '$INNER'" ;;
@@ -493,7 +493,7 @@ for wrapper_case in bash-c sh-c eval; do
 
   if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]] \
      && [[ "$HOOK_OUTPUT" == *"verify-changes.wrapper-$wrapper_case"* ]]; then
-    pass "Test 3-wrapper-cd-$wrapper_case-a: wrapper-cd worktree commit blocked by worktree's .zskills-tracked + main's unfulfilled marker"
+    pass "Test 3-wrapper-cd-$wrapper_case-a: wrapper-cd worktree commit blocked by worktree's .zskills/tracked + main's unfulfilled marker"
   else
     fail "Test 3-wrapper-cd-$wrapper_case-a: wrapper-cd worktree commit should be blocked; got: $HOOK_OUTPUT"
   fi
@@ -528,8 +528,8 @@ DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 # Create unfulfilled markers
 touch "$DIR/requires.verify-changes.alpha"
 
-# Write .zskills-tracked
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+# Write the .zskills/tracked marker
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 # Stage ONLY a markdown file (content-only -- no code files)
 (cd "$TEST_TMPDIR" && echo "# Documentation update" > README.md && git add README.md)
@@ -565,7 +565,7 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 5: Unrelated session (no .zskills-tracked, no pipeline in transcript)
+# Test 5: Unrelated session (no pipeline marker, no pipeline in transcript)
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -579,7 +579,7 @@ DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 touch "$DIR/requires.verify-changes.thermal-domain"
 touch "$DIR/step.run-plan.thermal-domain.implement"
 
-# Do NOT write .zskills-tracked
+# Do NOT write any pipeline marker (.zskills/tracked or legacy .zskills-tracked)
 
 # Overwrite transcript with content that has NO pipeline skill names
 # (no /run-plan, /fix-issues, /research-and-go, etc.)
@@ -623,8 +623,8 @@ setup_repo
 PID="run-plan.thermal-domain"
 DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 
-# Write .zskills-tracked
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+# Write the .zskills/tracked marker
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 # Create implement step marker only (inside the subdir)
 touch "$DIR/step.run-plan.thermal-domain.implement"
@@ -673,8 +673,8 @@ setup_repo
 PID="run-plan.alpha"
 DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 
-# Write .zskills-tracked
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+# Write the .zskills/tracked marker
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 # Create a requires marker and make it old (>8h = >480 minutes)
 touch "$DIR/requires.verify-changes.alpha"
@@ -706,7 +706,7 @@ setup_repo
 # - step implement + verify + report (step chain complete) in same subdir
 PID="run-plan.thermal-domain"
 DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 touch "$DIR/requires.verify-changes.thermal-domain"
 touch "$DIR/fulfilled.verify-changes.thermal-domain"
@@ -750,7 +750,7 @@ setup_repo
 
 PID="run-plan.thermal-domain"
 DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 # Create a phasestep marker (per-phase progress, NOT enforced) in the subdir.
 # The hook's enforcement globs (requires.*, step.*.implement/verify,
@@ -781,8 +781,8 @@ setup_repo
 # Remove the tracking directory entirely
 rm -rf "$TEST_TMPDIR/.zskills/tracking"
 
-# Write .zskills-tracked (session thinks it's in a pipeline, but no tracking dir)
-printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills-tracked"
+# Write the .zskills/tracked marker (session thinks it's in a pipeline, but no tracking dir)
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills/tracked"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -812,7 +812,7 @@ setup_repo
 
 # Pipeline ID is "plan" -- subdir does NOT exist, so fallback kicks in.
 # The flat marker's suffix is ".thermal-domain" which does not match "plan".
-printf 'plan\n' > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf 'plan\n' > "$TEST_TMPDIR/.zskills/tracked"
 touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
 
 # Stage a code file
@@ -862,7 +862,7 @@ DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 # requires.land-pr.<id> present and UNFULFILLED — exactly the state during
 # a BEHIND-clear force-push (the marker is only fulfilled post-merge).
 touch "$DIR/requires.land-pr.$PID"
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 (
   cd "$TEST_TMPDIR"
@@ -919,7 +919,7 @@ setup_repo
 PID="do.pr-921b"
 DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 touch "$DIR/requires.land-pr.$PID"   # unfulfilled
-printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills/tracked"
 
 (
   cd "$TEST_TMPDIR"
@@ -946,6 +946,49 @@ else
   pass "Test 12b: genuine un-landed code push still blocked by unfulfilled requires.land-pr (#921 fix preserves enforcement)"
 fi
 
+teardown_repo
+
+# ═══════════════════════════════════════════════════════════════════════
+# Test 13: Phase 8 dual-read — Tier-1 pipeline marker resolution
+# Writers now target .zskills/tracked; the hook reads the new path FIRST
+# and falls back to the legacy root .zskills-tracked for worktrees created
+# before the consolidation. New path wins when both exist.
+# ═══════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "=== Test 13: Phase 8 dual-read (Tier-1 marker) ==="
+
+# 13a — OLD path only (legacy fallback): enforcement still fires.
+setup_repo
+PID="run-plan.legacy13"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+touch "$DIR/requires.verify-changes.legacy13"
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+(cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
+if try_commit; then
+  fail "Test 13a: legacy root .zskills-tracked should still associate the session (dual-read fallback), got: $HOOK_OUTPUT"
+else
+  pass "Test 13a: legacy root .zskills-tracked still read via dual-read fallback (commit blocked)"
+fi
+teardown_repo
+
+# 13b — BOTH paths exist: the NEW path wins. New marker names a pipeline
+# with an unfulfilled requires; old marker names a clean pipeline. If the
+# old path won, the commit would be allowed.
+setup_repo
+PID_NEW="run-plan.newwins13"
+PID_OLD="run-plan.cleanold13"
+DIR_NEW=$(pipeline_subdir "$TEST_TMPDIR" "$PID_NEW")
+pipeline_subdir "$TEST_TMPDIR" "$PID_OLD" >/dev/null
+touch "$DIR_NEW/requires.verify-changes.newwins13"
+mkdir -p "$TEST_TMPDIR/.zskills" && printf '%s\n' "$PID_NEW" > "$TEST_TMPDIR/.zskills/tracked"
+printf '%s\n' "$PID_OLD" > "$TEST_TMPDIR/.zskills-tracked"
+(cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
+if try_commit; then
+  fail "Test 13b: with both markers present the NEW path's pipeline must win (commit should be blocked), got: $HOOK_OUTPUT"
+else
+  pass "Test 13b: new .zskills/tracked wins over legacy root marker when both exist (commit blocked)"
+fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════

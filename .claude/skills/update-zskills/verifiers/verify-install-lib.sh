@@ -74,47 +74,57 @@ vi_emit() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
+# Init-state definitions (#1132 single-path-definition rule — INSTALL_REDESIGN
+# Phase 6b). The plugin-lane checks key on the explicit-init markers
+# (`.zskills/init-done`, `.zskills/setup-confirmed`), whose paths, presence
+# predicate, and writer are defined in exactly ONE place:
+# skills/update-zskills/scripts/init-state.sh. This lib SOURCES it from its
+# sibling scripts/ dir — present on BOTH lanes (the verifiers/ and scripts/
+# dirs ship together in the legacy mirror and the plugin tree), so the lib
+# stays lane-portable. Tolerant load: a missing init-state.sh is itself a
+# broken install, surfaced as a FAIL inside vi_check_plugin.
+# ───────────────────────────────────────────────────────────────────────────
+VI_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -n "$VI_LIB_DIR" ] && [ -f "$VI_LIB_DIR/../scripts/init-state.sh" ]; then
+  # shellcheck source=../scripts/init-state.sh
+  . "$VI_LIB_DIR/../scripts/init-state.sh"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
 # Lane detection (self-contained — no dependency on detect-install-state.sh).
 #
 # vi_detect_lane <project_dir> → prints one of: plugin | legacy | dual | none
 #
-#   materialised sentinels present in $proj/.claude → plugin signal present
-#   .claude/skills/ AND .claude/settings.json present → legacy signal present
+#   CLAUDE_PLUGIN_ROOT set in env OR init-done marker present → plugin signal
+#   zskills mirror / zskills settings.json hook               → legacy signal
 #   both signals                         → dual (UNSUPPORTED — flagged)
 #   neither                              → none (no install detected)
 #
-# F2 (#1026): the plugin signal is keyed on the CONSUMER project dir's on-disk
-# MATERIALISED SENTINELS — the 5 artifacts the plugin SessionStart materialiser
-# writes into $proj/.claude (each carrying a `zskills-materialised:` sentinel) —
-# NOT on the ${CLAUDE_PLUGIN_ROOT} environment variable. On a real mirror-less
-# plugin consumer the verifier runs as a launched/sourced script whose env does
-# NOT carry CLAUDE_PLUGIN_ROOT (the harness substitutes only the bare token in
-# markdown; it is absent from the script env), so keying on it false-classified
-# a working plugin install as `none` (the #1026 `lane=none` false-FAIL). Lane is
-# a property of the CONSUMER dir, not of the env var and NOT of where this lib
-# happens to live (we deliberately do NOT key on the lib's own BASH_SOURCE —
-# that would false-classify legacy/none as plugin whenever the lib is sourced
-# from the dev tree / an env-unset run, breaking the legacy regression cases).
+# Phase 6b re-key: the OLD plugin signal (the D20 materialiser-sentinel
+# prefix on artifacts in $proj/.claude — the F2/#1026 fix) dies with the
+# materialiser.
+# The NEW plugin evidence is the env context (CLAUDE_PLUGIN_ROOT — set when
+# the verifier is invoked from a plugin-lane skill fence, which exports it)
+# plus the on-disk init-done marker (plugin-lane-ONLY by definition: the
+# legacy lane writes only setup-confirmed, never init-done — see
+# init-state.sh). The marker arm keeps the #1026 lesson honored: a post-init
+# consumer whose script env lacks the var still classifies as plugin. We
+# still deliberately do NOT key on the lib's own BASH_SOURCE — that would
+# false-classify legacy/none as plugin whenever the lib is sourced from the
+# dev tree.
 # ───────────────────────────────────────────────────────────────────────────
 vi_detect_lane() {
   local proj="$1"
   local plugin_sig=0 legacy_sig=0
 
-  # Plugin signal: at least one of the 5 materialised artifacts present in the
-  # consumer dir carrying a `zskills-materialised:` sentinel. Reuses the exact
-  # sentinel detection (vi_has_materialiser_sentinel) the plugin-lane checks use.
-  local art
-  for art in \
-    "agents/verifier.md" \
-    "agents/implementer.md" \
-    "hooks/inject-bash-timeout.sh" \
-    "hooks/verify-response-validate.sh" \
-    "rules/zskills/managed.md"; do
-    if vi_has_materialiser_sentinel "$proj/.claude/$art"; then
-      plugin_sig=1
-      break
-    fi
-  done
+  # Plugin signal (Phase 6b): env context, or the plugin-lane init lock
+  # (path + predicate from init-state.sh — never re-typed).
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    plugin_sig=1
+  elif command -v zskills_init_done_present >/dev/null 2>&1 \
+       && zskills_init_done_present "$proj"; then
+    plugin_sig=1
+  fi
 
   # Legacy signal: ZSKILLS-OWNED evidence only (matches detect-install-state.sh,
   # #1064/#1067). Either a zskills-named .claude/skills/<name>/SKILL.md mirror
@@ -156,16 +166,6 @@ try:
 except Exception:
     print("")
 PY
-}
-
-# vi_has_materialiser_sentinel <file> → 0 if the file carries a
-# `zskills-materialised:` sentinel in its first 3 lines (the exact detection
-# session-start-materialise.sh uses for its overwrite guard). 1 otherwise.
-vi_has_materialiser_sentinel() {
-  local f="$1"
-  [ -f "$f" ] || return 1
-  head -n 3 "$f" 2>/dev/null \
-    | grep -Eq "^(#|<!--)[[:space:]]+zskills-materialised:[[:space:]]"
 }
 
 # vi_settings_hook_commands <settings_json> → prints each registered hook
@@ -216,7 +216,7 @@ vi_resolve_hook_path() {
 
 # vi_is_zskills_hook <basename> → 0 if <basename> is a zskills-OWNED hook
 # (one of the canonical settings.json-owned triples in update-zskills/SKILL.md,
-# plus the two non-registered-but-shipped hooks). Used to scope the integrity
+# plus the non-registered-but-shipped inject-bash-timeout.sh). Used to scope the integrity
 # checks (non-empty + line-2 version stamp) to zskills' OWN hooks — a foreign
 # (consumer-supplied) hook registered alongside zskills ones legitimately does
 # NOT carry the `# zskills-hook-version:` stamp, so blanket-checking every
@@ -226,7 +226,7 @@ vi_is_zskills_hook() {
     block-unsafe-generic.sh|block-unsafe-project.sh|block-stale-skill-version.sh|\
     block-bypassed-land-pr.sh|block-fix-issue-unclaimed.sh|block-run-plan-unclaimed.sh|\
     block-agents.sh|block-bad-cron.sh|block-main-edits.sh|warn-config-drift.sh|\
-    inject-bash-timeout.sh|verify-response-validate.sh)
+    inject-bash-timeout.sh)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -397,9 +397,10 @@ vi_check_legacy() {
     # set of settings.json-registered safety hooks that a HEALTHY legacy install
     # ALWAYS registers (per the canonical zskills-owned triples table in
     # update-zskills/SKILL.md). We deliberately do NOT require inject-bash-timeout.sh
-    # or verify-response-validate.sh here: SKILL.md states those have NO
-    # settings.json entry (loaded via verifier.md frontmatter / direct skill
-    # invocation), so requiring them would false-FAIL every valid legacy install.
+    # here: SKILL.md states it has NO settings.json entry (loaded via
+    # verifier.md frontmatter), so requiring it would false-FAIL every valid
+    # legacy install. (verify-response-validate.sh is skill-bundled as of the
+    # install redesign Phase 3 — not a hook at all, delivered via the mirror.)
     local canon canon_missing=""
     for canon in block-unsafe-generic.sh block-unsafe-project.sh block-stale-skill-version.sh block-agents.sh; do
       case "$registered" in
@@ -472,109 +473,181 @@ vi_check_legacy() {
 }
 
 # ───────────────────────────────────────────────────────────────────────────
-# PLUGIN-lane cheap structural checks.
+# PLUGIN-lane cheap structural checks (INSTALL_REDESIGN Phase 6b — re-keyed
+# from the dying materialiser sentinels onto the explicit-init state; this is
+# the redesign's own acceptance vehicle AND init's A6 hard gate).
 #
 # vi_check_plugin <project_dir>
-#   - the 5 materialised artifacts present, each carrying a
-#     `zskills-materialised:` sentinel:
-#       .claude/agents/verifier.md
-#       .claude/agents/implementer.md
-#       .claude/hooks/inject-bash-timeout.sh
-#       .claude/hooks/verify-response-validate.sh
-#       .claude/rules/zskills/managed.md
-#   - mirror-less (.claude/skills/ ABSENT in the consumer project)
+#   - plugin root reachable (manifests + skills tree resolvable)
+#   - `.zskills/init-done` + `.zskills/setup-confirmed` present (paths +
+#     predicate via init-state.sh — #1132 single path definition)
+#   - `.gitignore` umbrella covers `.zskills/` (git check-ignore)
+#   - `.claude/zskills-config.json` VALID-if-present (absent is OK BY DESIGN
+#     — zero-config consumers run on built-in defaults)
+#   - rules delivered per the selected R-b branch (the SessionStart
+#     `session-rules-context.sh` hook registered in the plugin's hooks.json,
+#     its script present, and the render inputs — CLAUDE_TEMPLATE.md + the
+#     D24 renderer — present, i.e. renderable)
+#   - version-currency WARN (m-class staleness cure): init-done's `version:`
+#     line vs the plugin manifest's `version`; a config-less consumer's
+#     version record is otherwise permanently stale after marketplace
+#     updates — the cure is a bare /zs:update-zskills (the A1 update arm
+#     refreshes the line)
+#   - branch-dependent artifacts: NONE on the landed 1A + T-A branches
+#     (agents dispatch from the plugin's root agents/; Layer-0 ships via
+#     hooks.json — no project-side artifact to check; the unselected 1B/T-C
+#     checks live in the plan, not in shipped code)
 #
-# ZERO-FALSE-POSITIVE BAR (#1004): no `plugin.version-recorded` check — the
-# plugin seed config can legitimately have no tag on a valid install, so its
-# absence is not breakage (mirrors the legacy-lane decision above).
+# ZERO-FALSE-POSITIVE BAR (#1004): every FAIL means "your install is
+# genuinely broken / not initialised". Config absence, version skew, and a
+# residual mirror are PASS/WARN — never FAIL.
 # ───────────────────────────────────────────────────────────────────────────
 vi_check_plugin() {
   local proj="$1"
   local claude="$proj/.claude"
 
-  # (1) The 5 materialised artifacts, each with a materialiser sentinel.
-  local -a artifacts=(
-    "agents/verifier.md"
-    "agents/implementer.md"
-    "hooks/inject-bash-timeout.sh"
-    "hooks/verify-response-validate.sh"
-    "rules/zskills/managed.md"
-  )
-  local a dest
-  for a in "${artifacts[@]}"; do
-    dest="$claude/$a"
-    if [ ! -f "$dest" ]; then
-      vi_emit FAIL "plugin.artifact.$a" "materialised artifact missing: .claude/$a"
-    elif ! vi_has_materialiser_sentinel "$dest"; then
-      vi_emit FAIL "plugin.artifact.$a" ".claude/$a present but missing zskills-materialised: sentinel"
-    else
-      vi_emit PASS "plugin.artifact.$a" ".claude/$a present with materialiser sentinel"
-    fi
-  done
-
-  # (2) Mirror-less: NO ZSKILLS mirror under .claude/skills/ in a clean plugin
-  # consumer. We key on a ZSKILLS-OWNED mirror (vi_has_zskills_mirror), NOT on
-  # the bare presence of .claude/skills/: a plugin consumer who ships their OWN,
-  # non-zskills skills (playwright-cli, social-seo, …) is a perfectly healthy
-  # mirror-less install and must PASS, not WARN (the #1064 bug class). A genuine
-  # zskills mirror present alongside the plugin lane is the `dual` lane upstream
-  # (vi_detect_lane); this WARN is reached only when a zskills mirror exists but
-  # the plugin-sig also fired in a way that did not collapse to dual — a real
-  # residue worth surfacing.
-  if vi_has_zskills_mirror "$proj"; then
-    vi_emit WARN "plugin.mirror-less" "zskills mirror present under .claude/skills/ on the plugin lane (dual-install? run scripts/switch-install-path.sh)"
-  else
-    vi_emit PASS "plugin.mirror-less" "no zskills mirror under .claude/skills/ (mirror-less plugin install)"
+  # (0) init-state.sh loaded (the #1132 single path definition). Without it
+  # the init-keyed checks below cannot run — that is itself a broken tree
+  # (the scripts/ dir ships beside this verifiers/ dir on both lanes).
+  if ! command -v zskills_init_done_present >/dev/null 2>&1; then
+    vi_emit FAIL "plugin.init-state-lib" "init-state.sh not loadable from the skill's scripts/ dir — broken zskills tree"
+    return 0
   fi
 
-  # (3) ${CLAUDE_PLUGIN_ROOT} reachability (#1008 medium gap). The materialised
-  # artifacts above live in the CONSUMER's .claude/, but the live skills/hooks
-  # resolve under ${CLAUDE_PLUGIN_ROOT}. A CLAUDE_PLUGIN_ROOT pointing at a
-  # deleted/empty dir → the plugin "passes" the artifact checks yet has ZERO
-  # functional skills. Assert the two manifests a loaded plugin always carries.
-  # Reached only on the plugin lane (vi_detect_lane returned `plugin`, which
-  # requires CLAUDE_PLUGIN_ROOT set), so a healthy plugin install always has
-  # these — never a false positive.
-  # Resolve the plugin root. Prefer ${CLAUDE_PLUGIN_ROOT} when the env carries
-  # it; otherwise fall back to env-independent self-location from this lib's own
-  # BASH_SOURCE (this lib ships at <plugin-root>/skills/update-zskills/verifiers/,
-  # so dirname/../../.. == <plugin-root>). F2 (#1026): the env var is ABSENT from
-  # a launched/sourced script's env on a real mirror-less plugin consumer, so the
-  # old "empty → FAIL" path false-FAILed a healthy install. This BASH_SOURCE
-  # fallback is consumed ONLY here, and vi_check_plugin is dispatched ONLY after
-  # vi_detect_lane established lane==plugin from the consumer's materialised
-  # sentinels — so it is never reached off the plugin lane.
+  # (1) Plugin root reachable (#1008 medium gap). The live skills/hooks
+  # resolve under the plugin root; a root pointing at a deleted/empty dir
+  # means ZERO functional skills no matter how healthy the project side is.
+  # Prefer ${CLAUDE_PLUGIN_ROOT}; fall back to env-independent self-location
+  # from this lib's own BASH_SOURCE (this lib ships at
+  # <plugin-root>/skills/update-zskills/verifiers/, so dirname/../../.. ==
+  # <plugin-root>). F2 (#1026): the env var is ABSENT from a launched/sourced
+  # script's env on a real mirror-less plugin consumer, so an "empty → FAIL"
+  # path would false-FAIL a healthy install.
   local proot="${CLAUDE_PLUGIN_ROOT:-}"
   if [ -z "$proot" ]; then
     proot="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." 2>/dev/null && pwd)"
   fi
   local pmissing=""
   if [ -z "$proot" ]; then
-    # Defensive: lane==plugin is established AND a BASH_SOURCE fallback exists,
-    # so an empty value here means neither resolved — genuinely broken.
     vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} unset and plugin root unresolvable from BASH_SOURCE"
   else
-    [ -f "$proot/.claude-plugin/plugin.json" ] || pmissing="$pmissing .claude-plugin/plugin.json"
-    [ -f "$proot/hooks/hooks.json" ]           || pmissing="$pmissing hooks/hooks.json"
+    [ -f "$proot/.claude-plugin/plugin.json" ]         || pmissing="$pmissing .claude-plugin/plugin.json"
+    [ -f "$proot/hooks/hooks.json" ]                   || pmissing="$pmissing hooks/hooks.json"
+    [ -f "$proot/skills/update-zskills/SKILL.md" ]     || pmissing="$pmissing skills/update-zskills/SKILL.md"
     if [ -n "$pmissing" ]; then
-      vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT}=$proot missing required plugin file(s):$pmissing"
+      vi_emit FAIL "plugin.root-reachable" "plugin root $proot missing required file(s):$pmissing"
     else
-      vi_emit PASS "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} resolves (.claude-plugin/plugin.json + hooks/hooks.json present)"
+      vi_emit PASS "plugin.root-reachable" "plugin root resolves (manifests + skills tree present)"
     fi
   fi
 
-  # (4) zskills_version recorded (#1124 — WARN, never FAIL). Same rationale as
-  # the legacy lane: after #1124 resolve-repo-version.sh falls back to
-  # .claude-plugin/plugin.json, so a complete clone almost always yields a
-  # version. Absence is abnormal but not install breakage (only the
-  # version-skew nudge is affected) → WARN, not FAIL. The plugin seed config
-  # lives at the consumer's .claude/zskills-config.json (same path as legacy).
-  local pcver
-  pcver="$(vi_config_version "$claude/zskills-config.json")"
-  if [ -n "$pcver" ]; then
-    vi_emit PASS "plugin.version-recorded" "zskills_version recorded: $pcver"
+  # (2) Init markers (lock-LAST pair). init-done is THE initialised signal —
+  # absent (or 0-byte partial, per the predicate) means the one-time setup
+  # has not completed; the gate blocks state-writing skills until it has.
+  #
+  # PRE-LOCK allowance (ZSKILLS_VI_PRE_LOCK=1 — Phase 6b A6 hard gate): when
+  # the init flow itself invokes this verifier at step A6, the markers are
+  # EXPECTED to be absent BY DESIGN (A7 writes them LAST, after A6 passes —
+  # the #394 lock-LAST contract). The init fence sets the env knob so these
+  # two checks report the expected-absent state as PASS-pending instead of
+  # FAIL; every OTHER check still gates at full strength (the knob suppresses
+  # NOTHING else — asserted by the dev suite's anti-hollow cases). Outside
+  # init (the knob unset), absent markers are a genuine FAIL.
+  if zskills_init_done_present "$proj"; then
+    vi_emit PASS "plugin.init-done" "$ZSKILLS_INIT_DONE_REL present (explicit init completed)"
+  elif [ "${ZSKILLS_VI_PRE_LOCK:-0}" = 1 ]; then
+    vi_emit PASS "plugin.init-done" "pre-lock invocation (init A6): $ZSKILLS_INIT_DONE_REL expected absent — written at A7 (lock-LAST)"
   else
-    vi_emit WARN "plugin.version-recorded" "zskills_version absent in .claude/zskills-config.json — after #1124 a complete clone resolves a version (git tag → .claude-plugin/plugin.json); re-run /update-zskills to record it (version-skew nudge stays disabled until then)"
+    vi_emit FAIL "plugin.init-done" "$ZSKILLS_INIT_DONE_REL missing — one-time setup has not run; run /zs:update-zskills"
+  fi
+  if [ -s "$proj/$ZSKILLS_SETUP_CONFIRMED_REL" ]; then
+    vi_emit PASS "plugin.setup-confirmed" "$ZSKILLS_SETUP_CONFIRMED_REL present"
+  elif [ "${ZSKILLS_VI_PRE_LOCK:-0}" = 1 ]; then
+    vi_emit PASS "plugin.setup-confirmed" "pre-lock invocation (init A6): $ZSKILLS_SETUP_CONFIRMED_REL expected absent — written at A7 (lock-LAST)"
+  else
+    vi_emit FAIL "plugin.setup-confirmed" "$ZSKILLS_SETUP_CONFIRMED_REL missing — run /zs:update-zskills"
+  fi
+
+  # (3) Gitignore umbrella effectiveness — the gitignore-first init step's
+  # standing guarantee. check-ignore needs only a PATHNAME, not a file, and
+  # also fails (rc!=0) outside a git work tree — which init itself STOPs on.
+  if git -C "$proj" check-ignore -q .zskills/probe 2>/dev/null; then
+    vi_emit PASS "plugin.gitignore-umbrella" ".zskills/ paths are git-ignored (umbrella entry effective)"
+  else
+    vi_emit FAIL "plugin.gitignore-umbrella" ".zskills/ is NOT effectively git-ignored (missing umbrella entry, a negative override, or not a git repo) — re-run /zs:update-zskills after fixing .gitignore"
+  fi
+
+  # (4) Config VALID-if-present. Zero-config is the designed default (the
+  # cascade supplies built-ins), so ABSENT is a PASS. Present-but-unparsable
+  # (or not a JSON object) silently breaks every config reader → FAIL.
+  local cfg="$claude/zskills-config.json"
+  if [ ! -f "$cfg" ]; then
+    vi_emit PASS "plugin.config-valid" "no .claude/zskills-config.json — zero-config by design (built-in defaults apply)"
+  elif [ -n "$VI_PY" ] \
+       && "$VI_PY" -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(d, dict) else 1)' "$cfg" 2>/dev/null; then
+    vi_emit PASS "plugin.config-valid" ".claude/zskills-config.json present and valid JSON"
+  elif [ -z "$VI_PY" ]; then
+    vi_emit WARN "plugin.config-valid" "config present but no Python 3 to validate it (env.python already FAILed)"
+  else
+    vi_emit FAIL "plugin.config-valid" ".claude/zskills-config.json is not a valid JSON object — fix or remove it (absent = built-in defaults)"
+  fi
+
+  # (5) Rules delivery (selected branch R-b): the SessionStart
+  # session-rules-context.sh hook must be registered in the plugin's
+  # hooks.json, its script present, and the render inputs present (the D24
+  # renderer + the de-parameterized template) — i.e. the rules are
+  # deliverable/renderable every session. Only meaningful when the root
+  # resolved; otherwise (1) already FAILed.
+  if [ -n "$proot" ]; then
+    local rmissing=""
+    if [ -f "$proot/hooks/hooks.json" ] \
+       && grep -q 'session-rules-context\.sh' "$proot/hooks/hooks.json" 2>/dev/null; then
+      :
+    else
+      rmissing="$rmissing hooks.json-registration"
+    fi
+    [ -s "$proot/hooks/session-rules-context.sh" ]   || rmissing="$rmissing hooks/session-rules-context.sh"
+    [ -f "$proot/CLAUDE_TEMPLATE.md" ]               || rmissing="$rmissing CLAUDE_TEMPLATE.md"
+    [ -f "$proot/scripts/render-managed-rules.py" ]  || rmissing="$rmissing scripts/render-managed-rules.py"
+    if [ -n "$rmissing" ]; then
+      vi_emit FAIL "plugin.rules-delivery" "R-b rules delivery broken — missing:$rmissing"
+    else
+      vi_emit PASS "plugin.rules-delivery" "R-b rules delivery in place (SessionStart hook registered + renderable)"
+    fi
+  fi
+
+  # (6) Version currency (WARN, never FAIL — m-class staleness cure). The
+  # init-done `version:` line is the version record for config-less
+  # consumers; nothing re-runs init after a marketplace update, so it goes
+  # stale silently. Compare against the loaded plugin manifest's version.
+  if [ -n "$proot" ] && [ -f "$proot/.claude-plugin/plugin.json" ] \
+     && zskills_init_done_present "$proj"; then
+    local rec_ver plug_ver
+    rec_ver="$(sed -n 's/^version:[[:space:]]*//p' "$proj/$ZSKILLS_INIT_DONE_REL" | head -1)"
+    plug_ver=""
+    if [ -n "$VI_PY" ]; then
+      plug_ver="$("$VI_PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version","") or "")' "$proot/.claude-plugin/plugin.json" 2>/dev/null)"
+    fi
+    if [ -z "$rec_ver" ] || [ -z "$plug_ver" ]; then
+      vi_emit WARN "plugin.version-currency" "version record incomparable (init-done: '${rec_ver:-none}', plugin.json: '${plug_ver:-none}') — run a bare /zs:update-zskills to refresh"
+    elif [ "$rec_ver" = "$plug_ver" ]; then
+      vi_emit PASS "plugin.version-currency" "init-done version matches the loaded plugin ($rec_ver)"
+    else
+      vi_emit WARN "plugin.version-currency" "init-done records $rec_ver but the loaded plugin is $plug_ver — run a bare /zs:update-zskills to refresh the record"
+    fi
+  fi
+
+  # (7) Residual zskills mirror (WARN). A zskills-owned mirror beside the
+  # plugin lane normally collapses to `dual` upstream in vi_detect_lane; this
+  # WARN is the defensive direct-call surface. The cure under the redesign is
+  # uninstall-one-install-the-other: keep the plugin lane by deleting the
+  # .claude/skills/ zskills mirror (+ its settings.json hook registrations),
+  # or keep the legacy lane by uninstalling the plugin. (The retired
+  # lane-switch script must NOT be recommended.)
+  if vi_has_zskills_mirror "$proj"; then
+    vi_emit WARN "plugin.mirror-less" "zskills mirror present under .claude/skills/ on the plugin lane — uninstall one lane (remove the mirror, or uninstall the plugin); dual install is unsupported"
+  else
+    vi_emit PASS "plugin.mirror-less" "no zskills mirror under .claude/skills/ (mirror-less plugin install)"
   fi
 }
 
@@ -661,11 +734,11 @@ vi_run_cheap() {
       vi_check_legacy "$proj"
       ;;
     dual)
-      vi_emit FAIL "lane.dual-unsupported" "dual install (plugin + legacy mirror) is NOT a supported client state — run scripts/switch-install-path.sh"
+      vi_emit FAIL "lane.dual-unsupported" "dual install (plugin + legacy mirror) is NOT a supported client state — a client is single-lane: uninstall one lane and reinstall the other (see the install guide)"
       vi_check_legacy "$proj"
       ;;
     none)
-      vi_emit FAIL "lane.none" "no zskills install detected (no materialised plugin artifacts, no zskills mirror + no zskills settings.json hooks)"
+      vi_emit FAIL "lane.none" "no zskills install detected (no plugin env/init-done marker, no zskills mirror + no zskills settings.json hooks)"
       ;;
   esac
 }

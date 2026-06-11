@@ -20,6 +20,8 @@
 
 Run with no arguments, it figures out which case you're in. If nothing is installed yet, it does a full first-time install. If Z Skills are already present, it pulls the latest versions, updates any skills that changed, and fills in anything new that's missing. Either way it starts by auditing what's currently on disk and prints a report of what it found before changing anything — so you always see the gap analysis first. The audit itself never modifies files.
 
+On the **plugin install** (`/zs:update-zskills`), a bare run is the one-time **init** instead: it adds a `.zskills/` line to your `.gitignore`, offers an optional project config, cleans up any leftovers from older plugin versions, verifies the install, and records setup as done (a gitignored `.zskills/init-done` marker). Skills, hooks, and rules stay plugin-managed — nothing is copied into your repo. Once initialised, later bare runs re-verify the install and refresh the recorded version.
+
 On a first install it asks one question: how you want changes to land — directly to `main`, via cherry-pick from a worktree, or as pull requests on a protected `main`. Your answer is saved to `.claude/zskills-config.json` and drives the landing behavior of the execution skills from then on. On later runs it respects the config that's already there and does not re-ask.
 
 After it finishes, it reports what it installed or updated and a one-line version summary comparing your installed version against the latest available, including how many skills changed. The config file and the installed skills are the artifacts; there's no separate report file to read.
@@ -27,7 +29,7 @@ After it finishes, it reports what it installed or updated and a one-line versio
 ## Usage
 
 ```
-/update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
+/update-zskills [install | --rerender | --migrate-paths]
                 [cherry-pick | locked-main-pr | direct]
 ```
 
@@ -60,7 +62,6 @@ These can be combined: a mode token and a landing keyword are independent and ma
 | `install` | No | Force a full first-time setup, skipping the detect-what's-installed step |
 | `--rerender` | No | Regenerate `.claude/rules/zskills/managed.md` from the current config only — no audit, no pull, no hook or script changes; never touches your root `./CLAUDE.md` |
 | `--migrate-paths` | No | One-time move of legacy artifacts into the standard layout (plan files under `docs/plans/`, issue trackers under `docs/issues/`, reports under `.zskills/audit/`); runs once and refuses to repeat |
-| `--switch-install-path={to-plugin\|to-update-zskills}` | No | Move a project between the two ways of consuming Z Skills, preserving its config and trackers; runs once per direction and is a no-op if already there |
 | `cherry-pick` | No | Set landing to cherry-pick from a worktree onto an unprotected `main` |
 | `locked-main-pr` | No | Set landing to pull requests on a protected `main` |
 | `direct` | No | Set landing to direct commits on an unprotected `main` |
@@ -93,3 +94,4 @@ The three landing keywords (`cherry-pick`, `locked-main-pr`, `direct`) are mutua
 - A bare landing keyword (`/update-zskills cherry-pick`) is a pure landing-mode switch — it changes only the two landing fields and does not pull or update skills.
 - `--migrate-paths` runs once. It refuses to repeat after it has migrated, so re-running it is safe and does nothing.
 - On a first install you'll be asked once how changes should land; on later runs it respects the config already on disk and won't re-ask.
+- There is no in-place lane switch: to move between the plugin install and the `/update-zskills` install, uninstall one and install the other (see the install guide's "Switching installs"). `/update-zskills install` refuses to run on a plugin-lane project so the two can't pile up.

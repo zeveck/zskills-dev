@@ -88,7 +88,9 @@ WT="$WORK/agent-feat-diverged"
   git commit -q -m "post-merge commit (simulates divergence after PR merge)"
 )
 
-# Write a .landed marker indicating a PR was opened+merged.
+# Write a LEGACY root .landed marker indicating a PR was opened+merged.
+# (Deliberately the OLD path: pre-Phase-8 worktrees carry it there for
+# their whole lifetime — briefing must keep reading it via dual-read.)
 cat > "$WT/.landed" <<LANDED
 status: pr-ready
 pr: 9999

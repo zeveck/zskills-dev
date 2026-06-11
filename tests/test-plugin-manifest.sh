@@ -12,7 +12,12 @@
 #   - the zs `skills` field is exactly ["./skills/"] and there is NO `hooks`
 #     field (the standard hooks/hooks.json is auto-loaded by Claude Code from
 #     the plugin root — a manifest `hooks` reference to it causes a
-#     duplicate-hooks load error); NO `agents` field.
+#     duplicate-hooks load error); NO `agents` field (INSTALL_REDESIGN
+#     Phase 1 claim-1 probe: `claude plugin validate` REJECTS the field
+#     (rc=1 "agents: Invalid input") AND it breaks agent load — the root
+#     agents/ dir is auto-loaded, the manifest must never name it);
+#   - tree shape (1A): agents/verifier.md + agents/implementer.md exist at
+#     the plugin root (the auto-loaded plugin-native agent sources).
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -75,9 +80,10 @@ if zs is not None:
 if zs is not None:
     out("dependencies" not in zs, "zs: dependencies ABSENT", repr(zs.get("dependencies")))
 
-# ---- agents field absent (D11) ----
+# ---- agents field absent (D11 surviving leg; Phase-1 claim-1 confirmed:
+# ---- validate-rejects AND breaks agent load — auto-load dir only) ----
 if zs is not None:
-    out("agents" not in zs, "zs: no 'agents' field (D11)")
+    out("agents" not in zs, "zs: no 'agents' field (D11 / Phase-1 claim-1)")
 
 # ---- zs skills + hooks ----
 if zs is not None:
@@ -97,6 +103,21 @@ while IFS=$'\t' read -r tag label detail; do
     fail "$label ${detail:+— $detail}"
   fi
 done <<< "$RESULT"
+
+# ---- tree shape (INSTALL_REDESIGN Phase 2, branch 1A) ----
+# The plugin-native verifier/implementer agents are checked-in root agents/
+# files, auto-loaded from the plugin root (companion to the no-'agents'-field
+# assertion above). Missing files here mean the plugin lane cannot dispatch
+# verifier/implementer mirror-lessly.
+echo ""
+echo "=== plugin tree shape (1A root agents/) ==="
+for a in verifier implementer; do
+  if [ -f "agents/$a.md" ]; then
+    pass "agents/$a.md present at plugin root"
+  else
+    fail "agents/$a.md MISSING at plugin root (1A plugin-native agent source)"
+  fi
+done
 
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed (of $((PASS_COUNT + FAIL_COUNT)))"

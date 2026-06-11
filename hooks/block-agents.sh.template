@@ -1,7 +1,15 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # Block Agent (subagent) dispatches that use a model below agents.min_model.
 # Registered under the Agent PreToolUse matcher in .claude/settings.json.
+#
+# CONFIG-CASCADE CARVE-OUT (INSTALL_REDESIGN Phase 5, deliberate): this
+# hook reads agents.min_model from the PROJECT config ONLY — it does NOT
+# participate in the project > user > built-ins cascade. This is a SAFETY
+# setting: letting a user-level ~/.claude/zskills-config.json silently
+# lower a project's model floor would invert the trust direction (a
+# per-user file overriding a per-repo discipline). The existing fail-open
+# defaults are unchanged.
 #
 # Ordinal: haiku=1, sonnet=2, opus=3, unknown=0 (always pass — future model families)
 #

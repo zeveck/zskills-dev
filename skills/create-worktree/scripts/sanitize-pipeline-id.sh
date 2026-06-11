@@ -1,6 +1,6 @@
 #!/bin/bash
 # sanitize-pipeline-id.sh — sanitizes PIPELINE_ID input to [a-zA-Z0-9._-]+
-# Used by writers before persisting PIPELINE_ID to disk / .zskills-tracked / transcript.
+# Used by writers before persisting PIPELINE_ID to disk / .zskills/tracked / transcript.
 # Usage:   sanitized=$(bash $(basename "$0") "<raw>")
 # OR source and call the function:
 #   source $(basename "$0")

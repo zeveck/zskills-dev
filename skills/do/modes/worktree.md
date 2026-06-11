@@ -63,7 +63,7 @@ rc=0
 # (branches from user's HEAD, not origin/main).
 # --pipeline-id passes the canonical /do pipeline ID explicitly (no env
 # var reliance; the script sanitizes internally and writes
-# .zskills-tracked).
+# .zskills/tracked).
 # No --root: worktree lives under $WORKTREE_ROOT (default /tmp/) with the
 # standard ${PROJECT_NAME}-${PREFIX}-${SLUG} layout. This makes /do's
 # placement consistent with every other worktree-creating skill and works

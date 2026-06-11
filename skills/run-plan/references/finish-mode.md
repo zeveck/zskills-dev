@@ -76,7 +76,7 @@ After Phase 6 (land) succeeds for the current phase AND
 ### PR-mode branching for next-phase cron
 
 Do NOT poll `gh pr view --json state` inside the cron turn. Instead,
-Phase 5c reads the just-written `.landed` status file (written at landing
+Phase 5c reads the just-written `.zskills/landed` status file (written at landing
 time):
 
 - `status: landed` → schedule next-phase cron, exit.
@@ -86,7 +86,7 @@ time):
   re-attempt the PR-state poll via Phase 6.
 - `status: conflict` or `pr-failed` → invoke Failure Protocol. Do not
   schedule next cron.
-- In cherry-pick / direct mode, the land event is synchronous (`.landed`
+- In cherry-pick / direct mode, the land event is synchronous (`.zskills/landed`
   written immediately) and next-phase cron schedules directly.
 
 ### User Verify items in chunked mode

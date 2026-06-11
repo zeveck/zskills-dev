@@ -2,7 +2,7 @@
 # tests/test-synthetic-consumer-install.sh
 #
 # PLUGIN_LANE_VERIFICATION Phase 3 — Synthetic-consumer legacy-installer
-# migration (D27 dual-install).
+# end-to-end.
 #
 # Net-new END-TO-END coverage: bootstrap a throwaway consumer repo in a
 # mktemp sandbox and run the legacy `/update-zskills` install flow into it
@@ -27,13 +27,11 @@
 #   install.sh — no standalone installer exists; the legacy flow is SKILL.md
 #   prose.
 #
-# SCOPE (review F3): dual-install DETECTION + materialiser-declines-to-clobber
-#   is ALREADY covered by tests/test-sessionstart-dual-install-detect.sh case
-#   4 (dual → detect==dual; materialiser EXITS EARLY, no clobber). This file
-#   does NOT re-assert detection — it scopes to the installer run, plus one
-#   static cross-reference guard that the redundancy still holds, plus a
-#   regression assertion on the two materialiser dual-install WARN sites
-#   (rough-edge (b), resolved by #831).
+# SCOPE: this file scopes to the legacy installer run end-to-end. (The D27
+#   dual-install detection probe, the SessionStart materialiser, and their
+#   WARN-site assertions were deleted in INSTALL_REDESIGN Phase 7 —
+#   subject-removal; lane handling now lives in detect-install-state.sh's
+#   surviving callers and the explicit /zs:update-zskills init.)
 #
 # Sandbox-only: never runs the installer against the real repo or real $HOME.
 # A throwaway consumer + settings.json are synthesized inside $TMP.
@@ -264,18 +262,9 @@ CONFIG
 
 echo "=== synthetic-consumer legacy install (end-to-end) ==="
 
-# ── Redundancy guard (F3): assert the dual-install no-clobber contract is
-#    still covered by the existing detect test, so this phase legitimately
-#    does NOT duplicate detection. Static cross-reference — if case 4 is ever
-#    removed/renamed, this fails and forces a re-evaluation of the scope split.
-DETECT_TEST="$REPO_ROOT/tests/test-sessionstart-dual-install-detect.sh"
-if [ -f "$DETECT_TEST" ] \
-   && grep -q 'lane=dual detected' "$DETECT_TEST" \
-   && grep -q 'dual: materialiser exits early (no clobber)' "$DETECT_TEST"; then
-  pass "0. redundancy guard: dual no-clobber covered by test-sessionstart-dual-install-detect.sh case 4"
-else
-  fail "0. redundancy guard" "dual no-clobber case missing from $DETECT_TEST (scope split invalid)"
-fi
+# (The former case 0 — a static cross-reference into
+# test-sessionstart-dual-install-detect.sh — was deleted in INSTALL_REDESIGN
+# Phase 7 together with that suite: D27 subject-removal.)
 
 # ── Build sandbox portable + consumer ──────────────────────────────────────
 PORTABLE="$(make_portable)"
@@ -432,49 +421,10 @@ else
   fail "7. surgical merge preservation" "foreign keys/hook lost OR zskills hooks not added"
 fi
 
-# ──────────────────────────────────────────────────────────────────────────
-# Regression assertion (rough-edge (b), RESOLVED by #831): the two
-# materialiser dual-install WARN sites must STAY CONSISTENT — both reference
-# scripts/switch-install-path.sh with the (--to-plugin / --to-update-zskills)
-# guidance. The shim's separate version-skew WARN (a DIFFERENT hook /
-# condition) is deliberately NOT included.
-# ──────────────────────────────────────────────────────────────────────────
-echo ""
-echo "=== regression: materialiser dual-install WARN-site consistency ==="
-MAT="$REPO_ROOT/hooks/session-start-materialise.sh"
-
-# The two dual-install WARN sites are the lines emitted from the
-# `update-zskills)` and `dual)` arms — both echo to stderr and both must
-# point at switch-install-path.sh. Grep the landmark text, not line numbers.
-warn_lines=$(grep -n 'Dual install is not a supported client state' "$MAT" || true)
-warn_count=$(printf '%s\n' "$warn_lines" | grep -c 'Dual install is not a supported client state' || true)
-
-if [ "$warn_count" -eq 2 ]; then
-  pass "8a. exactly 2 materialiser dual-install WARN sites present"
-else
-  fail "8a. WARN-site count" "expected 2 'Dual install is not a supported client state' lines, got $warn_count"
-fi
-
-# Both WARN sites must reference switch-install-path.sh with both directions.
-both_ref_switch=$(printf '%s\n' "$warn_lines" \
-  | grep -c 'switch-install-path.sh' || true)
-if [ "$both_ref_switch" -eq 2 ]; then
-  pass "8b. both WARN sites reference scripts/switch-install-path.sh (consistent)"
-else
-  fail "8b. WARN-site switch-install-path consistency" \
-    "expected both 2 WARN lines to mention switch-install-path.sh, got $both_ref_switch"
-fi
-
-# Each WARN site mentions both switch directions (--to-plugin AND
-# --to-update-zskills) so the guidance is symmetric and stays in sync.
-to_plugin_ct=$(printf '%s\n' "$warn_lines" | grep -c -- '--to-plugin' || true)
-to_uz_ct=$(printf '%s\n' "$warn_lines" | grep -c -- '--to-update-zskills' || true)
-if [ "$to_plugin_ct" -eq 2 ] && [ "$to_uz_ct" -eq 2 ]; then
-  pass "8c. both WARN sites name both switch directions (--to-plugin AND --to-update-zskills)"
-else
-  fail "8c. WARN-site direction symmetry" \
-    "expected both lines to name both directions; --to-plugin=$to_plugin_ct --to-update-zskills=$to_uz_ct"
-fi
+# (The former cases 8a–8c — the materialiser dual-install WARN-site
+# consistency regression — were deleted in INSTALL_REDESIGN Phase 7:
+# subject-removal; both the materialiser and the lane-switch script are
+# gone, so the WARN sites they pinned no longer exist.)
 
 # ── Sandbox-isolation self-check: the real repo's settings.json (if any) and
 #    the real ~/.claude were never touched by this run. ──────────────────────

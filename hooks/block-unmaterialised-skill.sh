@@ -1,40 +1,60 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.2
-# block-unmaterialised-skill.sh — UserPromptExpansion gate (#1128).
+# zskills-hook-version: 2026.06.10
+# block-unmaterialised-skill.sh — UserPromptExpansion init-gate
+# (#1128, re-keyed by INSTALL_REDESIGN Phase 6b).
 #
 # PLUGIN-LANE-ONLY. Registered solely in hooks/hooks.json under the
 # UserPromptExpansion event (NO matcher — fires for the whole event and
 # self-filters on command_name). There is intentionally NO .claude/hooks/
-# mirror and NO .claude/settings.json sibling: the half-installed problem
-# this closes is plugin-lane-only (the /update-zskills lane materialises at
-# install time, so a /update-zskills consumer is never half-installed).
+# mirror and NO .claude/settings.json sibling: the half-set-up problem this
+# closes is plugin-lane-only (the /update-zskills lane installs everything at
+# install time, so a /update-zskills consumer is never half-set-up).
 #
-# The faceplant this closes: a user does `/plugin install zs@zskills` ->
-# `/reload-plugins` and the skills + hooks load, but the SessionStart
-# materialiser has NOT run yet (it only fires on `/clear` or a full restart),
-# so the 5 consumer-side artifacts are not on disk. Skills "largely work" in
-# a broken, unreliable way. UserPromptExpansion fires on EVERY `/zs:` slash
-# command BEFORE the skill runs and can deterministically block it — unlike
-# the superseded PreToolUse init-gate (#1121), which keyed on a Bash command
-# sourcing zskills-resolve-config.sh and leaked when a skill short-circuited
-# past the resolver (confirmed live: /zs:session-report).
+# The faceplant this closes: a plugin consumer loads zskills but has not run
+# the ONE-TIME explicit setup (`/zs:update-zskills` — the Phase 6a init that
+# verifies the `.zskills/` gitignore umbrella and writes the init markers
+# lock-LAST). State-WRITING skills would then scatter `.zskills/` runtime
+# state into an unprepared repo. UserPromptExpansion fires on EVERY `/zs:`
+# slash command BEFORE the skill runs and can deterministically block it —
+# unlike the superseded PreToolUse init-gate (#1121), which leaked when a
+# skill short-circuited past the resolver (confirmed live:
+# /zs:session-report).
 #
-# Block condition:
-#   command_name matches ^zs:               (a zskills plugin slash command)
-#   AND command_name != zs:update-zskills   (update-zskills is the CURE; never block it)
-#   AND the materialiser sentinel is ABSENT (NOT materialized — see below)
-# `^zs:` only — every shipped skill expands under the zs plugin namespace.
+# Decision tree (#1121→#1128: deterministic per-invocation; cure exempt):
+#   command_name !~ ^zs:            -> allow (not a zskills plugin command)
+#   command_name == zs:update-zskills -> allow (the CURE; never block it)
+#   skill in the ALLOW-LIST below    -> allow (read-only; safe pre-init)
+#   legacy mirror present            -> allow (detect-install-state.sh lane
+#                                       update-zskills/dual — a mirrored repo
+#                                       is initialised by definition; keeps
+#                                       dogfood + dual-load working with no
+#                                       magic init-done marker)
+#   init-done present                -> allow (zskills_init_done_present(),
+#                                       sourced from init-state.sh — the
+#                                       #1132 single path definition)
+#   else                             -> BLOCK with the one-time-setup pointer
 #
-# NOT materialized iff $CLAUDE_PROJECT_DIR/.claude/agents/verifier.md is absent
-# OR its first 3 lines lack the D20(a) materialiser sentinel prefix
-# `zskills-materialised:` — the SAME signal the removed PreToolUse gate used /
-# detect-install-state.sh reads. The materialiser writes the sentinel to
-# .claude/agents/verifier.md (session-start-materialise.sh:296), so this gate
-# MUST read that same path; reading the bare .claude/verifier.md made the
-# "materialised -> allow" branch unreachable on a real install (#1132).
+# The allow/block categorization is the settled Phase 6b shape: ONLY the
+# allow-list gates (everything unlisted is blocked pre-init — a NEW skill
+# fails safe to blocked). The block-acknowledged list below is NOT read by
+# the gate logic; it exists so the conformance tripwire
+# (tests/test-skill-conformance.sh "Gate allow/block-list tripwire") can
+# assert every shipped skill was CONSCIOUSLY categorized — a read-only new
+# skill silently blocking pre-init would otherwise ship with no signal.
 #
 # On block: emit a single-line ASCII reason (no quotes or newlines — they
 # break the JSON envelope), exit 0. Else exit 0 with no output.
+
+# ── Gate categorization (conformance tripwire reads BOTH lists) ────────────
+# ALLOW: read-only skills — they write no project state (no markers, no
+# branches, no audit files) and are safe before the one-time setup.
+# update-zskills is the cure (also exempted explicitly above the list check).
+ZSKILLS_GATE_ALLOW="briefing manual-testing plans session-report update-zskills"
+# BLOCK-ACKNOWLEDGED: every other shipped skill, each consciously
+# categorized as state-writing (markers, worktrees/branches, commits, audit
+# files, monitor state). NOT consumed by the gate logic — unlisted skills
+# are blocked anyway (fails safe); this list only feeds the CI tripwire.
+ZSKILLS_GATE_BLOCK_ACK="cleanup-merged commit create-worktree do draft-plan draft-tests fix-issues fix-report investigate land-pr qe-audit refine-plan research-and-go research-and-plan run-plan verify-changes work-on-plans zskills-dashboard"
 
 INPUT=$(cat)
 
@@ -78,21 +98,56 @@ esac
 # update-zskills is the CURE — never block it.
 [ "$CMD_NAME" = "zs:update-zskills" ] && exit 0
 
-# Materialised iff verifier.md carries the materialiser sentinel in its first
-# 3 lines. Resolve the project dir the standard way (CLAUDE_PROJECT_DIR is set
-# in hook subprocesses; fall back to pwd defensively). Windows-portable: no
+# Allow-list: read-only skills pass pre-init.
+SKILL_NAME="${CMD_NAME#zs:}"
+case " $ZSKILLS_GATE_ALLOW " in
+  *" $SKILL_NAME "*) exit 0 ;;
+esac
+
+# Resolve the project dir the standard way (CLAUDE_PROJECT_DIR is set in
+# hook subprocesses; fall back to pwd defensively). Windows-portable: no
 # /tmp, paths via $CLAUDE_PROJECT_DIR.
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-# Canonical materialiser sentinel path — MUST match the dest the materialiser
-# writes (session-start-materialise.sh:296 -> .claude/agents/verifier.md) and
-# the path detect-install-state.sh reads. See #1132.
-ARTIFACT="$PROJ/.claude/agents/verifier.md"
-if [ -f "$ARTIFACT" ] && head -n 3 "$ARTIFACT" 2>/dev/null | grep -Eq '^(#|<!--)[[:space:]]+zskills-materialised:[[:space:]]'; then
-  # Materialized -> allow.
+
+# Plugin root via BASH_SOURCE self-location (#1046–48): this hook lives at
+# <plugin-root>/hooks/, so the root is the parent dir. Fall back to the
+# harness env var defensively.
+PLUGIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+[ -n "$PLUGIN" ] || PLUGIN="${CLAUDE_PLUGIN_ROOT:-}"
+
+# ── Legacy-mirror allow ─────────────────────────────────────────────────────
+# When the legacy /update-zskills mirror is present, the repo is initialised
+# by definition (mirror install IS the legacy setup). Call the canonical
+# detector (its 23-name zskills-skill anchor evidence) — never re-implement
+# it. Lanes update-zskills and dual both mean "mirror present" -> allow.
+# This is what keeps the dogfood repo (--plugin-dir + mirror) working with
+# no .zskills/init-done. If the detect lib is missing the plugin tree is
+# broken — fall through to the marker check rather than allow blindly.
+if [ -n "$PLUGIN" ] && [ -f "$PLUGIN/hooks/_lib/detect-install-state.sh" ]; then
+  . "$PLUGIN/hooks/_lib/detect-install-state.sh"
+  case "$(detect_install_state "$PROJ")" in
+    update-zskills|dual) exit 0 ;;
+  esac
+fi
+
+# ── Init-done predicate (#1132 single path definition) ──────────────────────
+# Source init-state.sh — THE one definition of the marker path + presence
+# predicate (the same file the Step 0.7 init writer and every fixture
+# source). Plugin-root env form first, BASH_SOURCE self-location fallback.
+if [ -f "${CLAUDE_PLUGIN_ROOT:-}/skills/update-zskills/scripts/init-state.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/init-state.sh"
+elif [ -n "$PLUGIN" ] && [ -f "$PLUGIN/skills/update-zskills/scripts/init-state.sh" ]; then
+  . "$PLUGIN/skills/update-zskills/scripts/init-state.sh"
+fi
+
+if command -v zskills_init_done_present >/dev/null 2>&1 \
+   && zskills_init_done_present "$PROJ"; then
+  # Initialised -> allow.
   exit 0
 fi
 
-# NOT materialized -> block.
+# NOT initialised (or init-state.sh unresolvable = broken tree) -> block.
+# The cure command is named verbatim; the message is one ASCII line.
 printf '{"decision":"block","reason":"%s"}' \
-  "zskills isn't finished installing -- restart Claude Code (or /clear) to finish setup, then run /update-zskills."
+  "zskills needs one-time setup -- run /zs:update-zskills, then re-run your command."
 exit 0

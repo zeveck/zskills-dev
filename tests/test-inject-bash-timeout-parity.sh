@@ -3,15 +3,16 @@
 #
 # Phase 2 (D11, A3) — Layer 0 of the verifier-cannot-run defense survives in
 # BOTH install lanes. The /update-zskills lane installs
-# inject-bash-timeout.sh into .claude/hooks/; the plugin lane ships it under
-# hooks/ and materialises it (W2.1) into the same destination. Both copies
-# must be the SAME script.
+# inject-bash-timeout.sh into .claude/hooks/ (frontmatter delivery); the
+# plugin lane ships it under hooks/ and registers it in hooks.json
+# (PreToolUse/Bash, T-A). Both copies must be the SAME script.
 #
 # This parity test asserts the source-tree hooks/inject-bash-timeout.sh and
-# the mirror .claude/hooks/inject-bash-timeout.sh are byte-equal, AND that
-# the materialiser's sentinelled copy is byte-equal modulo the leading
-# sentinel line. If the two ever drift, one lane runs a different Layer 0
-# hook than the other.
+# the mirror .claude/hooks/inject-bash-timeout.sh are byte-equal. If the two
+# ever drift, one lane runs a different Layer 0 hook than the other. (The
+# former sentinelled-copy half — the materialised .claude/hooks/ copy
+# comparison — was a subject-removal: the SessionStart materialiser was
+# deleted in INSTALL_REDESIGN Phase 7.)
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

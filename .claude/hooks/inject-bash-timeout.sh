@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.2
-# inject-bash-timeout.sh — PreToolUse hook for Bash (verifier subagent).
+# zskills-hook-version: 2026.06.9
+# inject-bash-timeout.sh — PreToolUse hook for Bash (verifier/implementer).
 #
 # Layer 0 of the VERIFIER_AGENT_FIX D'' architecture. Ensures `timeout` is at
 # least 600000 ms (10 minutes) on every Bash call so test-suite invocations
@@ -8,8 +8,33 @@
 # cause of the bg+Monitor recovery reflex that hung verifier dispatches
 # (see plans/VERIFIER_AGENT_FIX.md).
 #
+# Delivery (INSTALL_REDESIGN Phase 2, branch T-A) — the SAME byte-identical
+# script serves BOTH lanes:
+#   - Legacy /update-zskills lane: declared in the verifier/implementer
+#     agent FRONTMATTER (.claude/agents/{verifier,implementer}.md), invoking
+#     $CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh. That stdin
+#     carries NO agent-identity field — absent identity ⇒ EXTEND below, which
+#     is exactly right: a frontmatter-declared call IS a verifier/implementer
+#     call by construction.
+#   - Plugin lane: registered in hooks/hooks.json (PreToolUse/Bash), invoking
+#     ${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh. hooks.json hooks
+#     fire on EVERY Bash call (orchestrator + every subagent) and the stdin
+#     envelope carries a top-level `agent_type` on subagent calls (Phase 1
+#     claim-2 finding: bare name for project agents, PLUGIN-SCOPED, e.g.
+#     `zs:verifier`, for plugin agents; ABSENT on orchestrator main-thread
+#     calls). The T-A identity filter below extends {verifier, implementer}
+#     (matched by basename, so both `verifier` and `zs:verifier` forms pass),
+#     passes FOREIGN agents through unmodified, and extends identity-less
+#     calls (orchestrator widening = accepted T-B-equivalent semantics; the
+#     legacy frontmatter path rides the same absent⇒EXTEND rule).
+#   On a dual-delivery consumer (frontmatter AND hooks.json both firing for
+#   one Bash call) the double-fire is idempotent: setting timeout=600000
+#   twice produces the same envelope.
+#
 # Reads the full PreToolUse JSON envelope from stdin. If the embedded
 # `tool_input.timeout` is already >= 600000, allow as-is (no `updatedInput`).
+# If a top-level `agent_type` names a FOREIGN agent (basename not in
+# {verifier, implementer}), allow as-is (pass through, no `updatedInput`).
 # Otherwise return permissionDecision=allow with `updatedInput` preserving
 # all original tool_input fields and setting `timeout: 600000`.
 #
@@ -30,6 +55,13 @@
 # hook usable from both the live harness and direct unit tests.
 
 set -u
+
+# D16(a) conditional-skip shim — defers to a settings.json-registered
+# same-basename sibling on a dual-lane consumer. The legacy lane delivers
+# this script via agent FRONTMATTER (never settings.json), so the shim
+# no-ops there; sourcing it keeps the "every hooks.json hook sources the
+# shim" integrity gate (test-plugin-hooks-integrity.sh Gap 2) exclusion-free.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 # zskills_resolve_python — print path to a working Python 3 interpreter, or
 # empty if none. Probe-RUNS each candidate (existence is NOT enough: on Windows
@@ -89,12 +121,34 @@ try:
 except Exception:
     sys.stdout.write("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}")
     sys.exit(0)
+agent_type = None
 if isinstance(env, dict) and isinstance(env.get("tool_input"), dict):
     tool_input = env["tool_input"]
+    # Identity lives at the TOP LEVEL of the full harness envelope (Phase 1
+    # claim-2 finding), never inside tool_input. Only read it from the full
+    # envelope shape; the bare tool_input shape is by construction a direct
+    # unit-test / frontmatter-style call with no identity (absent => extend).
+    agent_type = env.get("agent_type")
 elif isinstance(env, dict):
     tool_input = env
 else:
     tool_input = {}
+# T-A identity filter (INSTALL_REDESIGN Phase 2):
+#   absent / non-string  => EXTEND (orchestrator main-thread calls carry no
+#                           agent_type — accepted T-B-equivalent widening —
+#                           and the legacy frontmatter path is identity-less
+#                           by construction);
+#   basename in {verifier, implementer} => EXTEND (accepts both bare
+#                           `verifier` and plugin-scoped `zs:verifier` forms
+#                           — marketplace installs scope the value);
+#   anything else        => PASS THROUGH (bare allow, no updatedInput): a
+#                           foreign subagent keeps its own timeout semantics.
+# Parsed from JSON (not regex) so a `command` string that merely CONTAINS
+# an agent_type literal can never confuse the filter.
+if isinstance(agent_type, str) and agent_type:
+    if agent_type.rsplit(":", 1)[-1] not in ("verifier", "implementer"):
+        sys.stdout.write("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}")
+        sys.exit(0)
 updated = dict(tool_input)
 updated["timeout"] = min_timeout
 out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", "updatedInput": updated}}

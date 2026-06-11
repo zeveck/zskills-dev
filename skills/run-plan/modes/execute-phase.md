@@ -74,7 +74,7 @@ When `LANDING_MODE` is `direct`:
 - Agent works directly on main (current working directory)
 - `### Execution: direct` in phase text is the recognized directive
 - Phase 6: no-op (work is already on main, nothing to land)
-- `.landed` marker: not written (no worktree to mark)
+- `.zskills/landed` marker: not written (no worktree to mark)
 
 **Validation (already checked in argument detection):** `direct` + `main_protected: true` -> error before dispatch.
 
@@ -139,7 +139,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    # branch cp-${CP_SLUG} (unified across modes — used by post-run-invariants.sh).
    # The --allow-resume flag is required because in finish/finish-auto modes
    # the same branch (cp-${PLAN_SLUG}) is reused across phases.
-   # Pre-flight prune+fetch+ff-merge, .zskills-tracked write, and .worktreepurpose
+   # Pre-flight prune+fetch+ff-merge, .zskills/tracked write, and .zskills/worktreepurpose
    # write are all owned by the script; do NOT duplicate them here.
    ```
 
@@ -178,7 +178,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    ```
 
    **Hygiene constraint — NEVER commit ephemeral pipeline files.** The
-   files `.worktreepurpose`, `.zskills-tracked`, and `.landed` are worktree
+   files `.zskills/worktreepurpose`, `.zskills/tracked`, and `.zskills/landed` are worktree
    lifecycle markers and must stay UNTRACKED throughout the run.
 
    Test output lives OUTSIDE the worktree, at `/tmp/zskills-tests/<worktree-
@@ -196,7 +196,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    worktree that has any of them tracked — a staged-delete left over
    from a commit would block `git worktree remove` and leak zombies.
 
-   **Failed-run cleanup:** If a phase fails terminally, write `.landed` with
+   **Failed-run cleanup:** If a phase fails terminally, write `.zskills/landed` with
    `status: failed` in the worktree before invoking the Failure Protocol. The
    cron preamble runs `git worktree prune` to clean up stale entries from
    container restarts or crashed runs.
@@ -246,9 +246,10 @@ agent hasn't returned after 2 hours, declare it **failed**:
      This echo is read by the tracking hook from the session transcript to
      scope marker checks to this pipeline. Uses last-match so re-invocations
      in the same session work correctly.
-   - **Before dispatching any worktree agent**, write `.zskills-tracked` in the worktree:
+   - **Before dispatching any worktree agent**, write `.zskills/tracked` in the worktree:
      ```bash
-     printf '%s\n' "run-plan.$TRACKING_ID" > "<worktree-path>/.zskills-tracked"
+     mkdir -p "<worktree-path>/.zskills"
+     printf '%s\n' "run-plan.$TRACKING_ID" > "<worktree-path>/.zskills/tracked"
      ```
      Where `$TRACKING_ID` is the plan slug (e.g., `thermal-domain`). This file associates the worktree agent with this pipeline for hook enforcement.
    - **Rebase onto current main before final commit:**
@@ -400,8 +401,8 @@ else
 fi
 # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
 # underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
-# --allow-resume), .zskills-tracked (from --pipeline-id), and
-# .worktreepurpose writes.
+# --allow-resume), .zskills/tracked (from --pipeline-id), and
+# .zskills/worktreepurpose writes.
 ```
 
 **One branch per plan.** All phases accumulate on the same branch. The worktree
@@ -533,7 +534,7 @@ are the most common source of time waste.
 
 ### Delegate mode verification
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"` (same agent definition as worktree mode — `.claude/agents/verifier.md`). The Layer 3 invocation block (`### Failure Protocol — verifier response validation` below) applies identically: pipe the verifier's response through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"` immediately after the dispatch returns; on `VALIDATE_EXIT=1` OR 45-min timeout, emit the verbatim STOP message and halt the pipeline.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"` (same agent definition as worktree mode — `.claude/agents/verifier.md`). The Layer 3 invocation block (`### Failure Protocol — verifier response validation` below) applies identically: pipe the verifier's response through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"` immediately after the dispatch returns; on `VALIDATE_EXIT=1` OR 45-min timeout, emit the verbatim STOP message and halt the pipeline.
 
 If this phase used delegate execution, verification runs on **main**:
 
@@ -738,11 +739,19 @@ Include this VERBATIM in the verifier dispatch prompt:
 **Detection runs immediately after the verifier `Agent` dispatch returns**, before any tracker write or commit:
 
 ```bash
-printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+# Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane prelude,
+# references/canonical-config-prelude.md §1.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
 VALIDATE_EXIT=$?
 ```
 
-The script (sourced from `hooks/verify-response-validate.sh` at zskills source; installed by `/update-zskills` Step C) checks:
+The script (skill-bundled at `skills/update-zskills/scripts/verify-response-validate.sh` in the zskills source; delivered via the skills tree on both lanes and resolved through `$ZSKILLS_SKILLS_ROOT`) checks:
 - **Stalled-string trigger** — case-insensitive substring match of any of 7 whitelisted phrases against the LAST 10 LINES of the response (`let me wait for the monitor`, `tests are running. let me wait`, `monitor will signal`, `monitor to signal`, `still searching. let me wait`, `waiting on bashoutput`, `polling bashoutput`).
 - **Min-byte threshold** — response < 200 bytes is treated as empty/stub.
 
@@ -1787,9 +1796,9 @@ for N in "${ISSUE_NUMS[@]}"; do
 done
 ```
 
-Remove the worktree's `.zskills-tracked` to avoid associating future agents with a dead pipeline:
+Remove the worktree's `.zskills/tracked` to avoid associating future agents with a dead pipeline:
 ```bash
-rm -f "<worktree-path>/.zskills-tracked"
+rm -f "<worktree-path>/.zskills/tracked" "<worktree-path>/.zskills-tracked"  # legacy root path: dual-read window
 ```
 
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook

@@ -240,11 +240,10 @@ def resolve_port(
 # malformed values as defaults rather than mutating the user's config.
 
 
-def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
-    """Read .claude/zskills-config.json. Returns {} if unreadable."""
-    cfg_path = main_root / ".claude" / "zskills-config.json"
+def _read_json_dict(path: pathlib.Path) -> Dict[str, Any]:
+    """Load a JSON file expected to hold an object. {} on any failure."""
     try:
-        body = cfg_path.read_text(encoding="utf-8")
+        body = path.read_text(encoding="utf-8")
     except OSError:
         return {}
     try:
@@ -254,8 +253,43 @@ def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
+    """Read the PROJECT-tier .claude/zskills-config.json. {} if unreadable."""
+    return _read_json_dict(main_root / ".claude" / "zskills-config.json")
+
+
+def _load_zskills_config(main_root: pathlib.Path) -> Dict[str, Any]:
+    """Config cascade (INSTALL_REDESIGN Phase 5): project > user > built-ins.
+
+    Per-key SHALLOW merge at the top level: built-in defaults loaded from
+    the canonical skills/update-zskills/scripts/zskills-defaults.json
+    (always LOADED, never a copied dict), overlaid by the user tier
+    (~/.claude/zskills-config.json), overlaid by the project tier.
+    `execution.*` is PROJECT-TIER-ONLY across the whole cascade (safety
+    carve-out — a user-level file must not weaken a project's repo
+    discipline), so the user tier's `execution` key is dropped before
+    merging. Missing or malformed tiers contribute nothing (fail-open).
+
+    SYNC NOTE: intentionally duplicated as briefing.py:load_zskills_config
+    and collect.py:_load_zskills_config (separate processes, no shared
+    module) — keep the three in sync.
+    """
+    defaults_path = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / "update-zskills" / "scripts" / "zskills-defaults.json"
+    )
+    merged = {k: v for k, v in _read_json_dict(defaults_path).items()
+              if k != "_comment"}
+    user = _read_json_dict(
+        pathlib.Path.home() / ".claude" / "zskills-config.json")
+    user.pop("execution", None)
+    merged.update(user)
+    merged.update(_read_config(main_root))
+    return merged
+
+
 def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
-    """Resolve audit / plans / issues dirs from zskills-config.json.
+    """Resolve audit / plans / issues dirs through the Phase 5 cascade.
 
     Mirrors the bash zskills-paths.sh helper and briefing.py.
     Use-as-is is absolute-only: only paths starting with `/` are absolute;
@@ -264,13 +298,18 @@ def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
     LOCKSTEP NOTE: when editing this body, mirror the change in
     collect.py:_resolve_paths — they are intentional duplicates per Phase
     4 helper-share decision (separate processes, no shared module).
+
+    No config at either tier -> built-in defaults (docs/plans | docs/issues
+    via zskills-defaults.json). The leaf-level `or` literals below only
+    fire for a PARTIAL output block surviving the shallow merge (or a
+    missing defaults JSON) and match zskills-defaults.json output.*.
     """
-    cfg = _read_config(main_root)
+    cfg = _load_zskills_config(main_root)
     output = cfg.get("output", {}) if isinstance(cfg, dict) else {}
     if not isinstance(output, dict):
         output = {}
-    plans_rel = output.get("plans_dir") or "plans"
-    issues_rel = output.get("issues_dir") or "plans"
+    plans_rel = output.get("plans_dir") or "docs/plans"
+    issues_rel = output.get("issues_dir") or "docs/issues"
 
     def _resolve(rel: str) -> pathlib.Path:
         p = pathlib.Path(rel)

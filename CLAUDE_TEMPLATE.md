@@ -1,8 +1,13 @@
-# {{PROJECT_NAME}} -- Agent Reference
+# Project Agent Rules
 
-## Architecture
-
-{{SOURCE_LAYOUT}}
+> Install-level rules managed by zskills — identical for every consumer.
+> Project-specific values (test commands, dev-server command, timezone,
+> ports, auth bypass) are NOT baked in here: resolve them from
+> `.claude/zskills-config.json` at point of use via the canonical prelude
+> (source `zskills-resolve-config.sh` from the `update-zskills` skill's
+> `scripts/` dir — under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin
+> lane, `.claude/skills/` on the legacy mirror). The project's own
+> CLAUDE.md owns its architecture description.
 
 ## Subagent Dispatch
 
@@ -95,26 +100,27 @@ Python 2 is unsupported. Scripts may assume Python 3 stdlib without a version ch
 
 ## Dev Server
 
-Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `.zskills/dev-server.pid`; `stop-dev.sh` reads `.zskills/dev-server.pid` and SIGTERMs each. `.zskills/` is gitignored.
+Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs the dev-server command configured at `dev_server.cmd` in `.claude/zskills-config.json` (resolved via the canonical prelude as `$DEV_SERVER_CMD`) and writes each spawned child PID (one per line) to `.zskills/dev-server.pid`; `stop-dev.sh` reads `.zskills/dev-server.pid` and SIGTERMs each. `.zskills/` is gitignored.
 
-The port is determined automatically: by default `{{DEFAULT_PORT}}` for the main repo `{{MAIN_REPO_PATH}}`, and a deterministic per-worktree port otherwise. If a `scripts/dev-port.sh` consumer stub is present, it overrides the default for the main repo. Run `bash .claude/skills/update-zskills/scripts/port.sh` to see your actual port. Override per-invocation with `DEV_PORT=NNNN`. See `.claude/skills/update-zskills/references/stub-callouts.md` for the stub contract.
+The port is determined automatically: by default the port configured at `dev_server.default_port` in `.claude/zskills-config.json` (read at runtime by `port.sh`; 8080 when unset) for the main repo (`dev_server.main_repo_path`), and a deterministic per-worktree port otherwise. If a `scripts/dev-port.sh` consumer stub is present, it overrides the default for the main repo. To see your actual port, run the `update-zskills` skill's `scripts/port.sh` — under `${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/` on the plugin lane, `.claude/skills/update-zskills/scripts/` on the legacy mirror. Override per-invocation with `DEV_PORT=NNNN`. See the same skill's `references/stub-callouts.md` for the stub contract.
 
 **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. Do not reach for `lsof -ti :<port> | xargs kill` either — it's the same anti-pattern under a different spelling. If a port is busy from another session's process, check with `lsof -i :<port>` and ask the user to stop it manually.
 
-**Auth gate:** The app requires a password. For automated browser testing, bypass it:
-```js
-{{AUTH_BYPASS}}
-```
-Then reload the page.
+**Auth gate:** If the app requires a password for automated browser testing, the bypass snippet is configured at `ui.auth_bypass` in `.claude/zskills-config.json` — read it from the config at point of use, evaluate it in the page, then reload. When `ui.auth_bypass` is empty, no bypass is configured — ask the user rather than guessing one.
 
 ## Tests
 
+Test commands are configured in `.claude/zskills-config.json`
+(`testing.unit_cmd`, `testing.full_cmd`) — resolve them at point of use by
+sourcing the canonical prelude (`zskills-resolve-config.sh`, see the note at
+the top of this file), which sets:
+
 ```bash
-{{UNIT_TEST_CMD}}    # Unit tests only -- fast, use while working
-{{FULL_TEST_CMD}}    # ALL suites -- use before committing
+$UNIT_TEST_CMD    # Unit tests only -- fast, use while working
+$FULL_TEST_CMD    # ALL suites -- use before committing
 ```
 
-**`{{FULL_TEST_CMD}}` must pass before every commit.** When reporting test
+**The full suite (`$FULL_TEST_CMD`) must pass before every commit.** When reporting test
 results, always state the COMMAND you ran and list EACH suite with its result.
 If a suite was skipped, say so explicitly with the reason.
 Never say just "all tests pass" -- specify which suites actually ran and the
@@ -122,21 +128,22 @@ command that ran them.
 
 **NEVER weaken tests to make them pass.** Do not loosen tolerances, widen mismatch thresholds, skip assertions, or remove test cases to avoid failures. When a test fails, always find the root cause. Fix the code that's broken -- not the test. Only alter a test if the test itself is genuinely wrong (e.g., testing the wrong expected value). Weakened tests will be caught in review and the change will be rejected.
 
-**NEVER modify the working tree to check if a failure is pre-existing.** No `git stash && {{UNIT_TEST_CMD}} && git stash pop`, no `git checkout <old-commit>`, no temporary worktrees for comparison. These workflows are fragile -- context compaction between the modification and the restore will lose your changes. Past failure: an agent stashed changes, checked out a prior commit to verify a test failure was pre-existing, hit compaction, and never restored the working tree. If you touched code and tests fail, fix them. If you only touched content (markdown, images, etc.), don't run tests at all.
+**NEVER modify the working tree to check if a failure is pre-existing.** No `git stash && $UNIT_TEST_CMD && git stash pop`, no `git checkout <old-commit>`, no temporary worktrees for comparison. These workflows are fragile -- context compaction between the modification and the restore will lose your changes. Past failure: an agent stashed changes, checked out a prior commit to verify a test failure was pre-existing, hit compaction, and never restored the working tree. If you touched code and tests fail, fix them. If you only touched content (markdown, images, etc.), don't run tests at all.
 
 **NEVER thrash on a failing fix.** If you attempt a fix, run tests, and the same test fails again, STOP. Do not try a third approach to the same problem -- you are guessing and will keep guessing wrong. Report: (1) what you tried, (2) what failed both times, (3) why you think it's failing. Let the user decide the next step. This applies to all retry loops: fix+verify cycles, test failures after cherry-pick, and any "fix -> test -> still fails" pattern. Two attempts at the same error is the maximum.
 
 **Capture test output to a file, never pipe.** Route test output OUT of
 the working tree so it never shows up in `git status`. The canonical idiom
-is:
+(with the prelude sourced as above so `$FULL_TEST_CMD` and
+`$TEST_OUTPUT_FILE` resolve) is:
 
 ```bash
 TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
 mkdir -p "$TEST_OUT"
-{{FULL_TEST_CMD}} > "$TEST_OUT/.test-results.txt" 2>&1
+$FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
 ```
 
-Then read `"$TEST_OUT/.test-results.txt"` to inspect failures. Never pipe
+Then read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to inspect failures. Never pipe
 through `| tail`, `| head`, `| grep` -- it loses output and forces re-runs.
 
 **Pre-existing test failures.** If a test fails in code you didn't touch,
@@ -150,7 +157,7 @@ file a GitHub issue with the error output and mark the test `it.skip('name
 
 **Memory anchors are agent-local notes, not propagating fixes.** When you surface a skill gap, hook bug, or process discipline failure, saving a memory anchor (`feedback_*.md` under `~/.claude/projects/.../memory/`) only fixes future sessions of the agent that wrote it. To propagate a fix, choose the right surface:
 
-- **CLAUDE_TEMPLATE.md** — for rules every consumer's agent should follow. `/update-zskills` Step B renders this into `.claude/zskills-managed-rules.md`, auto-loaded by Claude Code at session start. Use for cross-project disciplines (e.g., "never call `gh pr merge --auto` directly — dispatch `/land-pr`").
+- **CLAUDE_TEMPLATE.md** — for rules every consumer's agent should follow. It renders into the managed rules every consumer's agent loads each session (`.claude/rules/zskills/managed.md` on the `/update-zskills` lane; delivered as session context on the plugin lane). Use for cross-project disciplines (e.g., "never call `gh pr merge --auto` directly — dispatch `/land-pr`").
 - **Skill SKILL.md prose** — for rules that apply when running a specific skill. Better than CLAUDE.md when the rule is skill-specific. Per skill-versioning enforcement (PR #175), bumping `metadata.version` is mandatory.
 - **Helper script** — only when the action is purely mechanical (no judgment) OR the script returns enough information for the agent to judge (e.g., a CI-poll script that returns failure details for the agent to read and act on, not a `handle-ci.py` that tries to handle CI generally on its own).
 - **Skill decomposition** — when the gap is structural (a skill is doing too much, or a sub-process needs to be reusable). Extract a sub-skill or split the existing one.
@@ -160,11 +167,12 @@ When you save a memory anchor for a process failure, ask: does this need to prop
 
 ### Test files
 
-{{TEST_FILE_PATTERNS}}
+Test-file patterns are configured at `testing.file_patterns` in
+`.claude/zskills-config.json` — read them from the config at point of use.
 
 ## Skill-file hardcode discipline
 
-Skill files (`skills/**/*.md`) are shared across every project that installs zskills. Hardcoding consumer-specific literals -- `npm run test:all`, `npm start`, `TZ=America/New_York`, `$TEST_OUT/.test-results.txt`, the canonical co-author trailer -- in a fenced bash block ships that consumer's choice to every downstream. The deny-list at `tests/test-skill-conformance.sh` (literal list in `tests/fixtures/forbidden-literals.txt`) blocks new occurrences at CI time, and `hooks/warn-config-drift.sh` emits a real-time WARN when an Edit/Write introduces one. Replace each hit with the resolved variable (`$FULL_TEST_CMD`, `$DEV_SERVER_CMD`, `${TIMEZONE:-UTC}`, `$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}`, `$COMMIT_CO_AUTHOR`) sourced via `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`.
+Skill files (`skills/**/*.md`) are shared across every project that installs zskills. Hardcoding consumer-specific literals -- `npm run test:all`, `npm start`, `TZ=America/New_York`, `$TEST_OUT/.test-results.txt`, the canonical co-author trailer -- in a fenced bash block ships that consumer's choice to every downstream. The deny-list at `tests/test-skill-conformance.sh` (literal list in `tests/fixtures/forbidden-literals.txt`) blocks new occurrences at CI time, and `hooks/warn-config-drift.sh` emits a real-time WARN when an Edit/Write introduces one. Replace each hit with the resolved variable (`$FULL_TEST_CMD`, `$DEV_SERVER_CMD`, `${TIMEZONE:-UTC}`, `$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}`, `$COMMIT_CO_AUTHOR`) sourced via the canonical lane-portable prelude (`zskills-resolve-config.sh` from the `update-zskills` skill's `scripts/` dir — under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror; `references/canonical-config-prelude.md` documents the exact fence).
 
 **Resolution rule.** Skill `.md` files MUST resolve config-derived values via the canonical block in `references/canonical-config-prelude.md`. Hardcoded literals trigger the deny-list test (`tests/test-skill-conformance.sh`) and the drift-warn hook (`hooks/warn-config-drift.sh`). Exemptions require an inspectable `<!-- allow-hardcoded: ... -->` marker per the format spec. Per-fence: any bash fence that references one of the resolved variables MUST source `zskills-resolve-config.sh` in or immediately above the fence (positive-side fence-local check at `tests/test-skill-conformance.sh`); inline self-resolution (`CONFIG_CONTENT=$(cat ...)` + `BASH_REMATCH` extraction) and blockquoted recipes governed by the substitution-discipline annotation are accepted equivalents.
 
@@ -220,12 +228,13 @@ Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and revi
 
 - **NEVER apply worktree changes to main without explicit user approval.** Do not `git apply`, `git merge`, copy files, or otherwise move worktree changes into the main working directory unless the user says to. This is the whole point of using worktrees.
 - **NEVER remove worktrees that contain changes.** The user may want to review, cherry-pick, or discard them individually. Only clean up worktrees the user has approved or explicitly told you to remove.
-- **Verify EACH worktree before removing.** Never batch-remove worktrees without checking each one. The fastest check: does `<worktree>/.landed` exist with `status: full`? If yes, it's safe -- all commits are on main and logs were extracted. If no `.landed` marker: verify manually with (1) `git log main..<branch>`, (2) `git status` in the worktree, (3) is it a long-running branch? Named/long-running worktrees are NOT sprint artifacts -- do not remove them. Present results and let the user approve.
-- **ALWAYS write a `.landed` marker when worktree work is cherry-picked to main.** Without this marker, worktrees pile up because cleanup tools can't tell which are safe to remove. Write it immediately after successful cherry-pick:
+- **Verify EACH worktree before removing.** Never batch-remove worktrees without checking each one. The fastest check: does `<worktree>/.zskills/landed` exist with `status: full` (older worktrees may carry the legacy `<worktree>/.landed` instead -- check both, new path first)? If yes, it's safe -- all commits are on main and logs were extracted. If no landed marker: verify manually with (1) `git log main..<branch>`, (2) `git status` in the worktree, (3) is it a long-running branch? Named/long-running worktrees are NOT sprint artifacts -- do not remove them. Present results and let the user approve.
+- **ALWAYS write a `.zskills/landed` marker when worktree work is cherry-picked to main.** Without this marker, worktrees pile up because cleanup tools can't tell which are safe to remove. Write it immediately after successful cherry-pick (source the canonical prelude first so `$TIMEZONE` resolves from `timezone` in `.claude/zskills-config.json`; UTC when unset):
   ```bash
-  cat > "<worktree-path>/.landed" <<LANDED
+  mkdir -p "<worktree-path>/.zskills"
+  cat > "<worktree-path>/.zskills/landed" <<LANDED
   status: full
-  date: $(TZ={{TIMEZONE}} date -Iseconds)
+  date: $(TZ=${TIMEZONE:-UTC} date -Iseconds)
   source: <skill-name>
   commits: <list of cherry-picked hashes>
   LANDED
@@ -382,7 +391,7 @@ to main. Use PR mode or feature branches.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `.claude/skills/update-zskills/scripts/clear-tracking.sh` script lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via the `.zskills/tracked` marker file -- hooks also read the legacy root `.zskills-tracked` for worktrees created before the path consolidation -- or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills/tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `update-zskills` skill's `scripts/clear-tracking.sh` (under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror) lets the user manually clear stale tracking state -- agents are blocked from running it directly.
 
 ## Claiming work items
 

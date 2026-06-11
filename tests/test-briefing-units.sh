@@ -261,6 +261,61 @@ PC_ITEM=$(read_json "$PC_OUT" "d['item_carried']")
   && pass "preserve_checkboxes: same-day checked item carries forward" \
   || fail "preserve_checkboxes item" "item [x] not carried forward"
 
+# ---------------------------------------------------------------------------
+# load_zskills_config + read_zskills_paths — Phase 5 config cascade
+# (project > user > built-in defaults; HOME sandboxed inside the fixture)
+# ---------------------------------------------------------------------------
+
+CC_OUT="$TMP/cascade.json"
+mkdir -p "$TMP/cc-home/.claude" "$TMP/cc-proj/.claude"
+cat > "$TMP/cc-home/.claude/zskills-config.json" <<'UCFG'
+{ "timezone": "Asia/Tokyo", "output": { "plans_dir": "user-plans" } }
+UCFG
+cat > "$TMP/cc-proj/.claude/zskills-config.json" <<'PCFG'
+{ "timezone": "Europe/London" }
+PCFG
+HOME="$TMP/cc-home" "$PY" - "$BRIEFING" "$TMP/cc-proj" > "$CC_OUT" <<'PYEOF'
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('briefing', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+proj = sys.argv[2]
+cfg = m.load_zskills_config(proj)
+paths = m.read_zskills_paths(proj)
+print(json.dumps({
+    'tz': cfg.get('timezone'),    # project wins over user
+    'plans': paths['plans_dir'],  # user fills project-absent output block
+}))
+PYEOF
+CC_TZ=$(read_json "$CC_OUT" "d['tz']")
+[ "$CC_TZ" = "Europe/London" ] \
+  && pass "load_zskills_config: project tier wins over user tier per key" \
+  || fail "load_zskills_config precedence" "got '$CC_TZ', expected 'Europe/London'"
+CC_PLANS=$(read_json "$CC_OUT" "d['plans']")
+[ "$CC_PLANS" = "$TMP/cc-proj/user-plans" ] \
+  && pass "read_zskills_paths: user-tier output.plans_dir fills project-absent key" \
+  || fail "read_zskills_paths user-fill" "got '$CC_PLANS', expected '$TMP/cc-proj/user-plans'"
+
+# Defaults arm: EMPTY home + no project config → built-in defaults from
+# the canonical zskills-defaults.json (docs/ layout).
+CC2_OUT="$TMP/cascade2.json"
+mkdir -p "$TMP/cc-home-empty" "$TMP/cc-empty"
+HOME="$TMP/cc-home-empty" "$PY" - "$BRIEFING" "$TMP/cc-empty" > "$CC2_OUT" <<'PYEOF'
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('briefing', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+paths = m.read_zskills_paths(sys.argv[2])
+print(json.dumps({'plans': paths['plans_dir'], 'reports': paths['reports_dir']}))
+PYEOF
+CC2_PLANS=$(read_json "$CC2_OUT" "d['plans']")
+CC2_REPORTS=$(read_json "$CC2_OUT" "d['reports']")
+if [ "$CC2_PLANS" = "$TMP/cc-empty/docs/plans" ] && [ "$CC2_REPORTS" = "$TMP/cc-empty/docs/reports" ]; then
+  pass "read_zskills_paths: no config at either tier → docs/ built-in defaults (zskills-defaults.json)"
+else
+  fail "read_zskills_paths defaults" "plans='$CC2_PLANS' reports='$CC2_REPORTS'"
+fi
+
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed, $SKIP_COUNT skipped"
 [ "$FAIL_COUNT" -eq 0 ] && exit 0 || exit 1

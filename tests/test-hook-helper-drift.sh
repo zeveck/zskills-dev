@@ -113,8 +113,8 @@ done
 # Source-of-truth body lives in hooks/_lib/resolve-python.sh. Unlike the
 # git-tokenwalk family (inlined into a handful of block-* hooks), this resolver
 # is inlined into EVERY hook/helper that needs a working Python 3 interpreter —
-# the materialised inject-bash-timeout.sh and the legacy-mirror hooks cannot
-# reach _lib at runtime, so the body must be pasted in. Each inlining consumer
+# the plugin-served and legacy-mirror hooks cannot reach _lib at runtime
+# reliably, so the body must be pasted in. Each inlining consumer
 # is listed here; the body (extracted between `^zskills_resolve_python()` and
 # the first `^}$`) must be byte-identical to the source-of-truth. The two prose
 # fences (skills/do/SKILL.md, skills/draft-plan/references/brainstorm.md) embed
@@ -122,7 +122,6 @@ done
 # (it anchors on the function definition at column 0) so they are gated too.
 RESOLVE_PYTHON_CONSUMERS=(
   hooks/inject-bash-timeout.sh
-  hooks/session-start-materialise.sh
   hooks/block-bad-cron.sh
   hooks/block-fix-issue-unclaimed.sh
   hooks/block-run-plan-unclaimed.sh
@@ -132,9 +131,9 @@ RESOLVE_PYTHON_CONSUMERS=(
   hooks/_lib/plugin-hook-skip-if-mirrored.sh
   scripts/build-catalog.sh
   scripts/build-plugin-release.sh
-  scripts/switch-install-path.sh
   scripts/_lib/finalize-prod-tree.sh
   skills/update-zskills/verifiers/verify-install-lib.sh
+  skills/update-zskills/scripts/init-state.sh
   skills/update-zskills/scripts/migrate-paths.sh
   skills/update-zskills/scripts/session-logs.sh
   skills/create-worktree/scripts/check-inflight-batch.sh

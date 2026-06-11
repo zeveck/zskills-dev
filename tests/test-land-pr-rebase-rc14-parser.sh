@@ -6,7 +6,7 @@
 # script-level guard correctly prevents the wrong-branch rebase, but
 # /land-pr Step 3's result-parser previously only mapped RC 10 (-> STATUS=
 # rebase-conflict) and RC 11 (-> STATUS=rebase-failed). RC 14 fell through
-# to STATUS="" (empty), so the .landed marker had no status row and the
+# to STATUS="" (empty), so the landed marker had no status row and the
 # orchestrator's result-file STATUS was empty — leaving callers ambiguous.
 #
 # This test has two layers (matches tests/test-land-pr-post-merge-ff.sh):

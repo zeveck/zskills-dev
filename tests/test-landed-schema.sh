@@ -134,7 +134,10 @@ test_landphase_e2e_canonical() {
   # cleans up the specific dir even if $tmp is later overwritten.
   trap "rm -rf '$tmp'" RETURN
 
-  make_landed_canonical > "$tmp/.landed"
+  # NEW path (Phase 8 root-turd consolidation): the writer targets
+  # .zskills/landed; land-phase reads it first.
+  mkdir -p "$tmp/.zskills"
+  make_landed_canonical > "$tmp/.zskills/landed"
 
   # land-phase.sh requires being run from inside a git repo to resolve
   # MAIN_ROOT. Run it from the repo root.
@@ -149,6 +152,31 @@ test_landphase_e2e_canonical() {
       "rejected the canonical schema: $out"
   else
     pass "land-phase.sh accepts canonical schema (E2E)"
+  fi
+}
+
+# Same E2E through the LEGACY root path (.landed) — the dual-read
+# transition window: worktrees created before Phase 8 carry the marker at
+# the root and must still pass the validation gate.
+test_landphase_e2e_canonical_legacy_path() {
+  local tmp
+  tmp=$(mktemp -d)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  make_landed_canonical > "$tmp/.landed"
+
+  local out
+  out=$(cd "$REPO_ROOT" && bash skills/commit/scripts/land-phase.sh "$tmp" 2>&1)
+
+  if echo "$out" | grep -qF "marker does not say 'status: landed' or 'status: pr-ready'"; then
+    fail "land-phase.sh accepts canonical schema via legacy .landed (dual-read)" \
+      "rejected the canonical schema: $out"
+  elif echo "$out" | grep -qF "No landed marker"; then
+    fail "land-phase.sh accepts canonical schema via legacy .landed (dual-read)" \
+      "gate did not find the legacy root marker: $out"
+  else
+    pass "land-phase.sh accepts canonical schema via legacy .landed (dual-read)"
   fi
 }
 
@@ -211,6 +239,7 @@ test_landphase_grep_canonical_pr_ready
 test_landphase_grep_rejects_conflict
 test_landphase_source_pattern
 test_landphase_e2e_canonical
+test_landphase_e2e_canonical_legacy_path
 test_fix_report_canonical_parser
 test_fix_report_case_arm_per_status
 

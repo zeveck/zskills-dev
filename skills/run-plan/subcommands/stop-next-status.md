@@ -112,7 +112,7 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')
    # `stop` is invoked from main session before any worktree exists — anchor
    # on $CLAUDE_PROJECT_DIR. Counters in PR-mode runs that wrote inside the
-   # worktree get cleaned up by the worktree's own .landed-marker flow.
+   # worktree get cleaned up by the worktree's own .zskills/landed-marker flow.
    MAIN_ROOT="$CLAUDE_PROJECT_DIR"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")

@@ -10,8 +10,9 @@
 #   C5   Edit on main, .zskills/audit/*         → ALLOW (allowlist)
 #   C6   Edit on main, .zskills/tracking/<id>/* → ALLOW (allowlist)
 #   C7   Edit on main, .zskills/issues/*        → ALLOW (allowlist)
-#   C8   Edit on main, .zskills-tracked         → ALLOW (allowlist)
-#   C9   Edit on main, .landed                  → ALLOW (allowlist)
+#   C8   Edit on main, .zskills-tracked         → ALLOW (allowlist, legacy window)
+#   C9   Edit on main, .landed                  → ALLOW (allowlist, legacy window)
+#   C8b-C9c  Edit on main, .zskills/{tracked,landed,worktreepurpose} → ALLOW (Phase 8 paths via .zskills/* arm)
 #   C10  Edit on main, main_protected=false     → ALLOW (config gate off)
 #   C11  Edit on main, config missing           → ALLOW (default off)
 #   C12  Edit outside MAIN_ROOT entirely        → ALLOW
@@ -193,6 +194,16 @@ assert_allow "C8: Write on main .zskills-tracked → ALLOW" "$HOOK_EXIT" "$HOOK_
 
 run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.landed")"
 assert_allow "C9: Write on main .landed → ALLOW" "$HOOK_EXIT" "$HOOK_OUT"
+
+# ── C8b–C9b: Phase 8 consolidated marker paths (.zskills/* arm) → ALLOW ──
+run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.zskills/tracked")"
+assert_allow "C8b: Write on main .zskills/tracked → ALLOW (Phase 8 path)" "$HOOK_EXIT" "$HOOK_OUT"
+
+run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.zskills/landed")"
+assert_allow "C9b: Write on main .zskills/landed → ALLOW (Phase 8 path)" "$HOOK_EXIT" "$HOOK_OUT"
+
+run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/.zskills/worktreepurpose")"
+assert_allow "C9c: Write on main .zskills/worktreepurpose → ALLOW (Phase 8 path)" "$HOOK_EXIT" "$HOOK_OUT"
 
 # ── C10: main_protected=false → ALLOW (config gate off, the load-bearing one) ──
 printf '{"execution":{"main_protected":false}}' > "$SANDBOX/.claude/zskills-config.json"

@@ -8,6 +8,49 @@
 
 ## Unreleased
 
+### Plugin-lane install redesign — zero files required, one file when wanted (INSTALL_REDESIGN)
+
+- **The plugin install no longer writes anything into your project by
+  itself.** The SessionStart materialiser (which wrote 5 managed files into
+  `.claude/` on session start) is deleted. Skills, hooks, the
+  verifier/implementer agents, and the agent rules all run from the
+  plugin's own tree: agents from the plugin root `agents/` (bare-name
+  dispatch), the Layer-0 600s bash-timeout injection from a
+  `hooks/hooks.json` PreToolUse entry (identity-filtered to
+  verifier/implementer; identity-less calls — the legacy frontmatter path —
+  still extend), and the managed rules delivered per-session as SessionStart
+  `additionalContext` (zero writes; silent when a legacy mirror or project
+  rules copy already delivers them).
+- **Setup is now explicit:** run `/zs:update-zskills` once after installing.
+  Init is gitignore-first (adds one `.zskills/` umbrella line), offers — but
+  does not require — a project config, verifies the install, and writes the
+  gitignored `.zskills/init-done` marker last (lock-LAST; any earlier
+  failure leaves the project cleanly re-runnable). Until init, a one-line
+  startup greeting reminds you and state-writing skills are blocked
+  (read-only skills work immediately).
+- **Config is optional, with a cascade:** project
+  `.claude/zskills-config.json` > user `~/.claude/zskills-config.json` >
+  built-in defaults. A zero-config consumer gets working defaults
+  (timezone `UTC`, landing `direct`). `execution.*` never cascades from the
+  user tier (project repo discipline; safety keys are project-only).
+- **Upgrading from a materialiser-era install:** the first
+  `/zs:update-zskills` removes the old sentinelled `.claude/` artifacts
+  (user-owned files are never touched) and, if the auto-seeded config was
+  never customized, offers to remove it too.
+- **Lane-switch machinery removed** (`--switch-install-path`,
+  `scripts/switch-install-path.sh`, the lane lock): to switch lanes,
+  uninstall one and install the other — see the install guide.
+  `/update-zskills install` now unconditionally refuses to run on a
+  plugin-lane project.
+- **Worktree-state markers consolidated under `.zskills/`:**
+  `.zskills/landed`, `.zskills/worktreepurpose`, `.zskills/tracked` replace
+  the old worktree-root `.landed`, `.worktreepurpose`, `.zskills-tracked`
+  (readers keep a dual-read fallback for worktrees created before the
+  move).
+- The verifier-response validator (`verify-response-validate.sh`) moved
+  from a materialised hook copy to a skill-bundled script
+  (`skills/update-zskills/scripts/`), resolved identically on both lanes.
+
 ### Dashboard run-status cleanup (#1005 + #1006)
 
 - Removed the top-level run-status pill and all trigger-script plumbing

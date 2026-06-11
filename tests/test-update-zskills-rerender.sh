@@ -666,96 +666,75 @@ PRESET
   fi
 fi
 
-# --- Test 7: DEFAULT_PORT + MAIN_REPO_PATH substitution (Phase 3 WI 3.6) ----
-# Asserts that Step B's placeholder mapping substitutes `{{DEFAULT_PORT}}` and
-# `{{MAIN_REPO_PATH}}` end-to-end against the real repo CLAUDE_TEMPLATE.md.
-# Mirrors WI 3.2's mapping rows: dev_server.default_port → {{DEFAULT_PORT}};
-# dev_server.main_repo_path → {{MAIN_REPO_PATH}}. Validates the rendered
-# managed.md contains the literal port digits in the Architecture port line
-# and no leftover placeholder substrings for either field.
+# --- Test 7: de-parameterized template contract (INSTALL_REDESIGN Phase 4) --
+# SUBJECT RE-SPEC: the original Test 7 asserted the install-time substitution
+# of {{DEFAULT_PORT}}/{{MAIN_REPO_PATH}} against the real CLAUDE_TEMPLATE.md.
+# That subject ceased to exist in INSTALL_REDESIGN Phase 4 — the template is
+# fully DE-PARAMETERIZED (install-level rules; project values are resolved
+# from .claude/zskills-config.json at point of use via the canonical
+# prelude). The replacement pins the NEW contract: zero {{ tokens in the
+# shipped template, the real renderer is a byte-identical pass-through (with
+# and without --config), the descriptive config-resolution prose is present,
+# and SKILL.md no longer carries install-substitution mapping rows.
 echo ""
-echo "=== Test 7: DEFAULT_PORT + MAIN_REPO_PATH placeholder substitution ==="
+echo "=== Test 7: de-parameterized template contract (Phase 4) ==="
 
 REAL_TEMPLATE="$REPO_ROOT/CLAUDE_TEMPLATE.md"
-if [ ! -f "$REAL_TEMPLATE" ]; then
-  fail "Test 7 prereq" "$REAL_TEMPLATE not found"
+PYTHON_T7="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+if [ ! -f "$REAL_TEMPLATE" ] || [ -z "$PYTHON_T7" ]; then
+  fail "Test 7 prereq" "$REAL_TEMPLATE or python3 not found"
 else
-  # Test 7a: fresh install with default_port=8080 → managed.md contains 8080
-  # in the Architecture port line, no {{DEFAULT_PORT}} substring, no
-  # {{MAIN_REPO_PATH}} substring.
-  T7A=$(mktemp -d)
-  TEMPLATE_CONTENT_7A=$(cat "$REAL_TEMPLATE")
-  RENDERED_7A=$(render_template "$TEMPLATE_CONTENT_7A" \
-    "PROJECT_NAME=acme" \
-    "DEV_SERVER_CMD=npm start" \
-    "AUTH_BYPASS=localStorage.setItem('skipAuth','1')" \
-    "DEFAULT_PORT=8080" \
-    "MAIN_REPO_PATH=/home/user/acme" \
-    "TIMEZONE=America/New_York" \
-    "FULL_TEST_CMD=npm test" \
-    "UNIT_TEST_CMD=npm run test:unit" \
-    "TEST_FILE_PATTERNS=tests/.*\\.test\\.ts$" \
-    "SOURCE_LAYOUT=src/")
-  printf '%s' "$RENDERED_7A" > "$T7A/managed.md"
-  if grep -q '`8080`' "$T7A/managed.md" \
-     && grep -q '/home/user/acme' "$T7A/managed.md"; then
-    pass "Test 7a: rendered managed.md contains literal port 8080 and main_repo_path"
+  # Test 7a: zero {{ tokens in the shipped template.
+  if [ "$(grep -c '{{' "$REAL_TEMPLATE")" = "0" ]; then
+    pass "Test 7a: CLAUDE_TEMPLATE.md carries zero {{ tokens (de-parameterized)"
   else
-    fail "Test 7a: substitution did not write 8080/path" \
-      "$(grep -E 'port|main repo' "$T7A/managed.md" | head -3)"
+    fail "Test 7a: {{ tokens remain in CLAUDE_TEMPLATE.md" \
+      "$(grep -n '{{' "$REAL_TEMPLATE" | head -3)"
   fi
-  if ! grep -q '{{DEFAULT_PORT}}' "$T7A/managed.md"; then
-    pass "Test 7b: no leftover {{DEFAULT_PORT}} substring in rendered managed.md"
-  else
-    fail "Test 7b: {{DEFAULT_PORT}} not substituted" \
-      "$(grep '{{DEFAULT_PORT}}' "$T7A/managed.md")"
-  fi
-  if ! grep -q '{{MAIN_REPO_PATH}}' "$T7A/managed.md"; then
-    pass "Test 7c: no leftover {{MAIN_REPO_PATH}} substring in rendered managed.md"
-  else
-    fail "Test 7c: {{MAIN_REPO_PATH}} not substituted" \
-      "$(grep '{{MAIN_REPO_PATH}}' "$T7A/managed.md")"
-  fi
-  rm -rf "$T7A"
 
-  # Test 7d: re-render with default_port=3000 → managed.md contains 3000.
-  T7D=$(mktemp -d)
-  RENDERED_7D=$(render_template "$TEMPLATE_CONTENT_7A" \
-    "PROJECT_NAME=acme" \
-    "DEV_SERVER_CMD=npm start" \
-    "AUTH_BYPASS=localStorage.setItem('skipAuth','1')" \
-    "DEFAULT_PORT=3000" \
-    "MAIN_REPO_PATH=/home/user/acme" \
-    "TIMEZONE=America/New_York" \
-    "FULL_TEST_CMD=npm test" \
-    "UNIT_TEST_CMD=npm run test:unit" \
-    "TEST_FILE_PATTERNS=tests/.*\\.test\\.ts$" \
-    "SOURCE_LAYOUT=src/")
-  printf '%s' "$RENDERED_7D" > "$T7D/managed.md"
-  if grep -q '`3000`' "$T7D/managed.md"; then
-    pass "Test 7d: re-render with default_port=3000 produces literal 3000"
+  # Test 7b: the REAL renderer with an explicit config (legacy Step B/D call
+  # shape) renders the real template as a byte-identical pass-through.
+  T7B=$(mktemp -d)
+  printf '%s\n' '{"timezone":"UTC","dev_server":{"default_port":3000}}' > "$T7B/cfg.json"
+  "$PYTHON_T7" "$REPO_ROOT/scripts/render-managed-rules.py" \
+    --config "$T7B/cfg.json" --template "$REAL_TEMPLATE" --out "$T7B/managed.md" 2>/dev/null
+  if [ "$?" -eq 0 ] && diff -q "$REAL_TEMPLATE" "$T7B/managed.md" >/dev/null 2>&1; then
+    pass "Test 7b: real render with --config is a byte-identical pass-through (config-independent)"
   else
-    fail "Test 7d: re-render did not write 3000" \
-      "$(grep -E 'port|main repo' "$T7D/managed.md" | head -3)"
+    fail "Test 7b: --config render failed or diverged from the template" \
+      "$(diff "$REAL_TEMPLATE" "$T7B/managed.md" 2>&1 | head -3)"
   fi
-  # Sanity: re-rendered file must NOT still contain the old default 8080
-  # in the Architecture port line region (the line we control).
-  if ! grep -E '^The port is determined.*`8080`' "$T7D/managed.md" >/dev/null; then
-    pass "Test 7e: re-render replaced 8080 with new port (no stale literal in port line)"
-  else
-    fail "Test 7e: stale 8080 in port line after re-render" \
-      "$(grep '^The port is determined' "$T7D/managed.md")"
-  fi
-  rm -rf "$T7D"
 
-  # Test 7f: SKILL.md placeholder mapping table includes both new rows.
+  # Test 7c: the no-config mode (renderer loads the canonical built-in
+  # defaults) renders identically.
+  "$PYTHON_T7" "$REPO_ROOT/scripts/render-managed-rules.py" \
+    --template "$REAL_TEMPLATE" --out "$T7B/managed-nocfg.md" 2>/dev/null
+  if [ "$?" -eq 0 ] && diff -q "$REAL_TEMPLATE" "$T7B/managed-nocfg.md" >/dev/null 2>&1; then
+    pass "Test 7c: no-config render (canonical defaults) is byte-identical too"
+  else
+    fail "Test 7c: no-config render failed or diverged" ""
+  fi
+  rm -rf "$T7B"
+
+  # Test 7d: the descriptive config-resolution prose replaced the baked
+  # literals (port + main-repo line now names the config fields and the
+  # dual-path port.sh location).
+  if grep -q 'dev_server.default_port' "$REAL_TEMPLATE" \
+     && grep -q 'dev_server.main_repo_path' "$REAL_TEMPLATE" \
+     && grep -q 'scripts/port.sh' "$REAL_TEMPLATE"; then
+    pass "Test 7d: template carries descriptive config-resolution prose (default_port/main_repo_path/port.sh)"
+  else
+    fail "Test 7d: descriptive config-resolution prose missing from template" ""
+  fi
+
+  # Test 7e: SKILL.md no longer carries install-substitution mapping rows
+  # for the retired tokens (the table was replaced by the de-param note).
   SKILL_FILE="$REPO_ROOT/skills/update-zskills/SKILL.md"
-  if grep -q '`{{DEFAULT_PORT}}` | `dev_server.default_port`' "$SKILL_FILE" \
-     && grep -q '`{{MAIN_REPO_PATH}}` | `dev_server.main_repo_path`' "$SKILL_FILE"; then
-    pass "Test 7f: SKILL.md placeholder mapping table has DEFAULT_PORT + MAIN_REPO_PATH rows"
+  if ! grep -qE '^\| `\{\{(DEV_SERVER_CMD|AUTH_BYPASS|DEFAULT_PORT|MAIN_REPO_PATH)\}\}`' "$SKILL_FILE" \
+     && grep -q 'de-parameterized (INSTALL_REDESIGN Phase 4)' "$SKILL_FILE"; then
+    pass "Test 7e: SKILL.md mapping table replaced by the de-parameterization note"
   else
-    fail "Test 7f: SKILL.md mapping table missing rows" \
-      "expected both DEFAULT_PORT and MAIN_REPO_PATH mapping rows"
+    fail "Test 7e: SKILL.md still carries retired mapping rows (or note missing)" ""
   fi
 fi
 

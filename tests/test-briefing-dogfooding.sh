@@ -38,8 +38,16 @@ fi
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
-# Synthesize .landed fixtures, each in its own worktree-shaped dir.
+# Synthesize landed-marker fixtures, each in its own worktree-shaped dir.
+# Phase 8 root-turd consolidation: the live writer targets .zskills/landed,
+# so the default fixture writer does too. mk_landed_legacy keeps ONE
+# old-path fixture in the mix to lock the dual-read fallback.
 mk_landed() { # $1=dirname  $2...=lines
+  local d="$TMP/$1"; shift
+  mkdir -p "$d/.zskills"
+  printf '%s\n' "$@" > "$d/.zskills/landed"
+}
+mk_landed_legacy() { # $1=dirname  $2...=lines — legacy root .landed
   local d="$TMP/$1"; shift
   mkdir -p "$d"
   printf '%s\n' "$@" > "$d/.landed"
@@ -47,7 +55,7 @@ mk_landed() { # $1=dirname  $2...=lines
 
 # fix-issues family — three SUCCESSFUL lands across canonicalized variants.
 mk_landed wt-fi-1 "status: full"   "source: fix-issues"            "date: 2026-05-20T10:00:00+00:00"
-mk_landed wt-fi-2 "status: landed" "source: fix-issues-sprint"     "date: 2026-05-22T10:00:00+00:00"
+mk_landed_legacy wt-fi-2 "status: landed" "source: fix-issues-sprint"     "date: 2026-05-22T10:00:00+00:00"
 mk_landed wt-fi-3 "status: landed" "source: fix-issues-pr-mode-481" "pr_state: MERGED" "date: 2026-05-25T10:00:00+00:00"
 # fix-issues ATTEMPT — must NOT count (pr-failed, no merge/ci-pass).
 mk_landed wt-fi-fail "status: pr-failed" "source: fix-issues" "date: 2026-05-26T10:00:00+00:00"
@@ -188,13 +196,15 @@ else
     # A NAMED worktree (no agent- prefix) carrying a successful .landed.
     git worktree add -q -b namedwt-809 "$SBX/named-feature" >/dev/null 2>&1
   ) >/dev/null 2>&1
+  mkdir -p "$SBX/named-feature/.zskills"
   printf '%s\n' \
     "status: landed" \
     "source: draft-plan" \
     "pr_state: MERGED" \
-    "date: 2026-05-28T10:00:00+00:00" > "$SBX/named-feature/.landed"
-  # Also drop a .landed on the MAIN worktree (classify_worktrees filters
-  # this one out entirely) to prove the default path picks it up too.
+    "date: 2026-05-28T10:00:00+00:00" > "$SBX/named-feature/.zskills/landed"
+  # Also drop a LEGACY root .landed on the MAIN worktree (classify_worktrees
+  # filters this one out entirely) to prove the default path picks it up too
+  # — and that the dual-read fallback covers pre-Phase-8 markers.
   printf '%s\n' \
     "status: full" \
     "source: commit" \

@@ -21,14 +21,21 @@
 #   - good legacy + zskills_version present → legacy.version-recorded PASS
 #   - broken legacy (hook file gone)       → FAIL
 #   - broken legacy (raw {{TOKEN}})        → FAIL  (renderer never ran)
-#   - good plugin layout                   → no FAIL
-#   - good plugin + NO zskills_version     → 0 FAIL + plugin.version-recorded
-#       WARN  (#1124)
-#   - good plugin + zskills_version present → plugin.version-recorded PASS
-#   - broken plugin (sentinel dropped)     → FAIL
-#   - broken plugin (artifact dropped)     → FAIL
+#   - good plugin (init-era: markers + gitignore umbrella + valid config) → no FAIL
+#   - good plugin + NO config              → no FAIL (zero-config by design)
+#   - plugin version skew (init-done vs plugin.json) → WARN, never FAIL
+#   - broken plugin (init-done missing / 0-byte)     → FAIL (plugin.init-done)
+#   - broken plugin (OLD sentinel-era artifacts, no init-done) → FAIL
+#       (the #1132 wrong-key case: the old key no longer satisfies)
+#   - broken plugin (gitignore umbrella defeated)    → FAIL
+#   - broken plugin (invalid config JSON)            → FAIL
+#   - broken plugin (R-b rules delivery missing)     → FAIL
 #   - dual install                         → FAIL
 #   - none                                 → FAIL
+#
+# #1132 single-path-definition discipline: the plugin fixtures derive every
+# marker path/write from init-state.sh (sourced BY the lib itself) and use
+# its WRITER (zskills_write_init_markers) — never a re-typed literal.
 #
 # Sandbox-only: every consumer dir lives under $TMP; the real repo / $HOME are
 # never written. The verifier is read-only (it only inspects files), so even
@@ -59,6 +66,21 @@ fi
 # shellcheck source=../skills/update-zskills/verifiers/verify-install-lib.sh
 . "$LIB"
 pass "0. verify-install-lib.sh sourceable"
+
+# ── Congruence pin (INSTALL_REDESIGN Phase 6b, #1132): sourcing the lib must
+# have transitively loaded init-state.sh (the SINGLE path definition the
+# plugin-lane checks key on). The fixture builder below uses init-state.sh's
+# OWN writer + path vars — congruence by construction, the fixture and the
+# lib cannot drift. (Subject-removal note: the Phase-3 VI_PLUGIN_ARTIFACTS
+# materialised-artifact set this pin used to lock was retired with the
+# sentinel-keyed plugin checks — the artifact set is no longer a subject.)
+if command -v zskills_init_done_present >/dev/null 2>&1 \
+   && command -v zskills_write_init_markers >/dev/null 2>&1 \
+   && [ -n "${ZSKILLS_INIT_DONE_REL:-}" ] && [ -n "${ZSKILLS_SETUP_CONFIRMED_REL:-}" ]; then
+  pass "0b. lib transitively sources init-state.sh (predicate + writer + marker paths available to fixtures)"
+else
+  fail "0b. init-state congruence" "init-state.sh definitions not loaded by sourcing the lib"
+fi
 
 # ── Result helpers ──────────────────────────────────────────────────────────
 # Run vi_run_cheap in THIS shell (no subshell) so VI_PASS/WARN/FAIL accumulate,
@@ -136,26 +158,20 @@ JSON
   echo "$c"
 }
 
-# ── Synthetic PLUGIN install builder ────────────────────────────────────────
-# Produces a consumer dir with the 5 materialised artifacts, each carrying a
-# `zskills-materialised:` sentinel, and NO .claude/skills/ mirror (mirror-less).
+# ── Synthetic PLUGIN install builder (init-era, Phase 6b) ───────────────────
+# Produces a healthy POST-INIT mirror-less plugin consumer: a git repo whose
+# .gitignore carries the .zskills/ umbrella, with the init markers written by
+# init-state.sh's OWN writer (#1132 — never a re-typed path), and a valid
+# config (the config is OPTIONAL; the zero-config case removes it). The lane
+# keys on CLAUDE_PLUGIN_ROOT in env, exported around the plugin cases below.
 make_plugin_good() {
   local c="$TMP/plugin-good-$1"
   rm -rf -- "$c"
-  mkdir -p "$c/.claude/agents" "$c/.claude/hooks" "$c/.claude/rules/zskills"
-  # frontmatter .md artifacts — sentinel as YAML-comment first line in ---.
-  for ag in verifier implementer; do
-    printf '%s\n' '---' '# zskills-materialised: 2026.06.0' "name: $ag" '---' "# $ag" \
-      > "$c/.claude/agents/$ag.md"
-  done
-  # *.sh artifacts — sentinel as shell-comment on line 2.
-  for h in inject-bash-timeout verify-response-validate; do
-    printf '%s\n' '#!/usr/bin/env bash' '# zskills-materialised: 2026.06.0' 'exit 0' \
-      > "$c/.claude/hooks/$h.sh"
-  done
-  # plain .md managed.md — sentinel as HTML-comment first line.
-  printf '%s\n' '<!-- zskills-materialised: 2026.06.0 -->' '# rules' \
-    > "$c/.claude/rules/zskills/managed.md"
+  mkdir -p "$c/.claude"
+  git_init_fixture "$c"
+  printf '%s\n' '.zskills/' > "$c/.gitignore"
+  zskills_write_init_markers "$c" "2026.06.0" \
+    || fail "fixture plugin-good-$1" "init-state.sh writer failed"
   cat > "$c/.claude/zskills-config.json" <<'JSON'
 { "project_name": "acme", "zskills_version": "2026.06.0" }
 JSON
@@ -399,21 +415,31 @@ else
   fail "3l. foreign-hook no-false-positive" "expected 0 FAIL; foreign unstamped hook should not trip integrity: $(grep '^FAIL' "$OUT")"
 fi
 
-# ── PLUGIN: good layout → no FAIL ───────────────────────────────────────────
-# The plugin lane is keyed on CLAUDE_PLUGIN_ROOT being set. Set it (to any
-# non-empty value) for these cases ONLY.
+# ── PLUGIN: good init-era layout → no FAIL ──────────────────────────────────
+# The plugin lane keys on CLAUDE_PLUGIN_ROOT in env; export it for all plugin
+# cases, with a fake plugin root carrying everything the reworked checks
+# resolve: the two manifests, the skills tree anchor, and the R-b rules
+# delivery surfaces (SessionStart hook registered + renderable).
 PG="$(make_plugin_good 1)"
 OUT="$TMP/out-plugin-good.txt"
-# The plugin lane keys on CLAUDE_PLUGIN_ROOT being set; export it (with a
-# plugin.json AND hooks/hooks.json so the #1008 reachability check resolves)
-# for all plugin cases.
 CLAUDE_PLUGIN_ROOT="$TMP/fake-plugin-root"; export CLAUDE_PLUGIN_ROOT
-mkdir -p "$CLAUDE_PLUGIN_ROOT/.claude-plugin" "$CLAUDE_PLUGIN_ROOT/hooks"
+mkdir -p "$CLAUDE_PLUGIN_ROOT/.claude-plugin" "$CLAUDE_PLUGIN_ROOT/hooks" \
+         "$CLAUDE_PLUGIN_ROOT/skills/update-zskills" "$CLAUDE_PLUGIN_ROOT/scripts"
 printf '{ "version": "2026.06.0" }\n' > "$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json"
-printf '{ "hooks": {} }\n' > "$CLAUDE_PLUGIN_ROOT/hooks/hooks.json"
+cat > "$CLAUDE_PLUGIN_ROOT/hooks/hooks.json" <<'JSON'
+{ "hooks": { "SessionStart": [ { "hooks": [
+  { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-rules-context.sh\"", "timeout": 30 }
+] } ] } }
+JSON
+printf '%s\n' '#!/usr/bin/env bash' '# zskills-hook-version: 2026.06.0' 'exit 0' \
+  > "$CLAUDE_PLUGIN_ROOT/hooks/session-rules-context.sh"
+printf '%s\n' '# rules template' > "$CLAUDE_PLUGIN_ROOT/CLAUDE_TEMPLATE.md"
+printf '%s\n' '# renderer' > "$CLAUDE_PLUGIN_ROOT/scripts/render-managed-rules.py"
+printf '%s\n' '---' 'name: update-zskills' '---' '# uz' \
+  > "$CLAUDE_PLUGIN_ROOT/skills/update-zskills/SKILL.md"
 run_cheap_capture "$PG" "$OUT"
 if [ "$VI_FAIL" -eq 0 ]; then
-  pass "4. good plugin layout → 0 FAIL (5 sentinelled artifacts, mirror-less)"
+  pass "4. good init-era plugin install → 0 FAIL (markers + gitignore umbrella + valid config, mirror-less)"
 else
   fail "4. good plugin layout" "expected 0 FAIL, got $(grep '^FAIL' "$OUT")"
 fi
@@ -422,69 +448,195 @@ if grep -q '^PASS	lane.detect	detected lane: plugin' "$OUT"; then
 else
   fail "4b. good plugin lane detect" "lane.detect not 'plugin': $(grep lane.detect "$OUT")"
 fi
+# Version currency: fixture init-done records 2026.06.0 == plugin.json → PASS.
+if grep -q '^PASS	plugin.version-currency	' "$OUT" && ! has_warn_id "$OUT" "plugin.version-currency"; then
+  pass "4b2. matching init-done/plugin.json versions → plugin.version-currency PASS (no WARN)"
+else
+  fail "4b2. version-currency match" "expected PASS, no WARN; records=$(grep version-currency "$OUT")"
+fi
 
-# ── PLUGIN valid + NO zskills_version (#1124): same as legacy — after the ─────
-# plugin.json fallback, a missing zskills_version is abnormal → WARN (never
-# FAIL). The case must produce 0 FAIL but exactly the plugin.version-recorded
-# WARN.
-PNV="$(make_plugin_good 5)"
-cat > "$PNV/.claude/zskills-config.json" <<'JSON'
-{ "project_name": "acme" }
-JSON
-# Real plugin install lives in a git repo — init so env.git-repo (#1119) PASSes.
-git_init_fixture "$PNV"
-OUT="$TMP/out-plugin-no-version.txt"
-run_cheap_capture "$PNV" "$OUT"
+# ── PLUGIN valid + NO config: zero-config is the DESIGNED default ───────────
+# A post-init consumer who declined the config interview has no
+# .claude/zskills-config.json at all — built-in defaults apply. MUST be
+# 0 FAIL with plugin.config-valid PASSing on the absent-is-OK arm.
+PNC="$(make_plugin_good 5)"
+rm -f "$PNC/.claude/zskills-config.json"
+OUT="$TMP/out-plugin-no-config.txt"
+run_cheap_capture "$PNC" "$OUT"
+if [ "$VI_FAIL" -eq 0 ] && grep -q '^PASS	plugin.config-valid	' "$OUT"; then
+  pass "4c. zero-config plugin install (no config file) → 0 FAIL, plugin.config-valid PASS (absent is OK by design)"
+else
+  fail "4c. zero-config plugin" "expected 0 FAIL + config-valid PASS; records=$(grep -E '^(FAIL|.*config-valid)' "$OUT")"
+fi
+
+# ── PLUGIN version skew: init-done records an older version → WARN, never FAIL
+# (the m-class staleness cure: nothing re-runs init after a marketplace
+# update, so the record goes stale silently; the WARN names the bare
+# /zs:update-zskills refresh). Marker re-written via the WRITER (#1132).
+PVS="$(make_plugin_good 5b)"
+zskills_write_init_markers "$PVS" "2020.01.0"
+OUT="$TMP/out-plugin-version-skew.txt"
+run_cheap_capture "$PVS" "$OUT"
 if [ "$VI_FAIL" -eq 0 ]; then
-  pass "4c. valid plugin install with NO zskills_version → 0 FAIL (missing version is WARN, never FAIL)"
+  pass "4d. version-skewed plugin install → 0 FAIL (staleness is WARN, never FAIL)"
 else
-  fail "4c. valid plugin no-version" "expected 0 FAIL; FAIL=$(grep '^FAIL' "$OUT")"
+  fail "4d. version skew no-fail" "expected 0 FAIL; FAIL=$(grep '^FAIL' "$OUT")"
 fi
-if has_warn_id "$OUT" "plugin.version-recorded"; then
-  pass "4d. plugin.version-recorded → WARN when zskills_version absent (#1124)"
+if has_warn_id "$OUT" "plugin.version-currency" \
+   && grep '^WARN	plugin.version-currency	' "$OUT" | grep -q 'update-zskills'; then
+  pass "4d2. plugin.version-currency → WARN naming the bare /zs:update-zskills refresh on mismatch"
 else
-  fail "4d. plugin version-recorded WARN" "expected WARN on plugin.version-recorded; records=$(grep -E '^(WARN|FAIL)' "$OUT")"
-fi
-
-# ── PLUGIN valid + zskills_version PRESENT (#1124): reported as PASS, no WARN. ─
-# Uses the good-plugin fixture (config carries zskills_version: 2026.06.0).
-PVV="$(make_plugin_good 5b)"
-git_init_fixture "$PVV"
-OUT="$TMP/out-plugin-version-present.txt"
-run_cheap_capture "$PVV" "$OUT"
-if grep -q '^PASS	plugin.version-recorded	zskills_version recorded: 2026.06.0' "$OUT"; then
-  pass "4d2. plugin.version-recorded → PASS reporting the recorded version when present"
-else
-  fail "4d2. plugin version-recorded PASS" "expected PASS reporting 2026.06.0; records=$(grep version-recorded "$OUT")"
-fi
-if has_warn_id "$OUT" "plugin.version-recorded"; then
-  fail "4d3. plugin version-recorded no WARN when present" "unexpected WARN: $(grep version-recorded "$OUT")"
-else
-  pass "4d3. plugin.version-recorded → no WARN when zskills_version present"
+  fail "4d2. version-currency WARN" "expected WARN naming update-zskills; records=$(grep version-currency "$OUT")"
 fi
 
-# ── PLUGIN broken (A): strip a sentinel from one artifact → FAIL ─────────────
+# ── PLUGIN broken (A): init-done missing → FAIL (the not-initialised case) ───
 PB="$(make_plugin_good 2)"
-# Rewrite verifier.md WITHOUT the sentinel line.
-printf '%s\n' '---' 'name: verifier' '---' '# verifier' > "$PB/.claude/agents/verifier.md"
-OUT="$TMP/out-plugin-broken-sentinel.txt"
+rm -f "$PB/$ZSKILLS_INIT_DONE_REL"
+OUT="$TMP/out-plugin-broken-noinit.txt"
 run_cheap_capture "$PB" "$OUT"
-if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.artifact.agents/verifier.md"; then
-  pass "5. broken plugin (sentinel stripped from verifier.md) → FAIL on plugin.artifact.agents/verifier.md"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.init-done" \
+   && grep '^FAIL	plugin.init-done	' "$OUT" | grep -q 'update-zskills'; then
+  pass "5. broken plugin (init-done missing) → FAIL on plugin.init-done, naming the /zs:update-zskills cure"
 else
-  fail "5. broken plugin sentinel" "expected FAIL on plugin.artifact.agents/verifier.md; records=$(grep '^FAIL' "$OUT")"
+  fail "5. broken plugin no-init" "expected FAIL on plugin.init-done naming the cure; records=$(grep '^FAIL' "$OUT")"
 fi
 
-# ── PLUGIN broken (B): drop an artifact entirely → FAIL ──────────────────────
-PB2="$(make_plugin_good 3)"
-rm -f "$PB2/.claude/hooks/inject-bash-timeout.sh"
-OUT="$TMP/out-plugin-broken-missing.txt"
-run_cheap_capture "$PB2" "$OUT"
-if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.artifact.hooks/inject-bash-timeout.sh"; then
-  pass "6. broken plugin (inject-bash-timeout.sh dropped) → FAIL on plugin.artifact.hooks/inject-bash-timeout.sh"
+# (A2) 0-byte init-done is a partial leftover (#1079) → same FAIL.
+PB0="$(make_plugin_good 2b)"
+: > "$PB0/$ZSKILLS_INIT_DONE_REL"
+OUT="$TMP/out-plugin-broken-0byte.txt"
+run_cheap_capture "$PB0" "$OUT"
+if has_fail_id "$OUT" "plugin.init-done"; then
+  pass "5b. broken plugin (0-byte init-done, partial leftover) → FAIL on plugin.init-done (#1079 predicate)"
 else
-  fail "6. broken plugin missing artifact" "expected FAIL on plugin.artifact.hooks/inject-bash-timeout.sh; records=$(grep '^FAIL' "$OUT")"
+  fail "5b. broken plugin 0-byte" "expected FAIL on plugin.init-done; records=$(grep '^FAIL' "$OUT")"
 fi
+
+# (A3) setup-confirmed missing → FAIL on its own check id.
+PBS="$(make_plugin_good 2c)"
+rm -f "$PBS/$ZSKILLS_SETUP_CONFIRMED_REL"
+OUT="$TMP/out-plugin-broken-nosetup.txt"
+run_cheap_capture "$PBS" "$OUT"
+if has_fail_id "$OUT" "plugin.setup-confirmed"; then
+  pass "5c. broken plugin (setup-confirmed missing) → FAIL on plugin.setup-confirmed"
+else
+  fail "5c. broken plugin no-setup-confirmed" "expected FAIL on plugin.setup-confirmed; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# (A4 — the #1132 wrong-key case) OLD sentinel-era materialised artifacts
+# present but NO init markers: a materialiser-era consumer who upgraded
+# mid-window. The OLD key must NOT satisfy the reworked checks — still FAIL
+# on plugin.init-done (self-curing: the message names /zs:update-zskills).
+# The sentinel prefix + paths derive from init-state.sh's frozen
+# legacy-residue constants — never re-typed.
+PWK="$TMP/plugin-wrongkey"
+rm -rf -- "$PWK"
+mkdir -p "$PWK/.claude"
+git_init_fixture "$PWK"
+printf '%s\n' '.zskills/' > "$PWK/.gitignore"
+for wk_rel in "${ZSKILLS_LEGACY_MATERIALISED_PATHS[@]}"; do
+  mkdir -p "$PWK/$(dirname "$wk_rel")"
+  case "$wk_rel" in
+    *.sh) printf '%s\n' '#!/usr/bin/env bash' "# $ZSKILLS_LEGACY_SENTINEL_PREFIX 2026.06.0" 'exit 0' > "$PWK/$wk_rel" ;;
+    *agents*) printf '%s\n' '---' "# $ZSKILLS_LEGACY_SENTINEL_PREFIX 2026.06.0" 'name: x' '---' 'body' > "$PWK/$wk_rel" ;;
+    *) printf '%s\n' "<!-- $ZSKILLS_LEGACY_SENTINEL_PREFIX 2026.06.0 -->" '# rules' > "$PWK/$wk_rel" ;;
+  esac
+done
+OUT="$TMP/out-plugin-wrongkey.txt"
+run_cheap_capture "$PWK" "$OUT"
+if has_fail_id "$OUT" "plugin.init-done"; then
+  pass "5d. OLD sentinel-era artifacts WITHOUT init markers → still FAIL on plugin.init-done (wrong key no longer satisfies, #1132)"
+else
+  fail "5d. wrong-key regression" "expected FAIL on plugin.init-done; records=$(grep -E '^(PASS|FAIL)' "$OUT" | head -5)"
+fi
+
+# ── PRE-LOCK allowance (ZSKILLS_VI_PRE_LOCK=1 — the A6 hard-gate invocation) ──
+# Inside init, A6 runs BEFORE A7 writes the markers (lock-LAST), so the init
+# fence sets the knob: expected-absent markers report PASS-pending and a
+# healthy mid-init consumer gates 0 FAIL...
+PPL="$(make_plugin_good 2d)"
+rm -f "$PPL/$ZSKILLS_INIT_DONE_REL" "$PPL/$ZSKILLS_SETUP_CONFIRMED_REL"
+OUT="$TMP/out-plugin-prelock-good.txt"
+vi_reset
+ZSKILLS_VI_PRE_LOCK=1 vi_run_cheap "$PPL" > "$OUT"
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "5e. pre-lock invocation (knob=1, markers absent by design) → 0 FAIL (healthy mid-init consumer passes A6)"
+else
+  fail "5e. pre-lock good" "expected 0 FAIL; records=$(grep '^FAIL' "$OUT")"
+fi
+# ...but the knob suppresses NOTHING else (anti-hollow): a broken gitignore
+# still FAILs under the knob — exactly what the A6 hard gate must catch.
+PPB="$(make_plugin_good 2e)"
+rm -f "$PPB/$ZSKILLS_INIT_DONE_REL" "$PPB/$ZSKILLS_SETUP_CONFIRMED_REL"
+printf '%s\n' '!.zskills/' >> "$PPB/.gitignore"
+OUT="$TMP/out-plugin-prelock-broken.txt"
+vi_reset
+ZSKILLS_VI_PRE_LOCK=1 vi_run_cheap "$PPB" > "$OUT"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.gitignore-umbrella"; then
+  pass "5f. pre-lock knob does NOT suppress other checks — broken gitignore still FAILs under ZSKILLS_VI_PRE_LOCK=1"
+else
+  fail "5f. pre-lock anti-hollow" "expected gitignore FAIL under the knob; records=$(grep '^FAIL' "$OUT")"
+fi
+# And WITHOUT the knob, absent markers are a genuine FAIL (5/5b/5c above
+# already pin this; this re-run on the same fixture isolates the knob).
+OUT="$TMP/out-plugin-noknob.txt"
+run_cheap_capture "$PPL" "$OUT"
+if has_fail_id "$OUT" "plugin.init-done" && has_fail_id "$OUT" "plugin.setup-confirmed"; then
+  pass "5g. same fixture WITHOUT the knob → marker absences FAIL (the allowance is opt-in, init-fence-only)"
+else
+  fail "5g. knob isolation" "expected marker FAILs without the knob; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── PLUGIN broken (B): gitignore umbrella defeated → FAIL ────────────────────
+# A negative override after the umbrella entry (last match wins) leaves
+# .zskills/ paths un-ignored — exactly what init's gitignore-first step
+# guards against; the standing check must catch later regressions too.
+PB2="$(make_plugin_good 3)"
+printf '%s\n' '!.zskills/' >> "$PB2/.gitignore"
+OUT="$TMP/out-plugin-broken-gitignore.txt"
+run_cheap_capture "$PB2" "$OUT"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.gitignore-umbrella"; then
+  pass "6. broken plugin (gitignore umbrella overridden) → FAIL on plugin.gitignore-umbrella"
+else
+  fail "6. broken plugin gitignore" "expected FAIL on plugin.gitignore-umbrella; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── PLUGIN broken (C): config present but INVALID JSON → FAIL ────────────────
+# (valid-if-present: absence is fine — case 4c — but a present, unparsable
+# config silently breaks every reader and must FAIL.)
+PB5="$(make_plugin_good 3b)"
+printf '%s\n' '{ not json' > "$PB5/.claude/zskills-config.json"
+OUT="$TMP/out-plugin-broken-config.txt"
+run_cheap_capture "$PB5" "$OUT"
+if has_fail_id "$OUT" "plugin.config-valid"; then
+  pass "6b. broken plugin (config present but invalid JSON) → FAIL on plugin.config-valid"
+else
+  fail "6b. broken plugin config" "expected FAIL on plugin.config-valid; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── PLUGIN broken (D): R-b rules delivery missing → FAIL ─────────────────────
+# Point CLAUDE_PLUGIN_ROOT at a root whose hooks.json does NOT register
+# session-rules-context.sh (manifests/skills otherwise fine) — rules would
+# silently never arrive. Restore the good root afterwards.
+PB6="$(make_plugin_good 3c)"
+SAVED_PROOT="$CLAUDE_PLUGIN_ROOT"
+CLAUDE_PLUGIN_ROOT="$TMP/fake-plugin-root-norules"; export CLAUDE_PLUGIN_ROOT
+mkdir -p "$CLAUDE_PLUGIN_ROOT/.claude-plugin" "$CLAUDE_PLUGIN_ROOT/hooks" \
+         "$CLAUDE_PLUGIN_ROOT/skills/update-zskills" "$CLAUDE_PLUGIN_ROOT/scripts"
+printf '{ "version": "2026.06.0" }\n' > "$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json"
+printf '{ "hooks": {} }\n' > "$CLAUDE_PLUGIN_ROOT/hooks/hooks.json"
+printf '%s\n' '# rules template' > "$CLAUDE_PLUGIN_ROOT/CLAUDE_TEMPLATE.md"
+printf '%s\n' '# renderer' > "$CLAUDE_PLUGIN_ROOT/scripts/render-managed-rules.py"
+printf '%s\n' '---' 'name: update-zskills' '---' '# uz' \
+  > "$CLAUDE_PLUGIN_ROOT/skills/update-zskills/SKILL.md"
+OUT="$TMP/out-plugin-broken-rules.txt"
+run_cheap_capture "$PB6" "$OUT"
+if has_fail_id "$OUT" "plugin.rules-delivery"; then
+  pass "6c. broken plugin (session-rules-context.sh not registered/present) → FAIL on plugin.rules-delivery"
+else
+  fail "6c. broken plugin rules" "expected FAIL on plugin.rules-delivery; records=$(grep '^FAIL' "$OUT")"
+fi
+CLAUDE_PLUGIN_ROOT="$SAVED_PROOT"; export CLAUDE_PLUGIN_ROOT
 
 # ── PLUGIN broken (C): a .claude/skills/ mirror present → dual-install FAIL ──
 # With CLAUDE_PLUGIN_ROOT set AND a legacy mirror, lane detection returns dual.
@@ -604,11 +756,11 @@ else
   fail "7k. genuine dual unsupported" "expected FAIL on lane.dual-unsupported; records=$(grep '^FAIL' "$OUT")"
 fi
 
-# ── PLUGIN broken (D): CLAUDE_PLUGIN_ROOT pointing at an UNREACHABLE dir ──────
-# (#1008 medium gap) The 5 materialised artifacts are present in the consumer's
-# .claude/, but ${CLAUDE_PLUGIN_ROOT} points at a dir missing the plugin
-# manifests — so the live skills/hooks resolve to NOTHING. MUST FAIL on
-# plugin.root-reachable even though every artifact check PASSes.
+# ── PLUGIN broken (E): CLAUDE_PLUGIN_ROOT pointing at an UNREACHABLE dir ──────
+# (#1008 medium gap) The consumer side is healthy (init markers present), but
+# ${CLAUDE_PLUGIN_ROOT} points at a dir missing the plugin manifests — so the
+# live skills/hooks resolve to NOTHING. MUST FAIL on plugin.root-reachable
+# even though the init-marker checks PASS.
 PB4="$(make_plugin_good 6)"
 SAVED_PROOT="$CLAUDE_PLUGIN_ROOT"
 CLAUDE_PLUGIN_ROOT="$TMP/empty-plugin-root"; export CLAUDE_PLUGIN_ROOT
@@ -620,13 +772,34 @@ if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.root-reachable"; then
 else
   fail "7b. plugin root unreachable" "expected FAIL on plugin.root-reachable; records=$(grep '^FAIL' "$OUT")"
 fi
-# Artifact checks must still PASS — proving root-reachable is what catches it.
-if has_fail_id "$OUT" "plugin.artifact.agents/verifier.md"; then
-  fail "7c. unreachable-root artifacts" "artifact checks should PASS (artifacts present); records=$(grep '^FAIL' "$OUT")"
+# The init-marker checks must still PASS — proving root-reachable is what
+# catches it, not a consumer-side breakage.
+if grep -q '^PASS	plugin.init-done	' "$OUT"; then
+  pass "7c. plugin root unreachable → plugin.init-done still PASSes (root-reachable is the catcher)"
 else
-  pass "7c. plugin root unreachable → artifact checks still PASS (root-reachable is the catcher)"
+  fail "7c. unreachable-root init checks" "plugin.init-done should PASS (markers present); records=$(grep init-done "$OUT")"
 fi
 CLAUDE_PLUGIN_ROOT="$SAVED_PROOT"; export CLAUDE_PLUGIN_ROOT
+
+# ── plugin.mirror-less WARN wording (defensive direct-call surface) ──────────
+# Via vi_run_cheap a zskills mirror + plugin env collapses to `dual`
+# upstream, so drive vi_check_plugin DIRECTLY on a mirror-carrying consumer
+# and pin the WARN's cure wording: it must recommend the
+# uninstall-one-install-the-other model and NEVER the retired lane-switch
+# script (Phase 6b kills the old switch-script recommendation in this
+# region; the sibling lane.dual-unsupported mention is Phase 7's lockstep).
+PMW="$(make_plugin_good 10)"
+mkdir -p "$PMW/.claude/skills/update-zskills"
+printf '%s\n' '---' 'name: update-zskills' '---' '# uz' > "$PMW/.claude/skills/update-zskills/SKILL.md"
+OUT="$TMP/out-plugin-mirror-warn.txt"
+vi_reset; vi_check_plugin "$PMW" > "$OUT"
+if has_warn_id "$OUT" "plugin.mirror-less" \
+   && grep '^WARN	plugin.mirror-less	' "$OUT" | grep -q 'uninstall' \
+   && ! grep '^WARN	plugin.mirror-less	' "$OUT" | grep -qi 'switch'; then
+  pass "7l. plugin.mirror-less WARN recommends uninstall-one-lane, never the retired switch script"
+else
+  fail "7l. mirror-less WARN wording" "records=$(grep mirror-less "$OUT")"
+fi
 
 unset CLAUDE_PLUGIN_ROOT
 

@@ -9,10 +9,16 @@
 # function is an executable oracle — if SKILL.md's spec changes meaning,
 # the oracle must be updated in lockstep.
 #
-# Coverage (matches Phase 5 WI 5.4 acceptance criteria exactly):
-#   1.  Fresh consumer install — verifier.md + 2 new hook scripts land in
-#       expected locations; commit-reviewer.md (D'' dropped) is NOT
-#       installed; .claude/scripts/ is NOT created.
+# Coverage (matches Phase 5 WI 5.4 acceptance criteria; REWORKED by
+# INSTALL_REDESIGN Phase 3 — verify-response-validate.sh is no longer a
+# hook: the legacy lane delivers it via the skills mirror at
+# .claude/skills/update-zskills/scripts/, so the hook-copy enumerations
+# below carry only inject-bash-timeout.sh and the install assertion
+# targets the skills-mirror copy):
+#   1.  Fresh consumer install — verifier.md + inject-bash-timeout.sh land
+#       in expected locations; the skills-mirror copy of
+#       verify-response-validate.sh is executable; commit-reviewer.md
+#       (D'' dropped) is NOT installed; .claude/scripts/ is NOT created.
 #   2.  Byte-equivalence — installed verifier.md matches source.
 #   3.  Idempotency — re-running with no changes prints no "Updated" lines.
 #   4.  Update path — modifying consumer's verifier.md and re-running
@@ -52,17 +58,18 @@ skip() { printf '\033[33m  SKIP\033[0m %s\n' "$1"; SKIP_COUNT=$((SKIP_COUNT+1));
 # Return: 0 on success.
 #
 # Encodes the SKILL.md Step C agent-copy block verbatim plus a minimal
-# hook-copy loop for the 2 new hooks. The 2 new hooks have NO
-# settings.json wiring (loaded via verifier.md frontmatter and direct
-# skill invocation respectively), so this oracle does NOT touch
-# settings.json.
+# hook-copy loop for inject-bash-timeout.sh (NO settings.json wiring —
+# loaded via verifier.md frontmatter) and a minimal skills-mirror copy of
+# update-zskills/scripts/ (the lane that now delivers the skill-bundled
+# verify-response-validate.sh). This oracle does NOT touch settings.json.
 run_step_c_install() {
   local PORTABLE="$1" PROJECT_DIR="$2"
 
-  # --- Hook copy (for the 2 new hooks only — block-* and warn-* are out
-  # of scope for this test) ---
+  # --- Hook copy (inject-bash-timeout.sh only — block-* and warn-* are out
+  # of scope for this test; verify-response-validate.sh is skill-bundled,
+  # delivered via the skills-mirror copy below, NOT a hook) ---
   mkdir -p "$PROJECT_DIR/.claude/hooks"
-  for hook in inject-bash-timeout.sh verify-response-validate.sh; do
+  for hook in inject-bash-timeout.sh; do
     local src="$PORTABLE/hooks/$hook"
     local dst="$PROJECT_DIR/.claude/hooks/$hook"
     [ -e "$src" ] || continue
@@ -88,7 +95,6 @@ run_step_c_install() {
     block-main-edits.sh
     warn-config-drift.sh
     inject-bash-timeout.sh
-    verify-response-validate.sh
     log-session-stop.sh
     log-permission-request.sh
   )
@@ -131,6 +137,15 @@ run_step_c_install() {
     echo "WARN: agent definitions auto-discover at session start. Restart Claude Code (or open a new session) before invoking verifier-using skills (/run-plan, /commit, /fix-issues, /do, /verify-changes). There is no in-session reload command."
   fi
 
+  # --- Skills-mirror copy (minimal: update-zskills/scripts/ only — the full
+  # Step A mirror is out of this oracle's scope; this is the lane that
+  # delivers the skill-bundled verify-response-validate.sh) ---
+  if [ -d "$PORTABLE/.claude/skills/update-zskills/scripts" ]; then
+    mkdir -p "$PROJECT_DIR/.claude/skills/update-zskills/scripts"
+    cp -a "$PORTABLE/.claude/skills/update-zskills/scripts/." \
+          "$PROJECT_DIR/.claude/skills/update-zskills/scripts/"
+  fi
+
   return 0
 }
 
@@ -143,7 +158,9 @@ run_step_c_install() {
 #   - .claude/agents/canary-readonly.md → COPY (it ships with zskills)
 #   - .claude/agents/commit-reviewer.md → DELIBERATELY OMIT (D'' dropped)
 #   - hooks/inject-bash-timeout.sh     → COPY
-#   - hooks/verify-response-validate.sh → COPY
+#   - .claude/skills/update-zskills/scripts/verify-response-validate.sh
+#       → COPY into the portable skills-mirror slice (skill-bundled — NOT
+#         a hook; INSTALL_REDESIGN Phase 3)
 #   - all other hooks                  → omit (out of scope for this test)
 make_portable() {
   local label="$1"
@@ -157,9 +174,14 @@ make_portable() {
     cp -a "$REPO_ROOT/.claude/agents/canary-readonly.md" "$portable/.claude/agents/"
   fi
 
-  # Copy the 2 new hook scripts.
+  # Copy the frontmatter-loaded hook script.
   cp -a "$REPO_ROOT/hooks/inject-bash-timeout.sh" "$portable/hooks/"
-  cp -a "$REPO_ROOT/hooks/verify-response-validate.sh" "$portable/hooks/"
+  # Copy the skill-bundled Layer-3 validator into the portable tree's
+  # skills-mirror slice (from the repo's .claude/skills mirror — the copy a
+  # legacy consumer receives via Step A).
+  mkdir -p "$portable/.claude/skills/update-zskills/scripts"
+  cp -a "$REPO_ROOT/.claude/skills/update-zskills/scripts/verify-response-validate.sh" \
+        "$portable/.claude/skills/update-zskills/scripts/"
 
   # Copy a verbatim-owned hook (log-session-stop.sh — carries a
   # zskills-hook-version stamp) for the #1060 refresh cases, and the
@@ -171,7 +193,7 @@ make_portable() {
 
   # Ensure executable bits set (cp -a preserves; belt-and-suspenders).
   chmod +x "$portable/hooks/inject-bash-timeout.sh"
-  chmod +x "$portable/hooks/verify-response-validate.sh"
+  chmod +x "$portable/.claude/skills/update-zskills/scripts/verify-response-validate.sh"
   chmod +x "$portable/hooks/log-session-stop.sh"
   chmod +x "$portable/hooks/block-unsafe-project.sh"
 
@@ -189,8 +211,8 @@ make_consumer() {
 
 # --- Test cases ------------------------------------------------------------
 
-# Case 1: Fresh consumer install — agent + 2 hooks land; commit-reviewer.md
-# does NOT install; .claude/scripts/ is NOT created.
+# Case 1: Fresh consumer install — agent + hook + skills-mirror script land;
+# commit-reviewer.md does NOT install; .claude/scripts/ is NOT created.
 test_case_1_fresh_install() {
   local label="case1"
   local portable; portable=$(make_portable "$label")
@@ -202,14 +224,14 @@ test_case_1_fresh_install() {
   local ok=1
   [ -f "$consumer/.claude/agents/verifier.md" ] || { ok=0; fail "case 1: verifier.md present" "missing"; }
   [ -x "$consumer/.claude/hooks/inject-bash-timeout.sh" ] || { ok=0; fail "case 1: inject-bash-timeout.sh exec" "missing or not exec"; }
-  [ -x "$consumer/.claude/hooks/verify-response-validate.sh" ] || { ok=0; fail "case 1: verify-response-validate.sh exec" "missing or not exec"; }
+  [ -x "$consumer/.claude/skills/update-zskills/scripts/verify-response-validate.sh" ] || { ok=0; fail "case 1: skills-mirror verify-response-validate.sh exec" "missing or not exec"; }
   [ ! -f "$consumer/.claude/agents/commit-reviewer.md" ] || { ok=0; fail "case 1: commit-reviewer.md NOT installed" "present (D'' dropped this agent)"; }
   [ ! -d "$consumer/.claude/scripts" ] || { ok=0; fail "case 1: .claude/scripts NOT created" "directory exists (hook scripts must go to .claude/hooks/)"; }
   echo "$out" | grep -qF 'WARN: agent definitions auto-discover at session start' \
     || { ok=0; fail "case 1: WARN line emitted" "not in output"; }
 
   if [ "$ok" -eq 1 ]; then
-    pass "case 1: fresh install — agent + 2 hooks land; commit-reviewer absent; no .claude/scripts/"
+    pass "case 1: fresh install — agent + hook + skills-mirror validator land; commit-reviewer absent; no .claude/scripts/"
   fi
   rm -rf -- "$portable" "$consumer"
 }

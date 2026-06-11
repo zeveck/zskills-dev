@@ -471,7 +471,7 @@ for _briefing_status in landed-full landed-pr-ready landed-pr-needs-attention \
 done
 
 # Issue #618: zskills-dashboard app.js landedPillClass() must enumerate every
-# canonical .landed status value. PR #532's analog on briefing.py (#621) and
+# canonical landed-marker status value. PR #532's analog on briefing.py (#621) and
 # fix-report/SKILL.md (#602) closed the prose/Python reader-side; this closes
 # the JS reader-side. Canonical 11-value vocabulary is locked by
 # tests/test-landed-status-vocabulary.sh; this pin asserts each value appears

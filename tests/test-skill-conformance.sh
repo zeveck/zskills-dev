@@ -228,25 +228,30 @@ check_not_in_file_filtered() {
   fi
 }
 
-# Phase 4 W4.2(b) (D8): cross-test materialiser-presence check at top.
-# The conformance suite is the broadest structural safety net, so before
-# the per-skill grep checks run, fail fast if any Phase-2 SessionStart
-# materialiser artifact or plugin-lane manifest has gone missing. The
-# behavioral correctness of each is exercised by its dedicated test
-# (test-sessionstart-materialise.sh, test-plugin-manifest.sh, etc.); this
-# is purely a presence/non-deletion tripwire that surfaces a vanished
-# artifact here even if a dedicated test were ever (accidentally) dropped.
-echo "=== plugin-lane + SessionStart materialiser artifacts — presence (W4.2(b)/D8) ==="
+# Phase 4 W4.2(b) (D8): cross-test plugin-lane artifact presence check at
+# top. The conformance suite is the broadest structural safety net, so
+# before the per-skill grep checks run, fail fast if any plugin-lane
+# manifest/hook artifact has gone missing. The behavioral correctness of
+# each is exercised by its dedicated test (test-plugin-manifest.sh,
+# test-plugin-hooks-integrity.sh, etc.); this is purely a
+# presence/non-deletion tripwire that surfaces a vanished artifact here
+# even if a dedicated test were ever (accidentally) dropped. (The
+# SessionStart materialiser entry was removed in INSTALL_REDESIGN Phase 7
+# — the materialiser is deleted; setup is the explicit /zs:update-zskills
+# init and the SessionStart hooks are session-start-greeting.sh +
+# session-rules-context.sh.)
+echo "=== plugin-lane artifacts — presence (W4.2(b)/D8) ==="
 for _art in \
-  hooks/session-start-materialise.sh \
+  hooks/session-start-greeting.sh \
+  hooks/session-rules-context.sh \
   hooks/hooks.json \
   hooks/_lib/plugin-hook-skip-if-mirrored.sh \
   .claude-plugin/plugin.json \
   .claude-plugin/marketplace.json; do
   if [ -f "$REPO_ROOT/$_art" ]; then
-    pass "[materialiser-presence] $_art exists"
+    pass "[plugin-presence] $_art exists"
   else
-    fail "[materialiser-presence] $_art exists" "$_art"
+    fail "[plugin-presence] $_art exists" "$_art"
   fi
 done
 
@@ -261,7 +266,7 @@ check_fixed run-plan "cp worktree slug (single-phase)" '"${PLAN_SLUG}-phase-${PH
 check_fixed run-plan "cp worktree slug (finish-mode)"  '"${PLAN_SLUG}"'
 check_fixed run-plan "pr worktree path"             'WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-'
 check_fixed run-plan "pipeline-id echo"             'ZSKILLS_PIPELINE_ID=run-plan.'
-check_fixed run-plan ".zskills-tracked write"       '.zskills-tracked'
+check_fixed run-plan ".zskills/tracked write"      '.zskills/tracked'
 check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-tests/'
 check       run-plan "test capture redirect"        '\$TEST_OUT/(\$TEST_OUTPUT_FILE|\$\{TEST_OUTPUT_FILE:-\.test-results\.txt\})" 2>&1'
 check_fixed run-plan "compute-cron-fire invocation" 'bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/compute-cron-fire.sh"'
@@ -361,7 +366,22 @@ check_fixed verify-changes "test-cmd: skipped report text"  'Tests: skipped — 
 # the Layer 3 invocation reverts the fix and re-exposes the bg+Monitor
 # recovery reflex that PR #185/#186 surfaced.
 check_fixed run-plan "verifier subagent dispatch"     'subagent_type: "verifier"'
-check_fixed run-plan "Layer 3 invocation"             'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"'
+# Layer 3 invocation — dual-lane form (INSTALL_REDESIGN Phase 3): the
+# validator is skill-bundled at skills/update-zskills/scripts/ and resolved
+# via $ZSKILLS_SKILLS_ROOT (exported by the canonical dual-lane prelude),
+# correct on BOTH the mirror-less plugin lane and the legacy mirror —
+# modeled on the clear-tracking #865 dual-lane pin below.
+check_fixed run-plan "Layer 3 invocation (dual-lane)" 'bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"'
+# Rejection arm: the retired materialised-hook literal must NOT reappear at
+# any call site in skills/ — that path no longer exists on either lane.
+# (The old literal appears exactly once here, assembled in this variable.)
+OLD_VRV_LITERAL='.claude/hooks/verify-response-validate.sh'
+if grep -rn --include='*.md' -F "$OLD_VRV_LITERAL" "$REPO_ROOT/skills/" > /dev/null 2>&1; then
+  fail "skills/ reintroduces the retired Layer-3 hook path" "use bash \"\$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh\" (skill-bundled — INSTALL_REDESIGN Phase 3)"
+  grep -rn --include='*.md' -F "$OLD_VRV_LITERAL" "$REPO_ROOT/skills/" >&2
+else
+  pass "no retired Layer-3 hook path in skills/ (validator is skill-bundled, dual-lane)"
+fi
 check_fixed run-plan "Failure Protocol STOP message"  'STOP: verifier returned without meaningful results'
 check_fixed run-plan "dispatcher attribution clarifier" 'Dispatcher: the orchestrator (top-level `/run-plan`), not the verifier subagent'
 
@@ -795,6 +815,42 @@ if grep -qF 'baseline_N' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; th
 else
   fail "[.claude/agents/verifier.md] tally check: baseline comparison" "baseline-comparison guidance missing"
 fi
+
+# INSTALL_REDESIGN Phase 2 (branch 1A) — plugin-native root agents/ twins.
+# Root agents/{verifier,implementer}.md are the checked-in plugin-lane agent
+# sources (auto-loaded from the plugin root — NEVER named in plugin.json:
+# the Phase-1 claim-1 probe confirmed a manifest `agents` field is
+# validate-rejected AND breaks agent load). They are body-identical to the
+# .claude/agents twins modulo the frontmatter hooks: block (parity enforced
+# by tests/test-agents-parity.sh), so the content pins above apply to BOTH
+# copies — EXCEPT the inject-bash-timeout.sh frontmatter-reference pin,
+# which applies ONLY to the .claude/agents copies (plugin agents IGNORE
+# frontmatter hooks; plugin-lane Layer-0 is the hooks/hooks.json PreToolUse
+# entry — pinned in test-plugin-hooks-integrity.sh). Split per location.
+for _root_agent in verifier implementer; do
+  if [ -f "$REPO_ROOT/agents/$_root_agent.md" ]; then
+    pass "[agents/$_root_agent.md] exists (1A plugin-native source)"
+  else
+    fail "[agents/$_root_agent.md] exists (1A plugin-native source)" "missing"
+  fi
+  if grep -q "^name: $_root_agent\$" "$REPO_ROOT/agents/$_root_agent.md" 2>/dev/null; then
+    pass "[agents/$_root_agent.md] name: $_root_agent"
+  else
+    fail "[agents/$_root_agent.md] name: $_root_agent" "frontmatter mismatch"
+  fi
+done
+# Root verifier twin carries the same load-bearing prose as the legacy copy
+# (scope-creep diff guidance #448 + tally check #511) — the parity suite
+# guarantees this transitively, but pin it directly so a parity-suite
+# regression cannot silently strip verifier guidance from the plugin lane.
+for _pin in 'git show HEAD --stat' 'merge-base origin/main HEAD' 'Overall: N/M passed' 'baseline_N'; do
+  if grep -qF "$_pin" "$REPO_ROOT/agents/verifier.md" 2>/dev/null; then
+    pass "[agents/verifier.md] prose pin: $_pin"
+  else
+    fail "[agents/verifier.md] prose pin: $_pin" "missing from root twin"
+  fi
+done
+
 # Issue #575: the same canonical summary-line prose is mirrored into
 # skills/run-plan/modes/execute-phase.md Phase 3 verifier-dispatch prompt.
 # The .claude/agents/verifier.md check above is the agent-file pin; this
@@ -1675,6 +1731,52 @@ for hook_path in "$REPO_ROOT"/hooks/block-*.sh; do
 done
 
 echo ""
+echo "=== Gate allow/block-list tripwire (INSTALL_REDESIGN Phase 6b) ==="
+# hooks/block-unmaterialised-skill.sh gates `/zs:` invocations pre-init via
+# an ALLOW-LIST (unlisted skills are blocked — fails safe). The gate itself
+# never breaks on a new skill, but a read-only NEW skill silently blocking
+# pre-init would ship with no signal. This tripwire asserts every shipped
+# skills/<name> appears in the gate's ZSKILLS_GATE_ALLOW list OR its
+# ZSKILLS_GATE_BLOCK_ACK (block-acknowledged) list — so adding/renaming a
+# skill without consciously categorizing it fails CI with a message naming
+# the choice. Both lists live in the hook itself (single surface).
+GATE_HOOK="$REPO_ROOT/hooks/block-unmaterialised-skill.sh"
+GATE_ALLOW="$(sed -n 's/^ZSKILLS_GATE_ALLOW="\(.*\)"$/\1/p' "$GATE_HOOK")"
+GATE_BLOCK_ACK="$(sed -n 's/^ZSKILLS_GATE_BLOCK_ACK="\(.*\)"$/\1/p' "$GATE_HOOK")"
+# Anti-vacuous: the extraction itself must work (an empty list means the
+# hook's variable shape changed and every assertion below would be hollow).
+if [ -n "$GATE_ALLOW" ] && [ -n "$GATE_BLOCK_ACK" ]; then
+  pass "[gate] tripwire: extracted non-empty ALLOW + BLOCK_ACK lists from $(basename "$GATE_HOOK")"
+else
+  fail "[gate] tripwire: list extraction" \
+    "ZSKILLS_GATE_ALLOW / ZSKILLS_GATE_BLOCK_ACK not extractable from hooks/block-unmaterialised-skill.sh"
+fi
+for skill_dir in "$REPO_ROOT"/skills/*/; do
+  [ -d "$skill_dir" ] || continue
+  sname="$(basename "$skill_dir")"
+  in_allow=0; in_block=0
+  case " $GATE_ALLOW " in *" $sname "*) in_allow=1 ;; esac
+  case " $GATE_BLOCK_ACK " in *" $sname "*) in_block=1 ;; esac
+  if [ "$in_allow" -eq 1 ] && [ "$in_block" -eq 1 ]; then
+    fail "[gate] tripwire: $sname categorized in BOTH lists" \
+      "remove $sname from one of ZSKILLS_GATE_ALLOW / ZSKILLS_GATE_BLOCK_ACK in hooks/block-unmaterialised-skill.sh"
+  elif [ "$in_allow" -eq 1 ] || [ "$in_block" -eq 1 ]; then
+    pass "[gate] tripwire: $sname categorized ($([ "$in_allow" -eq 1 ] && echo allow || echo block-acknowledged))"
+  else
+    fail "[gate] tripwire: skills/$sname is in NEITHER gate list" \
+      "categorize it: add to ZSKILLS_GATE_ALLOW (read-only, safe pre-init) or ZSKILLS_GATE_BLOCK_ACK (state-writing) in hooks/block-unmaterialised-skill.sh"
+  fi
+done
+# And the reverse direction: every name the lists carry must be a real
+# shipped skill (catches a rename leaving a stale entry behind).
+for sname in $GATE_ALLOW $GATE_BLOCK_ACK; do
+  if [ ! -d "$REPO_ROOT/skills/$sname" ]; then
+    fail "[gate] tripwire: stale gate-list entry '$sname'" \
+      "no skills/$sname directory exists — remove or rename the entry in hooks/block-unmaterialised-skill.sh"
+  fi
+done
+
+echo ""
 echo "=== Multi-agent adversarial-loop skills — Agent-tool-required preflight (issue #143) ==="
 # These five skills internally dispatch reviewer + devil's-advocate + refiner
 # sub-agents (or, in research-and-go's case, Skill-load sibling skills that
@@ -2322,15 +2424,18 @@ else
 fi
 
 echo ""
-echo "=== Fresh-config scaffold: both lanes seed output.{plans,issues,reports}_dir = docs/ ==="
+echo "=== Fresh-config scaffold: legacy install seeds output.{plans,issues,reports}_dir = docs/ ==="
 # A FRESH config scaffold must default the output path keys to the documented
 # docs/ layout so a brand-new consumer's dashboard + plan-skills find plans in
-# docs/plans out of the box (resolver falls back to legacy plans/ only when the
-# output block is ABSENT — proven separately in tests/test-zskills-paths.sh
-# Case 1). Both scaffold sites must write the SAME output block:
-#   - plugin lane: hooks/session-start-materialise.sh seed dict
-#   - /update-zskills lane: skills/update-zskills/SKILL.md install scaffold JSON
-# This tightens the prior invariant (the seed used to carry NO output block).
+# docs/plans out of the box. (Since INSTALL_REDESIGN Phase 5 the resolver's
+# OWN built-in defaults are docs/{plans,issues,reports} too — pinned to
+# zskills-defaults.json by the congruence section below and proven in
+# tests/test-zskills-paths.sh Case 1.) The scaffold site checked here is the
+# /update-zskills lane's install scaffold JSON in
+# skills/update-zskills/SKILL.md. (The plugin lane's seed site — the
+# materialiser seed dict — was deleted in INSTALL_REDESIGN Phase 7; the
+# plugin lane now seeds from the canonical zskills-defaults.json via the A3
+# init interview, which needs no extraction arm.)
 SCAFFOLD_PY="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 SCAFFOLD_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "$SCAFFOLD_PY" <<'PYEOF'
 import json, os, re, sys
@@ -2338,24 +2443,7 @@ import json, os, re, sys
 repo = os.environ["ZS_REPO_ROOT"]
 errs = []
 
-# --- (1) Plugin-lane seed: extract the `cfg = { ... }` dict literal from the
-#     materialiser and eval it as Python (it's a plain dict of literals; the
-#     only non-literal is os.environ["PROJECT_NAME"], which we stub).
-mat = os.path.join(repo, "hooks", "session-start-materialise.sh")
-src = open(mat, encoding="utf-8").read()
-m = re.search(r"\ncfg = (\{.*?\n\})\n", src, re.DOTALL)
-plugin_out = None
-if not m:
-    errs.append("could not locate `cfg = {...}` dict in session-start-materialise.sh")
-else:
-    ns = {"os": type("O", (), {"environ": {"PROJECT_NAME": "x"}})()}
-    try:
-        cfg = eval(m.group(1), {"__builtins__": {}, "True": True, "False": False}, ns)
-        plugin_out = cfg.get("output")
-    except Exception as e:  # noqa: BLE001
-        errs.append("failed to eval plugin seed cfg dict: %r" % (e,))
-
-# --- (2) /update-zskills lane: extract the install scaffold JSON block under
+# --- /update-zskills lane: extract the install scaffold JSON block under
 #     the "Content to write to `.claude/zskills-config.json`:" heading, strip
 #     the <detected>/<preset.*> placeholders to JSON-valid dummies, json.load.
 skill = os.path.join(repo, "skills", "update-zskills", "SKILL.md")
@@ -2380,13 +2468,8 @@ else:
             errs.append("install scaffold JSON does not parse after placeholder strip: %r" % (e,))
 
 EXPECTED = {"plans_dir": "docs/plans", "issues_dir": "docs/issues", "reports_dir": "docs/reports"}
-if plugin_out != EXPECTED:
-    errs.append("plugin seed output block != %r (got %r)" % (EXPECTED, plugin_out))
 if scaffold_out != EXPECTED:
     errs.append("install scaffold output block != %r (got %r)" % (EXPECTED, scaffold_out))
-if plugin_out is not None and scaffold_out is not None and plugin_out != scaffold_out:
-    errs.append("the two seeds DISAGREE on the output block: plugin=%r scaffold=%r"
-                % (plugin_out, scaffold_out))
 
 for e in errs:
     print(e)
@@ -2394,10 +2477,102 @@ sys.exit(0)
 PYEOF
 )"
 if [ -z "$SCAFFOLD_HITS" ]; then
-  pass "fresh-config scaffold: both lanes seed identical output = docs/{plans,issues,reports}"
+  pass "fresh-config scaffold: legacy install scaffold seeds output = docs/{plans,issues,reports}"
 else
-  fail "fresh-config scaffold output block (both-lanes symmetry)" "$SCAFFOLD_HITS"
+  fail "fresh-config scaffold output block (legacy scaffold)" "$SCAFFOLD_HITS"
   printf '%s\n' "$SCAFFOLD_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+fi
+
+echo ""
+echo "=== Config-cascade built-in defaults congruence (INSTALL_REDESIGN Phase 5) ==="
+# The canonical defaults artifact is skills/update-zskills/scripts/
+# zskills-defaults.json (Phase 4). One arm keeps the bash copies congruent:
+#   (i)  bash family-1/2 inline defaults (zskills-resolve-config.sh +
+#        zskills-paths.sh) ≡ the JSON values. Convention: a marker line
+#          # zskills-defaults-congruence: <json.dotted.path>
+#        names the JSON key; the first ASSIGNED double-quoted literal
+#        (`="<value>"`) on the NEXT line must equal the JSON value.
+#        Exactly 5 markers are pinned
+#        (timezone + testing.output_file in resolve-config; the three
+#        output.*_dir in paths) so the net cannot silently shrink.
+#   (Arm (ii) — the materialiser seed-dict ≡ the JSON — was deleted in
+#   INSTALL_REDESIGN Phase 7 with the materialiser: subject-removal. The
+#   plugin lane's A3 init interview reads zskills-defaults.json directly
+#   and never needed an arm.)
+CASCADE_CONGRUENCE_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "$SCAFFOLD_PY" <<'PYEOF'
+import json, os, re, sys
+
+repo = os.environ["ZS_REPO_ROOT"]
+errs = []
+
+defaults_path = os.path.join(
+    repo, "skills", "update-zskills", "scripts", "zskills-defaults.json")
+try:
+    defaults = json.load(open(defaults_path, encoding="utf-8"))
+except Exception as e:  # noqa: BLE001
+    print("cannot load canonical zskills-defaults.json: %r" % (e,))
+    sys.exit(0)
+
+
+def lookup(dotted):
+    cur = defaults
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+# --- Arm (i): bash family-1/2 inline defaults --------------------------------
+marker_re = re.compile(r"#\s*zskills-defaults-congruence:\s*([A-Za-z0-9_.]+)\s*$")
+value_re = re.compile(r'=\s*"([^"]*)"')
+marker_count = 0
+for rel in ("skills/update-zskills/scripts/zskills-resolve-config.sh",
+            "skills/update-zskills/scripts/zskills-paths.sh"):
+    lines = open(os.path.join(repo, rel), encoding="utf-8").read().splitlines()
+    for i, line in enumerate(lines):
+        m = marker_re.search(line)
+        if not m:
+            continue
+        marker_count += 1
+        dotted = m.group(1)
+        expected = lookup(dotted)
+        if expected is None:
+            errs.append("%s:%d: congruence marker names %r, absent from "
+                        "zskills-defaults.json" % (rel, i + 1, dotted))
+            continue
+        if i + 1 >= len(lines):
+            errs.append("%s:%d: congruence marker has no following line"
+                        % (rel, i + 1))
+            continue
+        vm = value_re.search(lines[i + 1])
+        if not vm:
+            errs.append("%s:%d: no assigned double-quoted literal on the "
+                        "line after the congruence marker" % (rel, i + 2))
+            continue
+        if vm.group(1) != str(expected):
+            errs.append("%s:%d: inline default %r != zskills-defaults.json "
+                        "%s = %r" % (rel, i + 2, vm.group(1), dotted, expected))
+if marker_count != 5:
+    errs.append("expected exactly 5 zskills-defaults-congruence markers "
+                "across family-1/2 scripts, found %d" % marker_count)
+
+# (Arm (ii) — the materialiser seed-dict extraction — was deleted in
+# INSTALL_REDESIGN Phase 7 with the SessionStart materialiser hook:
+# subject-removal.)
+
+for e in errs:
+    print(e)
+sys.exit(0)
+PYEOF
+)"
+if [ -z "$CASCADE_CONGRUENCE_HITS" ]; then
+  pass "config-cascade defaults congruence: bash inline defaults ≡ zskills-defaults.json"
+else
+  fail "config-cascade defaults congruence" "$CASCADE_CONGRUENCE_HITS"
+  printf '%s\n' "$CASCADE_CONGRUENCE_HITS" | while IFS= read -r h; do
     [ -n "$h" ] && printf '    %s\n' "$h" >&2
   done
 fi
@@ -3098,7 +3273,7 @@ echo "=== .zskills/ umbrella cleanliness (issue #217) ==="
 # Allow-list: empty today, but exists so future legitimate force-adds (e.g., a
 # zskills-versions.lock file) can be added by editing the file rather than
 # editing this assertion. Format: one path per line, # for comments.
-ALLOWLIST="$REPO_ROOT/tests/zskills-tracked-allowlist.txt"
+ALLOWLIST="$REPO_ROOT/tests/zskills-dir-tracked-allowlist.txt"
 if [ -f "$ALLOWLIST" ]; then
   allowed=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | sort -u)
 else
@@ -3757,76 +3932,34 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
-# Config-seed congruence — both fresh-install config seeds must stay in sync
+# Config-seed safety pin — the legacy install scaffold carries agents.min_model
 # ──────────────────────────────────────────────────────────────────────────
-# There are TWO independent places that seed a fresh .claude/zskills-config.json:
+# The legacy lane seeds a fresh .claude/zskills-config.json from the ```json
+# block in skills/update-zskills/SKILL.md ("Content to write to
+# `.claude/zskills-config.json`"). The scaffold once OMITTED the `agents`
+# block, so `block-agents.sh` (registered on the legacy lane via
+# .claude/settings.json) fired-but-no-op'd — the never-Haiku floor was
+# silently OFF on fresh legacy installs (the exact parallel of #1136: the
+# safety-critical agents floor must be seeded on EVERY lane). This guard
+# fails closed if the scaffold drops `agents.min_model`.
 #
-#   1. Plugin lane — the Python `cfg = {...}` dict literal inside the
-#      <<'PY' ... PY heredoc in hooks/session-start-materialise.sh (the
-#      SessionStart materialiser writes it for plugin-lane consumers).
-#   2. Legacy lane — the ```json block in skills/update-zskills/SKILL.md
-#      ("Content to write to `.claude/zskills-config.json`"), which the
-#      /update-zskills install path writes directly.
-#
-# These two seeds drifted: the legacy scaffold OMITTED the `agents` block, so
-# `block-agents.sh` (registered on the legacy lane via .claude/settings.json)
-# fired-but-no-op'd — the never-Haiku floor was silently OFF on fresh legacy
-# installs. This is the exact parallel of #1136 (the safety-critical agents
-# floor must be seeded on EVERY lane). This guard fails closed if either seed
-# drops `agents.min_model` or if their top-level key-sets diverge on anything
-# OTHER than the documented lane-specific allow-list below.
-#
-# ALLOW-LIST of intentionally lane-specific keys (drift here is NOT a failure):
-#   • dev_server.main_repo_path — present in the legacy scaffold, omitted from
-#     the plugin seed by design (casual plugin consumers have no main-repo
-#     concept). Adding an intentional future divergence is a one-line edit to
-#     ALLOWED_DEVSERVER_DIFF / ALLOWED_TOPLEVEL_DIFF in the embedded parser.
+# (The former cross-seed congruence arm — plugin materialiser seed dict vs
+# this scaffold — was deleted in INSTALL_REDESIGN Phase 7 with the
+# materialiser: subject-removal. The plugin lane's A3 init interview seeds
+# from the canonical zskills-defaults.json, whose agents.min_model is pinned
+# by test-render-managed-rules-correctness.sh case 2d and the cascade
+# congruence section above.)
 . "$REPO_ROOT/hooks/_lib/resolve-python.sh"
 SEED_PY="$(zskills_resolve_python || true)"
 if [ -z "$SEED_PY" ]; then
-  fail "seed-congruence: Python 3 required to parse config seeds" "zskills_resolve_python"
+  fail "seed-safety-pin: Python 3 required to parse the config scaffold" "zskills_resolve_python"
 else
-  SEED_OUT="$("$SEED_PY" - "$REPO_ROOT/hooks/session-start-materialise.sh" \
-                          "$REPO_ROOT/skills/update-zskills/SKILL.md" <<'PY' 2>&1
-import ast, json, re, sys
+  SEED_OUT="$("$SEED_PY" - "$REPO_ROOT/skills/update-zskills/SKILL.md" <<'PY' 2>&1
+import json, re, sys
 
-materialiser_path, skillmd_path = sys.argv[1], sys.argv[2]
+skillmd_path = sys.argv[1]
 
-# Intentionally lane-specific keys (NOT drift). One-line additions here when a
-# future divergence is deliberate; everything else must stay congruent.
-ALLOWED_TOPLEVEL_DIFF = set()                 # no top-level keys may differ
-ALLOWED_DEVSERVER_DIFF = {"main_repo_path"}   # legacy-only by design
-
-errors = []
-
-# --- 1. Plugin seed: extract the `cfg = {...}` dict literal from the heredoc.
-mat = open(materialiser_path, encoding="utf-8").read()
-m = re.search(r"^cfg\s*=\s*\{", mat, re.MULTILINE)
-if not m:
-    print("PARSE-FAIL: could not locate `cfg = {` in materialiser", file=sys.stderr)
-    sys.exit(2)
-# Walk braces from the opening { to find the matching close.
-start = mat.index("{", m.start())
-depth, i = 0, start
-while i < len(mat):
-    c = mat[i]
-    if c == "{":
-        depth += 1
-    elif c == "}":
-        depth -= 1
-        if depth == 0:
-            break
-    i += 1
-cfg_src = mat[start:i+1]
-# Neutralize the one runtime expression so ast.literal_eval accepts it.
-cfg_src = cfg_src.replace('os.environ["PROJECT_NAME"]', '"<detected>"')
-try:
-    plugin_seed = ast.literal_eval(cfg_src)
-except Exception as e:
-    print("PARSE-FAIL: plugin cfg literal not parseable: %r" % e, file=sys.stderr)
-    sys.exit(2)
-
-# --- 2. Legacy seed: extract the ```json fence that seeds zskills-config.json.
+# --- Legacy seed: extract the ```json fence that seeds zskills-config.json.
 skill = open(skillmd_path, encoding="utf-8").read()
 anchor = skill.find("Content to write to")
 if anchor == -1:
@@ -3848,37 +3981,18 @@ except Exception as e:
     print("PARSE-FAIL: legacy json fence not parseable after sanitize: %r" % e, file=sys.stderr)
     sys.exit(2)
 
-# --- Assertion 1: both seeds carry the safety-critical agents.min_model key.
-for label, seed in (("plugin", plugin_seed), ("legacy", legacy_seed)):
-    if "min_model" not in seed.get("agents", {}):
-        errors.append("%s seed missing agents.min_model (never-Haiku floor)" % label)
-
-# --- Assertion 2: top-level key-set parity (minus allow-list).
-pk, lk = set(plugin_seed), set(legacy_seed)
-diff = (pk ^ lk) - ALLOWED_TOPLEVEL_DIFF
-if diff:
-    errors.append("top-level key drift (not allow-listed): %s "
-                  "[plugin-only=%s legacy-only=%s]"
-                  % (sorted(diff), sorted(pk - lk), sorted(lk - pk)))
-
-# --- dev_server sub-dict: tolerate ONLY the allow-listed main_repo_path diff.
-pds, lds = set(plugin_seed.get("dev_server", {})), set(legacy_seed.get("dev_server", {}))
-ds_diff = (pds ^ lds) - ALLOWED_DEVSERVER_DIFF
-if ds_diff:
-    errors.append("dev_server key drift (not allow-listed): %s" % sorted(ds_diff))
-
-if errors:
-    for e in errors:
-        print("DRIFT: " + e, file=sys.stderr)
+# --- Assertion: the scaffold carries the safety-critical agents.min_model key.
+if "min_model" not in legacy_seed.get("agents", {}):
+    print("DRIFT: legacy seed missing agents.min_model (never-Haiku floor)", file=sys.stderr)
     sys.exit(1)
 print("OK")
 PY
 )"
   SEED_RC=$?
   if [ "$SEED_RC" -eq 0 ]; then
-    pass "seed-congruence: plugin + legacy config seeds carry agents.min_model and stay key-congruent"
+    pass "seed-safety-pin: legacy install scaffold carries agents.min_model"
   else
-    fail "seed-congruence: config seeds drifted (parallel of #1136)" "agents.min_model / top-level key parity"
+    fail "seed-safety-pin: legacy install scaffold dropped agents.min_model (parallel of #1136)" "agents.min_model"
     echo "$SEED_OUT" | sed 's/^/        /'
   fi
 fi

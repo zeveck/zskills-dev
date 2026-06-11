@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.10+26ece7"
+  version: "2026.06.10+0a78ae"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -905,7 +905,10 @@ done
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    for wt_line in $(git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //'); do
-     if [ -f "$wt_line/.landed" ] && grep -q 'status: landed' "$wt_line/.landed"; then
+     # Dual-read (Phase 8): .zskills/landed first, legacy root .landed fallback.
+     LANDED_MARKER="$wt_line/.zskills/landed"
+     [ -f "$LANDED_MARKER" ] || LANDED_MARKER="$wt_line/.landed"
+     if [ -f "$LANDED_MARKER" ] && grep -q 'status: landed' "$LANDED_MARKER"; then
        echo "Cleaning up landed worktree: $wt_line"
        bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/land-phase.sh" "$wt_line"
      fi
@@ -1164,7 +1167,7 @@ sentinel set; do NOT add the clear there.
    # the existing requires.verify-changes write above and the 4 other
    # writers documented in plans/REQUIRES_LAND_PR.md. The matching
    # fulfilled.land-pr.<id> is written by /land-pr when row 6 of its
-   # .landed status-mapping table holds (MERGE_REQUESTED=true AND
+   # .zskills/landed status-mapping table holds (MERGE_REQUESTED=true AND
    # PR_STATE=MERGED AND CI_STATUS in {pass, none, skipped}). Idempotent:
    # chunked finish-auto invokes /run-plan once per phase, overwrite is fine
    # (same content each invocation).

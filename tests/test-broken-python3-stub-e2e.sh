@@ -14,9 +14,12 @@
 # `tests/test-resolve-python.sh` already fakes a stub at the RESOLVER-FUNCTION
 # level (unit). This harness closes the integration gap: it puts a BROKEN
 # `python3` first on PATH (real `python` behind it) and runs the ACTUAL flows
-# end-to-end — (a) the SessionStart materialiser and (b) a representative
-# skill-body fence (/briefing) — asserting both resolve via `$PYTHON`, succeed,
-# and that NOTHING ever invoked the stub (a sentinel marker proves it).
+# end-to-end — (a) the SessionStart rules-delivery hook
+# (hooks/session-rules-context.sh — the surviving python-heavy SessionStart
+# consumer; the materialiser it replaced was deleted in INSTALL_REDESIGN
+# Phase 7) and (b) a representative skill-body fence (/briefing) — asserting
+# both resolve via `$PYTHON`, succeed, and that NOTHING ever invoked the stub
+# (a sentinel marker proves it).
 #
 # ── THE LIMIT (do NOT mistake this for a full Windows qual) ───────────────
 # This harness catches the PYTHON-RESOLUTION class only — roughly 90% of the
@@ -140,59 +143,68 @@ fi
 : > "$STUB_MARKER"
 
 # ──────────────────────────────────────────────────────────────────────────
-# Flow (a): SessionStart materialiser end-to-end under the broken-stub PATH.
+# Flow (a): SessionStart rules-delivery hook end-to-end under the broken-stub
+# PATH (hooks/session-rules-context.sh — renders the template via
+# render-managed-rules.py and emits an additionalContext envelope, all
+# python-driven; the surviving SessionStart python consumer post-Phase-7).
 # ──────────────────────────────────────────────────────────────────────────
-# Build a FRESH fixture consumer project (lane=fresh): a config + root
-# CLAUDE_TEMPLATE.md so the materialiser can render managed.md. CLAUDE_PLUGIN_ROOT
-# points at the repo (dogfood source-tree layout), matching
-# tests/test-sessionstart-materialise.sh.
+# Build a FRESH fixture consumer project: a config so the hook takes the
+# --config render path. No legacy mirror and no project managed.md, so both
+# guards stay open. CLAUDE_PLUGIN_ROOT points at the repo (dogfood
+# source-tree layout); the hook resolves the template + renderer from there.
 PROJ="$TMP/proj"
 mkdir -p "$PROJ/.claude"
 cp "$REPO_ROOT/.claude/zskills-config.json" "$PROJ/.claude/"
-cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$PROJ/"
 
-MAT_OUT="$TMP/materialise.out"
+RULES_OUT="$TMP/rules-context.out"
+RULES_ERR="$TMP/rules-context.err"
 PATH="$STUB_PATH" env CLAUDE_PROJECT_DIR="$PROJ" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
-  bash "$REPO_ROOT/hooks/session-start-materialise.sh" > "$MAT_OUT" 2>&1
-MAT_RC=$?
+  bash "$REPO_ROOT/hooks/session-rules-context.sh" > "$RULES_OUT" 2>"$RULES_ERR"
+RULES_RC=$?
 
-V="$PROJ/.claude/agents/verifier.md"
-I="$PROJ/.claude/agents/implementer.md"
-H1="$PROJ/.claude/hooks/inject-bash-timeout.sh"
-H2="$PROJ/.claude/hooks/verify-response-validate.sh"
-M="$PROJ/.claude/rules/zskills/managed.md"
-
-# 1. Materialiser must complete cleanly (exit 0) — it must NOT abort on the
-#    stub (the #1075/#1079 failure mode where it bailed "no working Python 3").
-if [ "$MAT_RC" -eq 0 ]; then
-  pass "1. materialiser exits 0 under broken-stub PATH"
+# 1. The hook must complete cleanly (exit 0) — it must NOT abort on the stub
+#    (the #1075/#1079 failure mode where it bailed "no working Python 3").
+if [ "$RULES_RC" -eq 0 ]; then
+  pass "1. session-rules-context.sh exits 0 under broken-stub PATH"
 else
-  fail "1. materialiser rc=$MAT_RC (expected 0); output: $(cat "$MAT_OUT")"
+  fail "1. session-rules-context.sh rc=$RULES_RC (expected 0); stderr: $(cat "$RULES_ERR")"
 fi
 
-# 2. It must NOT have emitted the "no working Python 3" abort message.
-if grep -q "no working Python 3 found" "$MAT_OUT"; then
-  fail "2. materialiser reported 'no working Python 3' — resolver did not fall through to real python"
+# 2. It must NOT have emitted the "no working Python 3" skip message.
+if grep -q "no working Python 3 found" "$RULES_ERR"; then
+  fail "2. hook reported 'no working Python 3' — resolver did not fall through to real python"
 else
-  pass "2. materialiser did NOT report 'no working Python 3'"
+  pass "2. hook did NOT report 'no working Python 3'"
 fi
 
-# 3. All five artifacts materialised (proves the python-driven render/inject
-#    steps actually ran via the real interpreter).
-if [ -f "$V" ] && [ -f "$I" ] && [ -f "$H1" ] && [ -f "$H2" ] && [ -f "$M" ]; then
-  pass "3. all 5 artifacts materialised end-to-end under the stub"
+# 3. stdout carries a well-formed SessionStart envelope with a non-empty
+#    additionalContext (proves the python-driven render + envelope emit ran
+#    via the real interpreter — a stub that exits 9009 produces no stdout).
+ENV_CHECK="$("$REAL_PY" - "$RULES_OUT" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception as e:
+    print("NOTJSON:%s" % e); raise SystemExit(0)
+ac = d.get("hookSpecificOutput", {}).get("additionalContext")
+print("OK" if isinstance(ac, str) and ac.strip() else "NOCTX")
+PY
+)"
+if [ "$ENV_CHECK" = "OK" ]; then
+  pass "3. stdout is a SessionStart envelope with non-empty additionalContext"
 else
-  fail "3. missing artifact(s): V=$([ -f "$V" ]&&echo y||echo n) I=$([ -f "$I" ]&&echo y||echo n) H1=$([ -f "$H1" ]&&echo y||echo n) H2=$([ -f "$H2" ]&&echo y||echo n) M=$([ -f "$M" ]&&echo y||echo n)"
+  fail "3. envelope malformed/empty ($ENV_CHECK); head: $(head -c 200 "$RULES_OUT")"
 fi
 
-# 4. The rendered managed.md must carry the substitution from the config
-#    (project name) — proves render-managed-rules.py ran via the real python,
-#    not a no-op.
-PROJECT_NAME="$("$REAL_PY" -c 'import json;print(json.load(open("'"$PROJ"'/.claude/zskills-config.json")).get("project_name",""))')"
-if [ -n "$PROJECT_NAME" ] && [ -f "$M" ] && grep -qF "$PROJECT_NAME" "$M"; then
-  pass "4. managed.md rendered with project_name '$PROJECT_NAME' (python render ran via real interpreter)"
+# 4. The rendered rules carry a template landmark (proves
+#    render-managed-rules.py ran via the real python, not a no-op): the
+#    de-parameterized render is a pass-through, so the template's own first
+#    heading must appear in the additionalContext.
+LANDMARK="$(grep -m1 '^# ' "$REPO_ROOT/CLAUDE_TEMPLATE.md")"
+if [ -n "$LANDMARK" ] && grep -qF "$LANDMARK" "$RULES_OUT"; then
+  pass "4. additionalContext carries the template landmark '$LANDMARK' (real-python render)"
 else
-  fail "4. managed.md missing rendered project_name '$PROJECT_NAME'"
+  fail "4. additionalContext missing the template landmark '$LANDMARK'"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────

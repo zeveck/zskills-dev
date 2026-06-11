@@ -170,12 +170,18 @@ if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
   fi
 fi
 
-# #8: .landed recorded an UNKNOWN PR state (gh pr view rate-limited)
-# — manual reconciliation required.
-if [ -n "$WORKTREE_PATH" ] && [ -f "$WORKTREE_PATH/.landed" ]; then
-  if grep -q '^status: pr-state-unknown$' "$WORKTREE_PATH/.landed"; then
-    INVARIANT_FAILED=1
-    echo "INVARIANT-FAIL (#8): $WORKTREE_PATH/.landed has status: pr-state-unknown — gh pr view could not verify; manual reconciliation required" >&2
+# #8: the landed marker recorded an UNKNOWN PR state (gh pr view
+# rate-limited) — manual reconciliation required.
+# Dual-read (Phase 8 root-turd consolidation): .zskills/landed first, then
+# the legacy root .landed for pre-move worktrees; new path wins when both.
+if [ -n "$WORKTREE_PATH" ]; then
+  LANDED_MARKER="$WORKTREE_PATH/.zskills/landed"
+  [ -f "$LANDED_MARKER" ] || LANDED_MARKER="$WORKTREE_PATH/.landed"
+  if [ -f "$LANDED_MARKER" ]; then
+    if grep -q '^status: pr-state-unknown$' "$LANDED_MARKER"; then
+      INVARIANT_FAILED=1
+      echo "INVARIANT-FAIL (#8): $LANDED_MARKER has status: pr-state-unknown — gh pr view could not verify; manual reconciliation required" >&2
+    fi
   fi
 fi
 

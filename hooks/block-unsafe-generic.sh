@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.3
+# zskills-hook-version: 2026.06.4
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -29,6 +29,14 @@
 # FAIL CLOSED: when the config file is absent, unreadable, or unparseable
 # we DEFAULT TO BLOCKING (BLOCK_MAIN_PUSH=1) — preserving the prior
 # "zskills-shipped configs fail closed (safer)" posture.
+#
+# CONFIG-CASCADE CARVE-OUT (INSTALL_REDESIGN Phase 5, deliberate): this
+# hook reads execution.main_protected from the PROJECT config ONLY — it
+# does NOT participate in the project > user > built-ins cascade. This is
+# a SAFETY setting: letting a user-level ~/.claude/zskills-config.json
+# silently weaken a project's main_protected would invert the trust
+# direction (a per-user file overriding a per-repo discipline). The
+# fail-closed default above is unchanged.
 # D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
 # lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
 # plugin lane it defers to a settings.json-registered copy of this hook to

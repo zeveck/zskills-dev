@@ -287,7 +287,7 @@ EOF
   local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$test_tmpdir/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   # Override LOCAL_ROOT and TRACKING_ROOT so the hook resolves to the fixture,
   # not the caller's worktree. Without these, the hook's push-path tracking
-  # block reads .zskills-tracked + tracking markers from wherever the test was
+  # block reads .zskills/tracked (legacy .zskills-tracked) + tracking markers from wherever the test was
   # invoked from (typically a zskills-tracked worktree with accumulated commits),
   # firing the tracking guard before the main_protected check this test asserts.
   local result

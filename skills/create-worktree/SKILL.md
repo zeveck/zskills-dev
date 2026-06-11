@@ -6,10 +6,10 @@ description: >-
   Create a git worktree for agent work. Thin wrapper around
   create-worktree.sh — owns prefix-derived path, optional --branch-name
   override, optional pre-flight prune+fetch+ff-merge, safe worktree-add,
-  and sanitised .zskills-tracked / .worktreepurpose writes. Prints the
+  and sanitised .zskills/tracked / .zskills/worktreepurpose writes. Prints the
   worktree path on stdout.
 metadata:
-  version: "2026.06.10+017b79"
+  version: "2026.06.10+a6dc7e"
 ---
 
 # /create-worktree — Unified Worktree Creation
@@ -20,7 +20,7 @@ Thin skill wrapper around `.claude/skills/create-worktree/scripts/create-worktre
 
 This skill has two kinds of callers. Both ultimately run the same script; they differ only in whether `--pipeline-id` is specified upfront.
 
-**Tier 1 — bash callers inside other skills** (e.g. `/run-plan`, `/fix-issues`, `/do`). These know their canonical pipeline ID (`run-plan.<tracking-id>`, `fix-issues.<sprint-id>`, `do.<task-slug>`, etc.) and **must pass it verbatim via `--pipeline-id`**. The script rejects invocations without the flag (rc 5). There is no env-var fallback and no silent default — the flag is required so mis-wired call sites fail loudly instead of producing a wrong `.zskills-tracked`.
+**Tier 1 — bash callers inside other skills** (e.g. `/run-plan`, `/fix-issues`, `/do`). These know their canonical pipeline ID (`run-plan.<tracking-id>`, `fix-issues.<sprint-id>`, `do.<task-slug>`, etc.) and **must pass it verbatim via `--pipeline-id`**. The script rejects invocations without the flag (rc 5). There is no env-var fallback and no silent default — the flag is required so mis-wired call sites fail loudly instead of producing a wrong `.zskills/tracked`.
 
 **Tier 2 — user / Claude invoking `/create-worktree` as a slash command.** Users say "make a worktree called `foo-task`" and don't know or care what a pipeline ID is. When the user omits `--pipeline-id`, Claude (reading this skill) **synthesises `create-worktree.<slug>`** and passes it to the script. A power user who wants a specific pipeline ID can still pass `--pipeline-id` explicitly; Claude passes it through unchanged.
 
@@ -51,12 +51,12 @@ WT_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh"
 ## Arguments
 
 - `<slug>` (required, positional) — last non-flag token. Must match `[A-Za-z0-9._-]+`.
-- `--pipeline-id ID` (**required**) — the value written (after sanitisation) to `.zskills-tracked`. Tier-1 callers pass their canonical pipeline ID. Tier-2 standalone invocations synthesise `create-worktree[.${PREFIX}].${SLUG}` at the skill layer if the user omitted a flag.
+- `--pipeline-id ID` (**required**) — the value written (after sanitisation) to `.zskills/tracked`. Tier-1 callers pass their canonical pipeline ID. Tier-2 standalone invocations synthesise `create-worktree[.${PREFIX}].${SLUG}` at the skill layer if the user omitted a flag.
 - `--prefix P` — adds `P-` to branch name and path leaf. Slashes rejected (rc 5).
 - `--branch-name REF` — overrides branch verbatim; path leaf is unchanged. Slashes in the ref are legal (refs under `refs/heads/`).
 - `--from B` — base branch for pre-flight and `worktree-add-safe.sh`. Default `main`.
 - `--root R` — override `${WORKTREE_ROOT}/${PROJECT_NAME}` stem. Path becomes `${R}/[${PREFIX}-]${SLUG}`.
-- `--purpose TEXT` — write `.worktreepurpose` with this text. Without this flag, the script does NOT write `.worktreepurpose`; caller/agent retains responsibility.
+- `--purpose TEXT` — write `.zskills/worktreepurpose` with this text. Without this flag, the script does NOT write `.zskills/worktreepurpose`; caller/agent retains responsibility.
 - `--allow-resume` — export `ZSKILLS_ALLOW_BRANCH_RESUME=1` to `worktree-add-safe.sh` (permits attach-to-existing-branch that is ahead of base).
 - `--no-preflight` — skip `git worktree prune`, `git fetch origin <BASE>`, `git merge --ff-only origin/<BASE>`. Preserves pre-migration semantics for `/do` worktree mode.
 
@@ -94,10 +94,10 @@ Codes 2/3/4 propagate from `.claude/skills/create-worktree/scripts/worktree-add-
 
 ## Post-create side effects
 
-- `.zskills-tracked` is always written with the sanitised `--pipeline-id` value.
+- `.zskills/tracked` is always written with the sanitised `--pipeline-id` value.
   The script requires the flag — there is no env-var path and no fallback.
   The value is passed through `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` before being written.
-- `.worktreepurpose` is written iff `--purpose` was given.
+- `.zskills/worktreepurpose` is written iff `--purpose` was given.
 - Both files are untracked and not safe to commit — `.claude/skills/commit/scripts/land-phase.sh`
   refuses to clean up a worktree that has git-tracked copies of either.
 

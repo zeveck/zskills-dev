@@ -21,6 +21,5 @@ These docs are organised in two halves:
 
 - [Workflows](guides/workflows.md) — end-to-end recipes that combine multiple skills.
 - [Installing zskills](guides/installing-zskills.md) — install via the plugin lane or `/update-zskills` lane, with the full side-by-side comparison.
-- [Switching install lanes](guides/switching-install-lanes.md) — move between the plugin and `/update-zskills` lanes, with Abort/Rollback for both directions.
 - [Inspecting & monitoring](guides/inspecting-and-monitoring.md) — observe a running zskills project without reading git history by hand.
 - [Tracking system overview](guides/tracking-overview.md) — the enforcement model: how tracking markers gate commits.

@@ -3,7 +3,7 @@
 This document catalogs the 10 failure modes that the four scripts under
 `skills/land-pr/scripts/` detect and surface. Each entry names the
 failure, its **severity** (block — caller cannot proceed; warn — caller
-can settle the PR at a degraded `.landed status`), the **detection
+can settle the PR at a degraded `.zskills/landed status`), the **detection
 mechanism** in the corresponding script, and the **test case** in
 `tests/test-land-pr-scripts.sh` that proves the detection works.
 
@@ -23,7 +23,7 @@ must extend this file AND add a corresponding test.
 
 ### 1. rebase-conflict — `pr-rebase.sh` exit 10
 
-**Severity:** warn (caller settles `.landed status=conflict`).
+**Severity:** warn (caller settles `.zskills/landed status=conflict`).
 
 **Description:** The feature branch's commits conflict with `origin/$BASE`
 during `git rebase`. `git diff --name-only --diff-filter=U` produces a
@@ -150,7 +150,7 @@ non-numeric `$PR_NUMBER` → exit 20 immediately; then `gh auth status`
 
 ### 8. ci-pending (timeout) — `pr-monitor.sh` `WATCH_EXIT=124`
 
-**Severity:** warn (caller settles `.landed status=pr-ready`; user/cron
+**Severity:** warn (caller settles `.zskills/landed status=pr-ready`; user/cron
 can resume with `--pr <num>`).
 
 **Description:** `timeout $TIMEOUT gh pr checks <PR> --watch` returned
@@ -169,7 +169,7 @@ timeout-wrapped `gh pr checks --watch` to exit 124; asserts
 
 ### 9. auto-merge-disabled-on-repo (benign) — `pr-merge.sh` exit 0 / `MERGE_REASON=auto-merge-disabled-on-repo`
 
-**Severity:** warn (caller settles `.landed status=pr-ready` —
+**Severity:** warn (caller settles `.zskills/landed status=pr-ready` —
 `MERGE_REQUESTED=false`, but no error).
 
 **Description:** `gh pr merge --auto --squash` failed with stderr

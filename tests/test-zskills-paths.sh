@@ -4,24 +4,36 @@
 # plans/ZSKILLS_PATH_CONFIG.md Phase 1.
 #
 # Cases (≥9 per Phase 1.8 table; cases 10a-13 added for reports_dir per
-# REPORTS_DIR_MIGRATION.md Phase 1, WI 1.8):
-#   1. Empty config → $ZSKILLS_PLANS_DIR == $ROOT/plans (legacy fallback).
+# REPORTS_DIR_MIGRATION.md Phase 1, WI 1.8; fallback expectations RE-SPECCED
+# + cases 15-17 added by INSTALL_REDESIGN Phase 5 — config cascade
+# project > user > built-in defaults, defaults = docs/{plans,issues,reports}
+# pinned to zskills-defaults.json):
+#   1. Empty config → $ZSKILLS_PLANS_DIR == $ROOT/docs/plans (built-in
+#      default; Phase 5 re-spec — was legacy $ROOT/plans).
 #   2. output.plans_dir = "docs/plans" → $ZSKILLS_PLANS_DIR == $ROOT/docs/plans.
 #   3. output.plans_dir = "/tmp/x" → $ZSKILLS_PLANS_DIR == /tmp/x (absolute).
 #   4. output.plans_dir = "../external/zskills" → $ROOT/../external/zskills (joined).
 #   5. Both $CLAUDE_PROJECT_DIR AND $ZSKILLS_PATHS_ROOT unset → non-zero
 #      with stderr naming both vars (subshell-unset idiom).
-#   6a. Garbage config (not JSON) → silent fallback to legacy plans/.
-#   6b. Truncated JSON → silent fallback (closing-brace anchor).
-#   7. output.plans_dir = "" (empty string) → fallback to legacy plans/.
+#   6a. Garbage config (not JSON) → silent fallback to docs/plans (re-spec).
+#   6b. Truncated JSON → silent fallback (closing-brace anchor; re-spec).
+#   7. output.plans_dir = "" (empty string) → built-in default (re-spec).
 #   8. $ZSKILLS_PATHS_ROOT set, $CLAUDE_PROJECT_DIR unset → uses $ZSKILLS_PATHS_ROOT.
 #   9. After source, env | grep '^ZSKILLS_PLANS_DIR=' is empty (vars not exported).
-#   10a. Config file absent → $ZSKILLS_REPORTS_DIR == $ROOT/.zskills/audit.
-#   10b. Config present, reports_dir key absent → $ROOT/.zskills/audit (back-compat).
+#   10a. Config file absent → $ZSKILLS_REPORTS_DIR == $ROOT/docs/reports
+#      (Phase 5 re-spec — was legacy $ROOT/.zskills/audit).
+#   10b. Config present, reports_dir key absent → $ROOT/docs/reports (re-spec).
 #   11. output.reports_dir = "build/audit" → $ROOT/build/audit (relative joined).
 #   12. output.reports_dir = "/abs/path/reports" → /abs/path/reports (absolute as-is).
-#   13. Malformed JSON (truncated reports_dir) → legacy .zskills/audit fallback.
+#   13. Malformed JSON (truncated reports_dir) → docs/reports default (re-spec).
 #   14. Source vs mirror byte-identical (parity check; was Case 10).
+#   15. User tier alone (HOME-sandboxed) supplies output.* keys.
+#   16. Precedence: project match wins per key; user fills project-absent keys.
+#   17. Malformed user file → ignored; project + defaults result.
+#
+# HOME is sandboxed ($EMPTY_HOME / per-case user homes) in every
+# value-asserting case — the helper reads the USER tier from
+# $HOME/.claude/zskills-config.json (Phase 5 cascade).
 #
 # Run from repo root: bash tests/test-zskills-paths.sh
 
@@ -32,6 +44,10 @@ MIRROR_HELPER="$REPO_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh
 
 TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")"
 mkdir -p "$TEST_OUT"
+
+# HOME sandbox (Phase 5 cascade): empty user tier for project-only /
+# defaults-only assertions; cascade cases build their own user homes.
+EMPTY_HOME=$(mktemp -d /tmp/zskills-paths-home-XXXXXX)
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -46,31 +62,32 @@ if [ ! -f "$HELPER" ]; then
   exit 1
 fi
 
-# --- Case 1: empty config → legacy fallback --------------------------------
-# REGRESSION ANCHOR: a fresh-config SCAFFOLD now seeds output.plans_dir =
-# "docs/plans" (both lanes — see hooks/session-start-materialise.sh and
-# skills/update-zskills/SKILL.md, locked symmetric in test-skill-conformance.sh).
-# That change MUST NOT touch the resolver's legacy fallback: an EXISTING config
-# with NO output block (or none at all) must still resolve to <root>/plans so
-# pre-migration consumers are preserved. Case 1 proves zskills-paths.sh keeps
-# that legacy behavior. If this case ever flips to docs/plans, the scaffold
-# change leaked into the resolver — STOP.
-echo "=== Case 1: empty config — $ZSKILLS_PLANS_DIR falls back to <root>/plans ==="
+# --- Case 1: empty config → built-in defaults -------------------------------
+# Phase 5 RE-SPEC (intended assertion change, INSTALL_REDESIGN Phase 5):
+# OLD: no config → legacy <root>/plans (pre-migration back-compat). NEW: no
+# config at EITHER tier → the built-in defaults docs/{plans,issues}, PINNED
+# ≡ zskills-defaults.json by the conformance congruence check — so a
+# zero-config consumer gets the documented docs/ layout with no file at
+# all. (The old REGRESSION ANCHOR comment guarding the legacy fallback is
+# retired by this re-spec: the scaffold defaults and the resolver defaults
+# are now deliberately the SAME values, kept congruent through the one
+# canonical JSON.)
+echo "=== Case 1: empty config — $ZSKILLS_PLANS_DIR defaults to <root>/docs/plans ==="
 T1=$(mktemp -d /tmp/zskills-paths-t1-XXXXXX)
 # No config file at all.
 RESULT1=$(
-  CLAUDE_PROJECT_DIR="$T1" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T1" \
   bash -c '. "'"$HELPER"'" && printf "%s\n%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR" "$ZSKILLS_AUDIT_DIR"'
 )
 C1_PLANS=$(printf '%s\n' "$RESULT1" | sed -n '1p')
 C1_ISSUES=$(printf '%s\n' "$RESULT1" | sed -n '2p')
 C1_AUDIT=$(printf '%s\n' "$RESULT1" | sed -n '3p')
-[ "$C1_PLANS" = "$T1/plans" ] \
-  && pass "Case 1a: empty config → \$ZSKILLS_PLANS_DIR = '<root>/plans'" \
-  || fail "Case 1a: \$ZSKILLS_PLANS_DIR" "got '$C1_PLANS', expected '$T1/plans'"
-[ "$C1_ISSUES" = "$T1/plans" ] \
-  && pass "Case 1b: empty config → \$ZSKILLS_ISSUES_DIR also legacy '<root>/plans'" \
-  || fail "Case 1b: \$ZSKILLS_ISSUES_DIR" "got '$C1_ISSUES', expected '$T1/plans'"
+[ "$C1_PLANS" = "$T1/docs/plans" ] \
+  && pass "Case 1a: empty config → \$ZSKILLS_PLANS_DIR = '<root>/docs/plans' (built-in default)" \
+  || fail "Case 1a: \$ZSKILLS_PLANS_DIR" "got '$C1_PLANS', expected '$T1/docs/plans'"
+[ "$C1_ISSUES" = "$T1/docs/issues" ] \
+  && pass "Case 1b: empty config → \$ZSKILLS_ISSUES_DIR = '<root>/docs/issues' (built-in default)" \
+  || fail "Case 1b: \$ZSKILLS_ISSUES_DIR" "got '$C1_ISSUES', expected '$T1/docs/issues'"
 [ "$C1_AUDIT" = "$T1/.zskills/audit" ] \
   && pass "Case 1c: \$ZSKILLS_AUDIT_DIR = '<root>/.zskills/audit'" \
   || fail "Case 1c: \$ZSKILLS_AUDIT_DIR" "got '$C1_AUDIT', expected '$T1/.zskills/audit'"
@@ -90,7 +107,7 @@ cat > "$T2/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 RESULT2=$(
-  CLAUDE_PROJECT_DIR="$T2" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T2" \
   bash -c '. "'"$HELPER"'" && printf "%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR"'
 )
 C2_PLANS=$(printf '%s\n' "$RESULT2" | sed -n '1p')
@@ -116,7 +133,7 @@ cat > "$T3/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 C3_PLANS=$(
-  CLAUDE_PROJECT_DIR="$T3" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T3" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_PLANS_DIR"'
 )
 [ "$C3_PLANS" = "/tmp/x" ] \
@@ -137,7 +154,7 @@ cat > "$T4/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 C4_PLANS=$(
-  CLAUDE_PROJECT_DIR="$T4" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T4" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_PLANS_DIR"'
 )
 [ "$C4_PLANS" = "$T4/../external/zskills" ] \
@@ -208,22 +225,23 @@ rm -rf "$T5B"
 
 # --- Case 6a: garbage (non-JSON) config → silent fallback ------------------
 echo ""
-echo "=== Case 6a: garbage config (not JSON at all) → silent fallback to legacy plans/ ==="
+echo "=== Case 6a: garbage config (not JSON at all) → silent fallback to docs/plans default ==="
 T6A=$(mktemp -d /tmp/zskills-paths-t6a-XXXXXX)
 mkdir -p "$T6A/.claude"
 cat > "$T6A/.claude/zskills-config.json" <<'GARBAGE'
 not json at all
 GARBAGE
 RESULT6A=$(
-  CLAUDE_PROJECT_DIR="$T6A" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T6A" \
   bash -c '. "'"$HELPER"'" && printf "%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR"' 2>&1
 )
 RC6A=$?
 C6A_PLANS=$(printf '%s\n' "$RESULT6A" | sed -n '1p')
-if [ "$RC6A" -eq 0 ] && [ "$C6A_PLANS" = "$T6A/plans" ]; then
-  pass "Case 6a: garbage config → rc=0 + legacy plans/ fallback"
+# Phase 5 re-spec: fallback target is the built-in default docs/plans.
+if [ "$RC6A" -eq 0 ] && [ "$C6A_PLANS" = "$T6A/docs/plans" ]; then
+  pass "Case 6a: garbage config → rc=0 + docs/plans default"
 else
-  fail "Case 6a: garbage config fallback" "rc=$RC6A plans='$C6A_PLANS'"
+  fail "Case 6a: garbage config fallback" "rc=$RC6A plans='$C6A_PLANS' (expected '$T6A/docs/plans')"
 fi
 rm -rf "$T6A"
 
@@ -247,21 +265,22 @@ mkdir -p "$T6B/.claude"
 # match and the helper falls back.
 printf '%s' '{"output":{"plans_dir":"DROP"' > "$T6B/.claude/zskills-config.json"
 RESULT6B=$(
-  CLAUDE_PROJECT_DIR="$T6B" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T6B" \
   bash -c '. "'"$HELPER"'" && printf "%s\n" "$ZSKILLS_PLANS_DIR"' 2>&1
 )
 RC6B=$?
 C6B_PLANS=$(printf '%s\n' "$RESULT6B" | sed -n '1p')
-if [ "$RC6B" -eq 0 ] && [ "$C6B_PLANS" = "$T6B/plans" ]; then
-  pass "Case 6b: truncated JSON (no closing brace) → rc=0 + legacy plans/ fallback"
+# Phase 5 re-spec: fallback target is the built-in default docs/plans.
+if [ "$RC6B" -eq 0 ] && [ "$C6B_PLANS" = "$T6B/docs/plans" ]; then
+  pass "Case 6b: truncated JSON (no closing brace) → rc=0 + docs/plans default"
 else
-  fail "Case 6b: truncated JSON fallback" "rc=$RC6B plans='$C6B_PLANS'"
+  fail "Case 6b: truncated JSON fallback" "rc=$RC6B plans='$C6B_PLANS' (expected '$T6B/docs/plans')"
 fi
 rm -rf "$T6B"
 
 # --- Case 7: empty-string plans_dir → fallback ----------------------------
 echo ""
-echo "=== Case 7: output.plans_dir = '' → fallback to legacy plans/ ==="
+echo "=== Case 7: output.plans_dir = '' → built-in defaults ==="
 T7=$(mktemp -d /tmp/zskills-paths-t7-XXXXXX)
 mkdir -p "$T7/.claude"
 cat > "$T7/.claude/zskills-config.json" <<'CFG'
@@ -273,13 +292,14 @@ cat > "$T7/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 RESULT7=$(
-  CLAUDE_PROJECT_DIR="$T7" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T7" \
   bash -c '. "'"$HELPER"'" && printf "%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR"'
 )
 C7_PLANS=$(printf '%s\n' "$RESULT7" | sed -n '1p')
 C7_ISSUES=$(printf '%s\n' "$RESULT7" | sed -n '2p')
-[ "$C7_PLANS" = "$T7/plans" ] && [ "$C7_ISSUES" = "$T7/plans" ] \
-  && pass "Case 7: empty-string values fall back to legacy '<root>/plans'" \
+# Phase 5 re-spec: empty-string values fall to the built-in defaults.
+[ "$C7_PLANS" = "$T7/docs/plans" ] && [ "$C7_ISSUES" = "$T7/docs/issues" ] \
+  && pass "Case 7: empty-string values fall back to built-in docs/ defaults" \
   || fail "Case 7: empty-string fallback" "plans='$C7_PLANS' issues='$C7_ISSUES'"
 rm -rf "$T7"
 
@@ -297,7 +317,7 @@ cat > "$T8/.claude/zskills-config.json" <<'CFG'
 CFG
 C8_PLANS=$(
   ( unset CLAUDE_PROJECT_DIR
-    ZSKILLS_PATHS_ROOT="$T8" \
+    HOME="$EMPTY_HOME" ZSKILLS_PATHS_ROOT="$T8" \
       bash -c 'unset CLAUDE_PROJECT_DIR; ZSKILLS_PATHS_ROOT="'"$T8"'" . "'"$HELPER"'" && printf "%s" "$ZSKILLS_PLANS_DIR"'
   )
 )
@@ -317,7 +337,7 @@ CFG
 # Source the helper; spawn a subprocess (env). Since helper does not export,
 # the child's env should NOT contain ZSKILLS_PLANS_DIR.
 ENV_HIT=$(
-  CLAUDE_PROJECT_DIR="$T9" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T9" \
   bash -c '. "'"$HELPER"'"; env | grep "^ZSKILLS_PLANS_DIR=" || true'
 )
 if [ -z "$ENV_HIT" ]; then
@@ -327,23 +347,26 @@ else
 fi
 rm -rf "$T9"
 
-# --- Case 10a: config file absent → reports_dir legacy fallback ------------
+# --- Case 10a: config file absent → reports_dir built-in default -----------
+# Phase 5 RE-SPEC (intended assertion change): OLD legacy back-compat was
+# <root>/.zskills/audit; NEW built-in default is docs/reports (pinned to
+# zskills-defaults.json). $ZSKILLS_AUDIT_DIR itself stays .zskills/audit.
 echo ""
-echo "=== Case 10a: config file absent → \$ZSKILLS_REPORTS_DIR = <root>/.zskills/audit ==="
+echo "=== Case 10a: config file absent → \$ZSKILLS_REPORTS_DIR = <root>/docs/reports ==="
 T10A=$(mktemp -d /tmp/zskills-paths-t10a-XXXXXX)
 # No config file at all.
 C10A_REPORTS=$(
-  CLAUDE_PROJECT_DIR="$T10A" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T10A" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
 )
-[ "$C10A_REPORTS" = "$T10A/.zskills/audit" ] \
-  && pass "Case 10a: no config file → reports legacy '<root>/.zskills/audit'" \
-  || fail "Case 10a: no config fallback" "got '$C10A_REPORTS', expected '$T10A/.zskills/audit'"
+[ "$C10A_REPORTS" = "$T10A/docs/reports" ] \
+  && pass "Case 10a: no config file → reports built-in default '<root>/docs/reports'" \
+  || fail "Case 10a: no config fallback" "got '$C10A_REPORTS', expected '$T10A/docs/reports'"
 rm -rf "$T10A"
 
-# --- Case 10b: config present but reports_dir key absent → silent back-compat
+# --- Case 10b: config present but reports_dir key absent → built-in default
 echo ""
-echo "=== Case 10b: config has plans_dir + issues_dir but NO reports_dir → back-compat legacy ==="
+echo "=== Case 10b: config has plans_dir + issues_dir but NO reports_dir → docs/reports default ==="
 T10B=$(mktemp -d /tmp/zskills-paths-t10b-XXXXXX)
 mkdir -p "$T10B/.claude"
 cat > "$T10B/.claude/zskills-config.json" <<'CFG'
@@ -355,12 +378,13 @@ cat > "$T10B/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 C10B_REPORTS=$(
-  CLAUDE_PROJECT_DIR="$T10B" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T10B" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
 )
-[ "$C10B_REPORTS" = "$T10B/.zskills/audit" ] \
-  && pass "Case 10b: reports_dir absent → silent back-compat to '<root>/.zskills/audit'" \
-  || fail "Case 10b: back-compat" "got '$C10B_REPORTS', expected '$T10B/.zskills/audit'"
+# Phase 5 re-spec: key absent at both tiers → built-in default docs/reports.
+[ "$C10B_REPORTS" = "$T10B/docs/reports" ] \
+  && pass "Case 10b: reports_dir absent → built-in default '<root>/docs/reports'" \
+  || fail "Case 10b: reports_dir default" "got '$C10B_REPORTS', expected '$T10B/docs/reports'"
 rm -rf "$T10B"
 
 # --- Case 11: reports_dir relative → joined with root ----------------------
@@ -378,7 +402,7 @@ cat > "$T11/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 C11_REPORTS=$(
-  CLAUDE_PROJECT_DIR="$T11" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T11" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
 )
 [ "$C11_REPORTS" = "$T11/build/audit" ] \
@@ -399,7 +423,7 @@ cat > "$T12/.claude/zskills-config.json" <<'CFG'
 }
 CFG
 C12_REPORTS=$(
-  CLAUDE_PROJECT_DIR="$T12" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T12" \
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
 )
 [ "$C12_REPORTS" = "/abs/path/reports" ] \
@@ -409,22 +433,23 @@ rm -rf "$T12"
 
 # --- Case 13: malformed JSON (no closing brace) → silent fallback ----------
 echo ""
-echo "=== Case 13: malformed truncated reports_dir JSON → legacy .zskills/audit fallback ==="
+echo "=== Case 13: malformed truncated reports_dir JSON → docs/reports default ==="
 T13=$(mktemp -d /tmp/zskills-paths-t13-XXXXXX)
 mkdir -p "$T13/.claude"
 # Inner object never closes (no `}` after the value) — regex closing-brace
 # anchor refuses the match; fallback path used.
 printf '%s' '{"output":{"reports_dir":"DROP"' > "$T13/.claude/zskills-config.json"
 RESULT13=$(
-  CLAUDE_PROJECT_DIR="$T13" \
+  HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T13" \
   bash -c '. "'"$HELPER"'" && printf "%s\n" "$ZSKILLS_REPORTS_DIR"' 2>&1
 )
 RC13=$?
 C13_REPORTS=$(printf '%s\n' "$RESULT13" | sed -n '1p')
-if [ "$RC13" -eq 0 ] && [ "$C13_REPORTS" = "$T13/.zskills/audit" ]; then
-  pass "Case 13: malformed reports_dir JSON → rc=0 + legacy fallback"
+# Phase 5 re-spec: malformed → built-in default docs/reports.
+if [ "$RC13" -eq 0 ] && [ "$C13_REPORTS" = "$T13/docs/reports" ]; then
+  pass "Case 13: malformed reports_dir JSON → rc=0 + docs/reports default"
 else
-  fail "Case 13: malformed reports_dir" "rc=$RC13 reports='$C13_REPORTS' (expected '$T13/.zskills/audit')"
+  fail "Case 13: malformed reports_dir" "rc=$RC13 reports='$C13_REPORTS' (expected '$T13/docs/reports')"
 fi
 rm -rf "$T13"
 
@@ -441,6 +466,103 @@ if diff -q "$HELPER" "$MIRROR_HELPER" >/dev/null 2>&1; then
 else
   fail "Case 14b: source/mirror byte-identical" "diff returned non-zero"
 fi
+
+# --- Case 15: user tier alone supplies output.* (Phase 5 cascade) ----------
+echo ""
+echo "=== Case 15: HOME-sandboxed user tier — user config alone supplies output.* ==="
+T15=$(mktemp -d /tmp/zskills-paths-t15-XXXXXX)
+U15=$(mktemp -d /tmp/zskills-paths-u15-XXXXXX)
+mkdir -p "$U15/.claude"
+cat > "$U15/.claude/zskills-config.json" <<'UCFG'
+{
+  "output": {
+    "plans_dir": "user-plans",
+    "issues_dir": "user-issues",
+    "reports_dir": "user-reports"
+  }
+}
+UCFG
+# No project config at all.
+RESULT15=$(
+  HOME="$U15" CLAUDE_PROJECT_DIR="$T15" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR" "$ZSKILLS_REPORTS_DIR"'
+)
+C15_PLANS=$(printf '%s\n' "$RESULT15" | sed -n '1p')
+C15_ISSUES=$(printf '%s\n' "$RESULT15" | sed -n '2p')
+C15_REPORTS=$(printf '%s\n' "$RESULT15" | sed -n '3p')
+if [ "$C15_PLANS" = "$T15/user-plans" ] && [ "$C15_ISSUES" = "$T15/user-issues" ] \
+  && [ "$C15_REPORTS" = "$T15/user-reports" ]; then
+  pass "Case 15: user-tier output.* effective (joined with PROJECT root, not \$HOME)"
+else
+  fail "Case 15: user-tier output.*" "plans='$C15_PLANS' issues='$C15_ISSUES' reports='$C15_REPORTS'"
+fi
+rm -rf "$T15" "$U15"
+
+# --- Case 16: precedence — project match wins; user fills absent keys ------
+echo ""
+echo "=== Case 16: precedence — project>user per key; user fills project-absent keys ==="
+T16=$(mktemp -d /tmp/zskills-paths-t16-XXXXXX)
+U16=$(mktemp -d /tmp/zskills-paths-u16-XXXXXX)
+mkdir -p "$T16/.claude" "$U16/.claude"
+cat > "$U16/.claude/zskills-config.json" <<'UCFG'
+{
+  "output": {
+    "plans_dir": "user-plans",
+    "issues_dir": "user-issues"
+  }
+}
+UCFG
+cat > "$T16/.claude/zskills-config.json" <<'PCFG'
+{
+  "output": {
+    "plans_dir": "proj-plans"
+  }
+}
+PCFG
+RESULT16=$(
+  HOME="$U16" CLAUDE_PROJECT_DIR="$T16" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR" "$ZSKILLS_REPORTS_DIR"'
+)
+C16_PLANS=$(printf '%s\n' "$RESULT16" | sed -n '1p')
+C16_ISSUES=$(printf '%s\n' "$RESULT16" | sed -n '2p')
+C16_REPORTS=$(printf '%s\n' "$RESULT16" | sed -n '3p')
+[ "$C16_PLANS" = "$T16/proj-plans" ] \
+  && pass "Case 16a: \$ZSKILLS_PLANS_DIR = '<root>/proj-plans' (project wins over user)" \
+  || fail "Case 16a: project precedence" "got '$C16_PLANS', expected '$T16/proj-plans'"
+[ "$C16_ISSUES" = "$T16/user-issues" ] \
+  && pass "Case 16b: \$ZSKILLS_ISSUES_DIR = '<root>/user-issues' (user fills project-absent key)" \
+  || fail "Case 16b: user fills absent key" "got '$C16_ISSUES', expected '$T16/user-issues'"
+[ "$C16_REPORTS" = "$T16/docs/reports" ] \
+  && pass "Case 16c: \$ZSKILLS_REPORTS_DIR = built-in default (absent at both tiers)" \
+  || fail "Case 16c: default fills both-absent key" "got '$C16_REPORTS', expected '$T16/docs/reports'"
+rm -rf "$T16" "$U16"
+
+# --- Case 17: malformed USER file → ignored (fail-open) --------------------
+echo ""
+echo "=== Case 17: malformed user config — ignored; project + defaults result ==="
+T17=$(mktemp -d /tmp/zskills-paths-t17-XXXXXX)
+U17=$(mktemp -d /tmp/zskills-paths-u17-XXXXXX)
+mkdir -p "$T17/.claude" "$U17/.claude"
+printf '%s' '{"output":{"plans_dir":"USERDROP"' > "$U17/.claude/zskills-config.json"
+cat > "$T17/.claude/zskills-config.json" <<'PCFG'
+{ "output": { "plans_dir": "proj-plans" } }
+PCFG
+RESULT17=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n%s\n" "$ZSKILLS_PLANS_DIR" "$ZSKILLS_ISSUES_DIR"' 2>&1
+)
+RC17=$?
+C17_PLANS=$(printf '%s\n' "$RESULT17" | sed -n '1p')
+C17_ISSUES=$(printf '%s\n' "$RESULT17" | sed -n '2p')
+if [ "$RC17" -eq 0 ] && [ "$C17_PLANS" = "$T17/proj-plans" ] \
+  && [ "$C17_ISSUES" = "$T17/docs/issues" ]; then
+  pass "Case 17: malformed user file ignored → project value + built-in default (rc=0)"
+else
+  fail "Case 17: malformed-user fallback" "rc=$RC17 plans='$C17_PLANS' issues='$C17_ISSUES'"
+fi
+rm -rf "$T17" "$U17"
+
+rm -rf "$EMPTY_HOME"
 
 # --- Summary ---------------------------------------------------------------
 echo ""

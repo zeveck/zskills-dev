@@ -8,7 +8,8 @@
 # main repo). When an agent invokes a worktree-scoped command via
 # `cd /tmp/wt && git commit` (or `git push`, `git cherry-pick`), the hook
 # must resolve the worktree root, not its own ambient CWD, before reading
-# `.zskills-tracked`, running `git -C <root> diff --cached`, or invoking
+# `.zskills/tracked` (legacy root `.zskills-tracked` during the Phase 8
+# dual-read window), running `git -C <root> diff --cached`, or invoking
 # scripts/skill-version-stage-check.sh.
 #
 #   extract_cd_target              — sed-extracts a leading `cd <target>` from

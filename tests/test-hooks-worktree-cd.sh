@@ -119,8 +119,9 @@ printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$push_tracki
 printf 'npm run test:all\n' > "$push_tracking_tmpdir/.transcript"
 (cd "$push_tracking_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
 (cd "$push_tracking_tmpdir" && git checkout -b feat/test 2>/dev/null && echo "var x=1;" > app.js && git add app.js && git commit -q -m "add code" 2>/dev/null)
-# Pipeline association via .zskills-tracked (required by the modern push tracking block)
-printf 'run-plan.test-plan\n' > "$push_tracking_tmpdir/.zskills-tracked"
+# Pipeline association via .zskills/tracked (required by the modern push tracking block)
+mkdir -p "$push_tracking_tmpdir/.zskills"
+printf 'run-plan.test-plan\n' > "$push_tracking_tmpdir/.zskills/tracked"
 # Add a requires file without fulfilled — should block push with code files
 # (Option B: markers live in the per-pipeline subdir)
 mkdir -p "$push_tracking_tmpdir/.zskills/tracking/run-plan.test-plan"

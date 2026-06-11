@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.06.03+05fb9c"
+  version: "2026.06.10+0b68d4"
 ---
 
 # /verify-changes [<scope> | last [N]] — Verify, Test & Fix Changes
@@ -30,7 +30,7 @@ of the implementation and will catch things you'd miss because you
 
 ### Dispatch protocol
 
-**Dispatch shape (top-level invocation).** When `/verify-changes` is invoked at the top level AND the orchestrator has the `Agent` tool, dispatched sub-agents use `subagent_type: "verifier"`; pipe each agent's response through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP the sub-flow. When invoked from within a `verifier` subagent (the typical case after this plan lands), the `Agent` tool is unavailable categorically — fall through to the inline path (`:43-61`). Document the freshness mode in the verification report ("multi-agent" / "single-context fresh-subagent" / "inline self-review").
+**Dispatch shape (top-level invocation).** When `/verify-changes` is invoked at the top level AND the orchestrator has the `Agent` tool, dispatched sub-agents use `subagent_type: "verifier"`; pipe each agent's response through `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"`; on exit 1 STOP the sub-flow. When invoked from within a `verifier` subagent (the typical case after this plan lands), the `Agent` tool is unavailable categorically — fall through to the inline path (`:43-61`). Document the freshness mode in the verification report ("multi-agent" / "single-context fresh-subagent" / "inline self-review").
 
 **Check your tool list first.** Whether you can dispatch fresh sub-agents
 for verification depends on whether you have the `Agent` (or `Task`) tool:
@@ -47,7 +47,15 @@ for verification depends on whether you have the `Agent` (or `Task`) tool:
   sub-agent dispatch returns:
 
   ```bash
-  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  # Resolve $ZSKILLS_SKILLS_ROOT (lane-portable) — canonical dual-lane
+  # prelude, references/canonical-config-prelude.md §1.
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/verify-response-validate.sh"
   VALIDATE_EXIT=$?
   ```
 
@@ -214,9 +222,9 @@ PIPELINE_ID assignment below):
    cases (rare under Claude Code subagent dispatch since env does not
    inherit across agents, but covers cron-fired top-level turns and
    tests that export it explicitly).
-2. `.zskills-tracked` in the worktree (cwd) — the parent skill
+2. `.zskills/tracked` in the worktree (cwd) — the parent skill
    (`run-plan`, `research-and-go`, etc.) writes its own PIPELINE_ID into
-   the worktree's `.zskills-tracked` when it sets up the worktree. This
+   the worktree's `.zskills/tracked` when it sets up the worktree. This
    is the primary delegation channel under Claude Code.
 3. Fallback `verify-changes.$TRACKING_ID` (or `verify-changes.final.<id>`
    when SCOPE=branch) — only for TRULY standalone invocations with no
@@ -232,11 +240,14 @@ fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
-# 3-tier PIPELINE_ID resolution: env, then worktree .zskills-tracked
+# 3-tier PIPELINE_ID resolution: env, then worktree .zskills/tracked
 # (parent's PIPELINE_ID inherited via the worktree file), then fallback
 # to own-skill standalone identity.
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
-if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills/tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills/tracked")
+elif [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  # Legacy root marker (pre-Phase-8 worktrees): dual-read window.
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
@@ -430,7 +441,10 @@ MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
 # 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
-if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills/tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills/tracked")
+elif [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  # Legacy root marker (pre-Phase-8 worktrees): dual-read window.
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
@@ -528,7 +542,10 @@ MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
 # 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
-if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills/tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills/tracked")
+elif [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  # Legacy root marker (pre-Phase-8 worktrees): dual-read window.
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
@@ -750,7 +767,10 @@ MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
 # 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
-if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills/tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills/tracked")
+elif [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  # Legacy root marker (pre-Phase-8 worktrees): dual-read window.
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"

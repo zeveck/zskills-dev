@@ -268,7 +268,9 @@ echo "=== Phase 1b — skills/create-worktree/scripts/create-worktree.sh (20 cas
 
 # ────────────────────────────────────────────────────────────────────
 # Case 1 — Fresh creation (plain, no flags). rc=0, stdout=absolute path,
-# .zskills-tracked present with sanitized pipeline ID.
+# .zskills/tracked present with sanitized pipeline ID (Phase 8 root-turd
+# consolidation: the writer targets the NEW path only; old root marker
+# must NOT be written).
 # Path template: ${WORKTREE_ROOT}/${PROJECT_NAME}-${SLUG}
 # Branch:        wt-${SLUG}
 # ────────────────────────────────────────────────────────────────────
@@ -280,11 +282,12 @@ register_wt "$WT_1"; register_branch "$BR_1"
 ERR_1=$(mktemp)
 STDOUT_1=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_1" 2>"$ERR_1")
 RC_1=$?
-TRACKED_1="$(cat "$WT_1/.zskills-tracked" 2>/dev/null || true)"
+TRACKED_1="$(cat "$WT_1/.zskills/tracked" 2>/dev/null || true)"
 
 if [ "$RC_1" -eq 0 ] && [ "$STDOUT_1" = "$WT_1" ] && [ -d "$WT_1" ] \
-   && [ -f "$WT_1/.zskills-tracked" ] && [ "$TRACKED_1" = "test.create-worktree.$$" ]; then
-  pass "1  fresh creation: rc=0, stdout=absolute path, .zskills-tracked matches pipeline ID"
+   && [ -f "$WT_1/.zskills/tracked" ] && [ "$TRACKED_1" = "test.create-worktree.$$" ] \
+   && [ ! -e "$WT_1/.zskills-tracked" ]; then
+  pass "1  fresh creation: rc=0, stdout=absolute path, .zskills/tracked matches pipeline ID, no root turd"
 else
   fail "1  fresh creation: rc=$RC_1 stdout='$STDOUT_1' tracked='$TRACKED_1' expected WT='$WT_1'"
   echo "  --- stderr ---"; cat "$ERR_1"
@@ -346,7 +349,8 @@ git -C "$MAIN_ROOT" worktree remove --force "$WT_3" 2>/dev/null || true
 git -C "$MAIN_ROOT" branch -D "$BR_3" 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
-# Case 4 — `--purpose TEXT` writes .worktreepurpose with matching text.
+# Case 4 — `--purpose TEXT` writes .zskills/worktreepurpose with matching
+# text (Phase 8: new path only; old root marker must NOT be written).
 # ────────────────────────────────────────────────────────────────────
 SLUG_4="${SLUG_BASE}-c4"
 WT_4="/tmp/${PROJECT_NAME}-${SLUG_4}"
@@ -357,11 +361,12 @@ register_wt "$WT_4"; register_branch "$BR_4"
 ERR_4=$(mktemp)
 STDOUT_4=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --purpose "$PURPOSE_4" "$SLUG_4" 2>"$ERR_4")
 RC_4=$?
-PURPOSE_CONTENT="$(cat "$WT_4/.worktreepurpose" 2>/dev/null || true)"
+PURPOSE_CONTENT="$(cat "$WT_4/.zskills/worktreepurpose" 2>/dev/null || true)"
 
 if [ "$RC_4" -eq 0 ] && [ "$STDOUT_4" = "$WT_4" ] \
-   && [ -f "$WT_4/.worktreepurpose" ] && [ "$PURPOSE_CONTENT" = "$PURPOSE_4" ]; then
-  pass "4  --purpose: .worktreepurpose written with matching content"
+   && [ -f "$WT_4/.zskills/worktreepurpose" ] && [ "$PURPOSE_CONTENT" = "$PURPOSE_4" ] \
+   && [ ! -e "$WT_4/.worktreepurpose" ]; then
+  pass "4  --purpose: .zskills/worktreepurpose written with matching content, no root turd"
 else
   fail "4  --purpose: rc=$RC_4, stdout='$STDOUT_4', content='$PURPOSE_CONTENT'"
   echo "  --- stderr ---"; cat "$ERR_4"
@@ -371,7 +376,7 @@ git -C "$MAIN_ROOT" worktree remove --force "$WT_4" 2>/dev/null || true
 git -C "$MAIN_ROOT" branch -D "$BR_4" 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
-# Case 5 — No --purpose: .worktreepurpose must NOT be written.
+# Case 5 — No --purpose: .zskills/worktreepurpose must NOT be written.
 # ────────────────────────────────────────────────────────────────────
 SLUG_5="${SLUG_BASE}-c5"
 WT_5="/tmp/${PROJECT_NAME}-${SLUG_5}"
@@ -382,10 +387,10 @@ ERR_5=$(mktemp)
 STDOUT_5=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_5" 2>"$ERR_5")
 RC_5=$?
 
-if [ "$RC_5" -eq 0 ] && [ ! -e "$WT_5/.worktreepurpose" ]; then
-  pass "5  no --purpose: .worktreepurpose absent (caller-owned)"
+if [ "$RC_5" -eq 0 ] && [ ! -e "$WT_5/.zskills/worktreepurpose" ] && [ ! -e "$WT_5/.worktreepurpose" ]; then
+  pass "5  no --purpose: .zskills/worktreepurpose absent (caller-owned)"
 else
-  fail "5  no --purpose: rc=$RC_5, .worktreepurpose exists? $([ -e "$WT_5/.worktreepurpose" ] && echo yes || echo no)"
+  fail "5  no --purpose: rc=$RC_5, purpose marker exists? $({ [ -e "$WT_5/.zskills/worktreepurpose" ] || [ -e "$WT_5/.worktreepurpose" ]; } && echo yes || echo no)"
   echo "  --- stderr ---"; cat "$ERR_5"
 fi
 rm -f -- "$ERR_5"
@@ -601,7 +606,7 @@ STDOUT_12=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-prefli
 RC_12=$?
 
 if [ "$RC_12" -eq 0 ] && [ "$STDOUT_12" = "$WT_12" ] && [ -d "$WT_12" ] \
-   && [ -f "$WT_12/.zskills-tracked" ]; then
+   && [ -f "$WT_12/.zskills/tracked" ]; then
   pass "12 resume-allowed: rc=0, attached to existing ahead branch"
 else
   fail "12 resume-allowed: rc=$RC_12, stdout='$STDOUT_12' (expected '$WT_12')"
@@ -615,7 +620,7 @@ git -C "$MAIN_ROOT" branch -D "$BR_11" 2>/dev/null || true
 # Case 13 — Stdout discipline + no-tracking assertion.
 #  - stdout is EXACTLY one line (the absolute path); all progress/errors
 #    went to stderr (ERR_13 non-empty).
-#  - .zskills-tracked and .worktreepurpose are NOT tracked by git
+#  - .zskills/tracked and .zskills/worktreepurpose are NOT tracked by git
 #    (git ls-files under the worktree returns nothing for them).
 # ────────────────────────────────────────────────────────────────────
 SLUG_13="${SLUG_BASE}-c13"
@@ -630,7 +635,7 @@ RC_13=$?
 STDOUT_LINES=$(printf '%s' "$STDOUT_13" | grep -c '' || true)
 # Single-line check: exactly 1 line, and it equals $WT_13.
 # git ls-files from WT_13 for the ephemeral files — must return empty.
-TRACKED_LIST=$(git -C "$WT_13" ls-files -- .zskills-tracked .worktreepurpose 2>/dev/null || true)
+TRACKED_LIST=$(git -C "$WT_13" ls-files -- .zskills/tracked .zskills/worktreepurpose 2>/dev/null || true)
 STDERR_SIZE=$(wc -c < "$ERR_13" 2>/dev/null || echo 0)
 
 if [ "$RC_13" -eq 0 ] && [ "$STDOUT_13" = "$WT_13" ] \
@@ -897,11 +902,13 @@ git -C "$MAIN_ROOT" branch -D "$BR_18" 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
 # Case 19 (R-F17) — Post-create write-failure rollback. Commit a
-# `.zskills-tracked/` DIRECTORY into a temporary branch (via plumbing —
-# .zskills-tracked is gitignored so we can't `git add` it normally),
-# then base a new worktree on it via --from. git worktree add checks
-# out the tree → $WT/.zskills-tracked/ exists as a directory →
-# `printf > $WT/.zskills-tracked` fails → script rolls back → rc=8.
+# `.zskills/tracked/` DIRECTORY into a temporary branch (via plumbing —
+# .zskills/ is gitignored so we can't `git add` it normally), then base
+# a new worktree on it via --from. git worktree add checks out the tree
+# → $WT/.zskills/tracked/ exists as a directory →
+# `printf > $WT/.zskills/tracked` fails → script rolls back → rc=8.
+# (Phase 8 root-turd consolidation: the poison target follows the writer
+# to the new path.)
 # ────────────────────────────────────────────────────────────────────
 SLUG_19="rollback-${SLUG_BASE}-c19"
 WT_19="/tmp/${PROJECT_NAME}-${SLUG_19}"
@@ -909,20 +916,23 @@ BR_19="wt-${SLUG_19}"
 register_wt "$WT_19"; register_branch "$BR_19"; register_branch "$ROLLBACK_BRANCH"
 
 # Build the rollback base via plumbing: take main's tree, splice in
-# .zskills-tracked/keep, commit on top of main.
+# .zskills/tracked/keep, commit on top of main.
 KEEP_BLOB=$(echo "rollback fixture for case 19" | git -C "$MAIN_ROOT" hash-object -w --stdin)
 SUB_TREE=$(printf '100644 blob %s\tkeep\n' "$KEEP_BLOB" | git -C "$MAIN_ROOT" mktree)
+# Nest tracked/ (a directory) inside .zskills/ so the checked-out tree
+# carries .zskills/tracked as a DIRECTORY where the writer expects a file.
+ZSKILLS_TREE=$(printf '040000 tree %s\ttracked\n' "$SUB_TREE" | git -C "$MAIN_ROOT" mktree)
 # Extract all existing entries from main's tree, append our new entry.
 # ls-tree shows existing entries; pipe through mktree to reconstruct
-# with the added .zskills-tracked directory.
+# with the added .zskills directory.
 NEW_TREE=$(
   {
     git -C "$MAIN_ROOT" ls-tree "$MAIN_TREE_SHA"
-    printf '040000 tree %s\t.zskills-tracked\n' "$SUB_TREE"
+    printf '040000 tree %s\t.zskills\n' "$ZSKILLS_TREE"
   } | git -C "$MAIN_ROOT" mktree
 )
 ROLLBACK_COMMIT=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test \
-  git -C "$MAIN_ROOT" commit-tree "$NEW_TREE" -p "$MAIN_SHA" -m "cw-test: rollback fixture with .zskills-tracked/")
+  git -C "$MAIN_ROOT" commit-tree "$NEW_TREE" -p "$MAIN_SHA" -m "cw-test: rollback fixture with .zskills/tracked/")
 git -C "$MAIN_ROOT" branch "$ROLLBACK_BRANCH" "$ROLLBACK_COMMIT" 2>/dev/null || true
 
 ERR_19=$(mktemp)

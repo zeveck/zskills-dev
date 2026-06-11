@@ -58,7 +58,7 @@ This is for landing worktree work onto main via cherry-pick.
    in the worktree. A failure here means a main-specific conflict that
    needs human judgment.
 
-6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
+6. **Write `.zskills/landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then

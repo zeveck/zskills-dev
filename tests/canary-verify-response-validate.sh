@@ -3,7 +3,8 @@
 #
 # Phase 4 canary 3 — VERIFIER_AGENT_FIX plan.
 #
-# SCOPE: pure-shell test of `hooks/verify-response-validate.sh` (Layer 3
+# SCOPE: pure-shell test of
+# `skills/update-zskills/scripts/verify-response-validate.sh` (Layer 3
 # universal failure-protocol primitive). The script is independently
 # testable — no live subagent dispatch required.
 #
@@ -28,7 +29,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOOK="$REPO_ROOT/hooks/verify-response-validate.sh"
+HOOK="$REPO_ROOT/skills/update-zskills/scripts/verify-response-validate.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0

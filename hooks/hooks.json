@@ -9,7 +9,8 @@
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-stale-skill-version.sh\"", "timeout": 5 },
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-bypassed-land-pr.sh\"", "timeout": 5 },
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-fix-issue-unclaimed.sh\"", "timeout": 5 },
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-run-plan-unclaimed.sh\"", "timeout": 5 }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/block-run-plan-unclaimed.sh\"", "timeout": 5 },
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh\"", "timeout": 5 }
         ]
       },
       {
@@ -55,7 +56,8 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-materialise.sh\"", "timeout": 30 }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-greeting.sh\"", "timeout": 30 },
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-rules-context.sh\"", "timeout": 30 }
         ]
       }
     ],

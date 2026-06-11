@@ -157,7 +157,7 @@ PY
       if [ ! -f "$marker" ]; then
         mkdir -p "${CLAUDE_PROJECT_DIR}/.zskills" 2>/dev/null
         : > "$marker" 2>/dev/null
-        printf 'zskills: settings.json hook %s is version %s but plugin ships %s; deferring to settings.json copy. Run /update-zskills install or bash scripts/switch-install-path.sh --to-plugin to consolidate.\n' \
+        printf 'zskills: settings.json hook %s is version %s but plugin ships %s; deferring to settings.json copy. Update your zskills install to consolidate (a client is single-lane: uninstall one lane and reinstall the other -- see the install guide).\n' \
           "$my_basename" "$consumer_ver" "$plugin_ver" >&2
       fi
       exit 0

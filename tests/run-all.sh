@@ -115,9 +115,10 @@ run_suite "test-resolve-python.sh" "tests/test-resolve-python.sh"
 run_suite "test-python-resolver-drift.sh" "tests/test-python-resolver-drift.sh"
 # #1086 — END-TO-END guard for the MS-Store broken-python3 stub class: puts a
 # broken `python3` FIRST on PATH (real `python` behind it) and runs the actual
-# materialiser + a /briefing skill-body fence, asserting both resolve via
-# $PYTHON and nothing runs real work through the stub. (Catches the python-
-# resolution class only; NOT a full Windows qual — see the file header.)
+# SessionStart rules hook + a /briefing skill-body fence, asserting both
+# resolve via $PYTHON and nothing runs real work through the stub. (Catches
+# the python-resolution class only; NOT a full Windows qual — see the file
+# header.)
 run_suite "test-broken-python3-stub-e2e.sh" "tests/test-broken-python3-stub-e2e.sh"
 run_suite "test-hooks-mirror-parity.sh" "tests/test-hooks-mirror-parity.sh"
 run_suite "test-skills-mirror-parity.sh" "tests/test-skills-mirror-parity.sh"
@@ -210,6 +211,7 @@ run_suite "test-update-zskills-paths-migration.sh" "tests/test-update-zskills-pa
 run_suite "test-migrate-paths-awk.sh" "tests/test-migrate-paths-awk.sh"
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 run_suite "test-update-zskills-lane-aware.sh" "tests/test-update-zskills-lane-aware.sh"
+run_suite "test-update-zskills-init.sh" "tests/test-update-zskills-init.sh"
 run_suite "test-managed-md-up-to-date.sh" "tests/test-managed-md-up-to-date.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-cleanup-merged-ahead-gate.sh" "tests/test-cleanup-merged-ahead-gate.sh"
@@ -316,6 +318,8 @@ run_suite "test-claim-self-reentry.sh" "tests/test-claim-self-reentry.sh"
 run_suite "test-inflight-batch-guard.sh" "tests/test-inflight-batch-guard.sh"
 run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
+# INSTALL_REDESIGN Phase 2 (1A) — root agents/ vs .claude/agents parity.
+run_suite "test-agents-parity.sh" "tests/test-agents-parity.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-ref-consistency.sh" "tests/test-plugin-ref-consistency.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
@@ -367,26 +371,38 @@ run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh
 # Session-logging capability — Stop/SubagentStop renderer + permission merge,
 # passive/fail-open PermissionRequest hook, and the session-logs.sh helper.
 run_suite "test-session-logging.sh" "tests/test-session-logging.sh"
-# Phase 2 — SessionStart materialiser + dual-install detection + renderer.
-run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
-run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
-run_suite "test-sessionstart-dual-install-detect.sh" "tests/test-sessionstart-dual-install-detect.sh"
-# #1119 — SessionStart greeting (systemMessage on stdout) toward /update-zskills.
+# (The materialiser / overwrite-guard / dual-install-detect suites were
+# deleted in INSTALL_REDESIGN Phase 7 — subject-removal with the SessionStart
+# materialiser hook; the D27 probe's survivors are covered via
+# detect-install-state.sh's callers.)
+# #1119 / Phase 7 — SessionStart setup greeting (systemMessage on stdout)
+# toward the one-time /zs:update-zskills init.
 run_suite "test-sessionstart-greeting.sh" "tests/test-sessionstart-greeting.sh"
+# INSTALL_REDESIGN Phase 4 (R-b) — SessionStart rules delivery via additionalContext.
+run_suite "test-session-rules-context.sh" "tests/test-session-rules-context.sh"
 run_suite "test-synthetic-consumer-install.sh" "tests/test-synthetic-consumer-install.sh"
 run_suite "test-verify-install.sh" "tests/test-verify-install.sh"
 run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"
-run_suite "test-managed-md-renderer-equivalence.sh" "tests/test-managed-md-renderer-equivalence.sh"
+# (test-managed-md-renderer-equivalence.sh was deleted in INSTALL_REDESIGN
+# Phase 7 — subject-removal: its subject was the no-sentinel vs --sentinel
+# render-path byte-equivalence, and the --sentinel path died with the D20
+# convention; the surviving render properties are pinned by
+# test-render-managed-rules-correctness.sh cases 1/2/6b.)
 run_suite "test-inject-bash-timeout-parity.sh" "tests/test-inject-bash-timeout-parity.sh"
-run_suite "test-verify-response-validate-parity.sh" "tests/test-verify-response-validate-parity.sh"
+# test-verify-response-validate-parity.sh DELETED (INSTALL_REDESIGN Phase 3,
+# subject-removal): the hooks/ + .claude/hooks/ copies it compared no longer
+# exist — the script is skill-bundled at skills/update-zskills/scripts/, and
+# its source↔mirror parity is owned by test-skills-mirror-parity.sh.
 run_suite "test-hook-template-sibling.sh" "tests/test-hook-template-sibling.sh"
 # Phase 3 — dual-path recognition + cron-fire path-aware rules + frontmatter survival.
 run_suite "test-cron-prefix-or-match.sh" "tests/test-cron-prefix-or-match.sh"
 run_suite "test-cron-fire-rule-dual-path.sh" "tests/test-cron-fire-rule-dual-path.sh"
 run_suite "test-skill-frontmatter-survival.sh" "tests/test-skill-frontmatter-survival.sh"
 
-# Phase 5 — bidirectional lane switch + hook double-fire conditional-skip shim.
-run_suite "test-switch-install-path.sh" "tests/test-switch-install-path.sh"
+# Phase 5 — hook double-fire conditional-skip shim. (The lane-switch suite
+# was deleted in INSTALL_REDESIGN Phase 7 with the switch machinery —
+# subject-removal; a consumer switches lanes by uninstalling one lane and
+# installing the other.)
 run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-skip-on-double-register.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests

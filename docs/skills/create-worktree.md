@@ -8,7 +8,7 @@
 <div class="flow">
 <div class="flow-step"><p>The <strong>agent</strong> prunes, fetches, and ff-merges main</p></div>
 <div class="flow-step"><p>It creates the worktree on a branch</p></div>
-<div class="flow-step"><p>It writes the <code>.zskills-tracked</code> marker</p></div>
+<div class="flow-step"><p>It writes the <code>.zskills/tracked</code> marker</p></div>
 <div class="flow-step"><p>It returns the path to the caller</p></div>
 </div>
 
