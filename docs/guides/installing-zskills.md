@@ -173,6 +173,41 @@ the plugin install you type `/zs:do`. If that translation is a recurring
 annoyance for your team, the `/update-zskills` install (bare names, matching the
 text) is the lower-friction choice.
 
+## What gets written — and what to commit
+
+Every file an install touches, and whether it belongs in git. The rule of
+thumb: everything under `.claude/` and `scripts/` is project-shared — commit
+it; everything under `.zskills/` is per-checkout runtime state — never commit
+it (and the `.gitignore` line that ignores it is itself a change you should
+commit).
+
+**Plugin install** (written by the one-time `/zs:update-zskills` init):
+
+| Path | Written when | Commit? |
+|---|---|---|
+| `.gitignore` (one `.zskills/` umbrella line) | init, always | ✅ Commit — the ignore rule belongs in the repo |
+| `.zskills/init-done`, `.zskills/setup-confirmed` | init, always | 🚫 Gitignored runtime state — never commit |
+| `.claude/zskills-config.json` | init, only if you accept the config offer | ✅ Commit — it's the project's shared settings |
+| `.claude/zskills-config.schema.json` | alongside the config | ✅ Commit — gives every teammate editor autocomplete |
+
+**`/update-zskills` install:**
+
+| Path | Written when | Commit? |
+|---|---|---|
+| `.claude/skills/` (the skills mirror) | the clone + copy step | ✅ Commit — the mirror *is* the install |
+| `.claude/hooks/` (safety hooks) | install | ✅ Commit |
+| `.claude/settings.json` (hook registrations, surgically merged) | install | ✅ Commit |
+| `.claude/rules/zskills/managed.md` (agent rules) | install; regenerated on update | ✅ Commit |
+| `.claude/agents/` (subagent definitions — `verifier.md`, `implementer.md`, plus the shipped support agents `Explore.md` and `canary-readonly.md`) | install | ✅ Commit |
+| `.claude/zskills-config.json` + `.claude/zskills-config.schema.json` | install (auto-detected) | ✅ Commit — shared project settings |
+| `scripts/` stubs (`test-all.sh`, `start-dev.sh`, `stop-dev.sh`, `post-create-worktree.sh`, `dev-port.sh`) and the four skill-version helpers | install, when missing (helpers also refresh when changed) | ✅ Commit — stubs are consumer-customizable (your edits survive updates); the version helpers are zskills-owned |
+| `.gitignore` (the `.zskills/` umbrella line, plus per-subdir runtime-state lines: `.zskills/tracking/`, `.zskills/dev-server.pid`, `.zskills/dev-server.log`) | install | ✅ Commit |
+| `.zskills/setup-confirmed` | install, written last | 🚫 Gitignored — never commit |
+
+(If the install's root-`CLAUDE.md` migration ran, it leaves a one-time
+`./CLAUDE.md.pre-zskills-migration` backup — review it, then delete it;
+don't commit it.)
+
 ## `.gitignore` guidance
 
 What to track depends on your install.

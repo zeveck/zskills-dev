@@ -61,9 +61,13 @@ hand-edited — see [What not to hand-edit](#what-not-to-hand-edit).
 Settings resolve through three tiers — **project > user > built-ins**:
 
 1. **Project** — `.claude/zskills-config.json` in the repo. Always wins.
+   This file (and its schema sibling) is meant to be **committed** — it's the
+   project's shared settings, and tracking it is how the whole team gets the
+   same test commands, landing mode, and timezone.
 2. **User** — `~/.claude/zskills-config.json`. Personal defaults that apply
    in any project that doesn't set its own value (e.g. your timezone, your
-   co-author trailer). Create it by hand; nothing writes it for you.
+   co-author trailer). Create it by hand; nothing writes it for you. It lives
+   outside the repo, so it's personal by construction — never committed.
 3. **Built-ins** — shipped defaults (timezone `UTC`, landing `direct`,
    output file `.test-results.txt`, port `8080`, …). This is why a
    zero-config project still works.
