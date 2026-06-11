@@ -1,5 +1,31 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 9 Docs, release/dogfood, DEV-QUAL, final sweep
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** a26813b3 (22 files docs+DEV-QUAL) + f4130a3a (Tier-1 hash registration recovery)
+
+### Work Items
+CLAUDE.md/README/RELEASING/CLAUDE_TEMPLATE + 10 guides/docs rewritten to the init-era world (12/12 accuracy spot-checks vs landed code); CHANGELOG entry; scope-acceptance statement; cascade docs w/ ONE user-facing merge rule; DEV-QUAL.md scenario rework (referential phrasing — no new frozen-literal carriers); land-phase comment fix; superseded note on PLUGIN_DISTRIBUTION.md.
+DEV-QUAL run LIVE: fresh mirror-less shape (b) (rules landmark + clean porcelain; greeting; gate block→cure→allow; 135s foreground verifier Bash = Layer-0 Invariant-7 live; exact item-2 footprint), upgraded materialiser-era fixture (A1.5 full cure), legacy-lane real install (13 PASS verifier), dogfood dual-load. Final sweep: machinery grep EMPTY outside the 2 enumerated survivors.
+
+### ATTENDED-PENDING ledger — FINAL DISPOSITION (all 6)
+#1 combined-envelope: BONUS-PROVEN both channels deliver (note: Phase-7 two-entry fallback could fold later). #2 /clear: functionally covered. #3 R-b end-to-end: DISCHARGED. #4 init transcript+footprint: DISCHARGED. #5 gate shape (b): DISCHARGED. #6 greeting live: DISCHARGED. NOTHING REMAINS ATTENDED.
+
+### Verification
+- Verifier PASS; Layer-3 exit 0. One FAIL-AFTER-COMMIT recovery (Tier-1 hash registration, f4130a3a, single attempt, post-commit 119/119+13/13). Suite 7709/7711 pre-commit (committed-state gates); zero count delta; docs-only weakening audit clean.
+
+### Fork-portability notes (drift log)
+- build-prod.sh strips IN PLACE — snapshot-then-strip; no target arg.
+- Local path-source marketplaces: wrapper dir + RELATIVE "./zs-tree" source (CLI 2.1.172 rejects absolute string sources; built tree's own marketplace.json points at published prod — installing from it pulls the OLD release).
+- Foreground sleep is harness-blocked — long-probe via python3 wait.
+- Headless `claude -p` init pauses at interview offers — drive with --continue turns.
+- ANY Tier-1 script edit ⇒ register the new blob hash SAME commit (even comment-only edits).
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 8 Root-turd consolidation into .zskills/
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md

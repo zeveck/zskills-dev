@@ -321,7 +321,7 @@ a real attended transcript/marker — as a verification FAIL.
 | 6b — Gate retarget + verify-install rework | ✅ | a37e87b6 | both gate branches LIVE; VI reworked w/ hard A6 gate; 7796/7796; shape-(b) re-run → Phase 9 |
 | 7 — Deletions: materialiser, switch complex, sentinels | ✅ | 56678268+e9c352ce+9a05851c | materialiser DEAD; −3126 lines; 7695/7695; greeting live-AC → Phase 9 |
 | 8 — Root-turd consolidation into .zskills/ | ✅ | 220e1ec9 | 12 skills + 2 hooks flipped; dual-read window; A2.5 migrate; 7711 basis; retirement → #1146 |
-| 9 — Docs, release/dogfood, DEV-QUAL, final sweep | ⬚ | | |
+| 9 — Docs, release/dogfood, DEV-QUAL, final sweep | ✅ | a26813b3+f4130a3a | docs init-era; DEV-QUAL 4 scenarios LIVE shape (b); attended ledger DISCHARGED; sweep EMPTY |
 
 ---
 
