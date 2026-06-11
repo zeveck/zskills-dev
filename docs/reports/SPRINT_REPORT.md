@@ -88,9 +88,11 @@ status: complete
 ### Fixed
 | # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
 |---|-------|----------|--------|-------|-------------|-------------|
-| #1149 | zsh BASH_SOURCE self-location failure (Layer-3 self-waive on mirror-less lane) | /tmp/zskills-fix-issue-1149 | 9b1670a3 | new 5-case zsh-resolution suite | PASS (four-arm zsh/bash repro; transcript evidence; post-commit gates green) | N/A |
-| #1150 | Polish batch: prose residues, rules-fail nudge, version-preserve guard, guide drift | /tmp/zskills-fix-issue-1150 | 55e29b66 | +2 rules cases, +5 init cases | PASS (own measurements: scope flag, 39,656-byte render; 3g locked case intact) | N/A |
+| #1149 | zsh BASH_SOURCE self-location failure (Layer-3 self-waive on mirror-less lane) | /tmp/zskills-fix-issue-1149 | 9b1670a3+aa693b1b → PR #1151 MERGED | new 5-case zsh-resolution suite | PASS (four-arm zsh/bash repro; transcript evidence; post-commit gates green) | N/A |
+| #1150 | Polish batch: prose residues, rules-fail nudge, version-preserve guard, guide drift | /tmp/zskills-fix-issue-1150 | c461d843 (rebased) → PR #1152 MERGED | +2 rules cases, +5 init cases | PASS (own measurements: scope flag, 39,656-byte render; 3g locked case intact) | N/A |
 
 Notes: #1149 triaged bug-unclear-cause by rubric but user-pinned → investigate-first in-batch (root cause PROVEN before patch: zsh leaves BASH_SOURCE unset; fence-sourced helpers self-located to cwd; fix = ${BASH_SOURCE[0]:-$0} idiom ×3 sites — affects every zsh-default consumer, e.g. macOS). Repo-wide tracker sync scoped out this sprint (user-pinned candidates; both researched at file time). No skips, no timeouts, no conflicts at fix time.
+
+Fix-cycle: PR #1151's first CI run failed on migration case 6d — 2 Tier-1 registry hashes orphaned by the #1145/#1147 SQUASH-merges (intermediate blobs unreachable on fresh clones; passed locally via pre-squash object stores). Pruned in aa693b1b; latent main-CI landmine defused for all future PRs.
 
 ### Skipped — none
