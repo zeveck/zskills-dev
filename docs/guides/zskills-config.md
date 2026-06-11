@@ -7,7 +7,8 @@ timezone to stamp reports in, and more. This guide explains where the file
 comes from, what every field does, and which fields you should never hand-edit.
 
 You rarely write this file by hand. `/update-zskills` creates and maintains it
-for you (and on the plugin lane it's seeded automatically on first session).
+for you (on the plugin lane, the one-time `/zs:update-zskills` init *offers*
+one — the file is optional, and without it zskills runs on built-in defaults).
 Reach for this guide when you want to understand a setting, change one
 deliberately, or debug why a skill behaved the way it did.
 
@@ -17,6 +18,7 @@ deliberately, or debug why a skill behaved the way it did.
 |---|---|
 | `.claude/zskills-config.json` | Your project's settings (this guide). |
 | `.claude/zskills-config.schema.json` | The JSON Schema the config validates against — the authoritative list of every key and default. Editors that honor `$schema` will autocomplete and lint against it. |
+| `~/.claude/zskills-config.json` | Optional **user tier** — personal defaults that apply across all your projects (see [The config cascade](#the-config-cascade)). |
 
 The config's first line points an editor at that schema:
 
@@ -43,14 +45,54 @@ in the source repo.
 - **Re-install / update** — it **merges, never overwrites**: an existing
   non-empty value always wins over a re-detected one, so your edits survive an
   update. A missing `commit.co_author` is backfilled.
-- **Plugin lane** — plugins can't write files at install time, so a
-  `SessionStart` hook **seeds** a default config the first time you open the
-  project — but only when the file is *absent*. An existing config is never
-  clobbered. (The plugin seed defaults differ slightly; see
+- **Plugin lane** — the config is **optional and offered, never imposed**.
+  The one-time `/zs:update-zskills` init asks whether you want one; decline
+  and zskills runs on its built-in defaults with no file at all. Accept and
+  it seeds the defaults (plus the schema sibling) for you to tune. An
+  existing config is never clobbered, and init never deletes one. (The
+  plugin seed defaults differ slightly; see
   [Lane differences](#lane-differences) below.)
 
 A handful of fields are managed entirely by `/update-zskills` and should not be
 hand-edited — see [What not to hand-edit](#what-not-to-hand-edit).
+
+## The config cascade
+
+Settings resolve through three tiers — **project > user > built-ins**:
+
+1. **Project** — `.claude/zskills-config.json` in the repo. Always wins.
+2. **User** — `~/.claude/zskills-config.json`. Personal defaults that apply
+   in any project that doesn't set its own value (e.g. your timezone, your
+   co-author trailer). Create it by hand; nothing writes it for you.
+3. **Built-ins** — shipped defaults (timezone `UTC`, landing `direct`,
+   output file `.test-results.txt`, port `8080`, …). This is why a
+   zero-config project still works.
+
+**The merge rule: top-level blocks merge whole.** If a top-level block (say
+`testing`) appears in both your user file and the project file, the
+project's block wins **as a unit** — don't split one block's keys across the
+two tiers and expect them to knit together. (Nuance: a few bash-side readers
+happen to merge the handful of string keys they read per *key* rather than
+per block, so a split can appear to work in some places and not others —
+treat per-key mixing as undefined and keep blocks whole.)
+
+**`execution.*` never cascades from the user tier.** `landing`,
+`main_protected`, `branch_prefix`, and the rest of the `execution` block
+describe the *project's* repo discipline, and the enforced safety keys
+(`execution.main_protected`, `agents.min_model` as read by their hooks) are
+read from the project config only — a user-level file silently weakening a
+project's protection would invert the trust direction. A user-tier
+`execution` block being ignored is documented behavior, not a bug.
+
+A user-tier file looks just like a project one (minus the `$schema` line,
+unless you point it at a local schema copy):
+
+```json
+{
+  "timezone": "America/New_York",
+  "commit": { "co_author": "My Agent <agent@example.com>" }
+}
+```
 
 ## A typical config
 
@@ -274,13 +316,14 @@ an agent edit `main` in place.
 
 ## How values resolve
 
-There is no single "env > config > default" rule — resolution differs by field:
+Every field first resolves through [the config cascade](#the-config-cascade)
+(project > user > built-ins). On top of that, resolution differs by field:
 
 - **Most string settings** (`testing.*`, `dev_server.cmd`, `commit.co_author`,
-  `timezone`) resolve to the config value with **no opinionated default**: when
-  absent, the consuming skill applies its own fallback (for example, timezone
-  falls back to UTC at the point of use). This is why an unset field is simply
-  empty rather than guessed.
+  `timezone`) resolve through the cascade; the ones with no sane universal
+  value (test and dev-server commands, the co-author trailer) have **no
+  built-in default** and stay empty when no tier sets them — the consuming
+  skill handles empty explicitly rather than guessing.
 - **A few settings honor an environment override** for one-off runs:
   - `logging.dir` (the composition base) ← `ZSKILLS_LOG_DIR` env > config > the per-OS cache base; then composed with the optional `<repo>`/`<user>` segments. `ZSKILLS_LOG_USER` similarly overrides the runtime-resolved `<user>` segment.
   - the dev port ← `DEV_PORT` env > a `scripts/dev-port.sh` stub > `dev_server.default_port` (main repo) > a per-worktree hash port.
@@ -293,11 +336,11 @@ There is no single "env > config > default" rule — resolution differs by field
 A consumer installs zskills through exactly one lane, and the two seed a fresh
 config slightly differently:
 
-| | `/update-zskills` lane | Plugin lane (auto-seed) |
+| | `/update-zskills` lane | Plugin lane |
 |---|---|---|
-| When written | At `install` time | First `SessionStart`, only if absent |
-| `timezone` | `America/New_York` | `UTC` |
-| Default preset | `cherry-pick` (unprotected) | `locked-main-pr` (protected) |
+| When written | At `install` time | At `/zs:update-zskills` init, **only if you accept the offer** (decline = no file; built-in defaults apply) |
+| Values | Auto-detected where possible (test command, timezone) | The built-in defaults (timezone `UTC`, landing `direct`) for you to tune |
+| Default preset | `cherry-pick` (unprotected) | `direct` (unprotected) |
 
 Either way, the file is yours to refine afterward — the seed is only a starting
 point, and an existing config is never overwritten.
@@ -314,16 +357,16 @@ editing them by hand causes drift:
 - **`zskills_version`** — written from the source repo's release tag; a manual
   value produces a false update signal.
 
-Editing the config through Claude Code also triggers a "re-render needed"
-warning, because some values are baked into your generated project rules — run
-`/update-zskills --rerender` afterward to refresh them.
+On the `/update-zskills` lane, editing the config through Claude Code also
+triggers a "re-render needed" warning — run `/update-zskills --rerender`
+afterward to refresh the rendered rules file. (On the plugin lane the rules
+are delivered fresh each session, so there is nothing to re-render.)
 
 ## See also
 
-- [Installing zskills](installing-zskills.md) — first-time setup and the
-  [Landing mode](installing-zskills.md#landing-mode) explainer.
-- [Switching install lanes](switching-install-lanes.md) — moving between the
-  plugin and `/update-zskills` lanes.
+- [Installing zskills](installing-zskills.md) — first-time setup, the
+  [Landing mode](installing-zskills.md#landing-mode) explainer, and how to
+  [switch installs](installing-zskills.md#switching-installs).
 - [`/update-zskills`](../skills/update-zskills.md) — the skill that writes and
   maintains this file.
 - [`config/zskills-config.schema.json`](../../config/zskills-config.schema.json)

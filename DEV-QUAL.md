@@ -13,9 +13,12 @@ release candidate. They complement, not replace, the automated gate
 step-by-step commands, and the observable results that make it a PASS.
 
 zskills ships **two install lanes**, and a real consumer uses exactly one: the
-**plugin lane** (`/plugin install zs@zskills`) and the legacy **`/update-zskills`**
-lane (which mirrors the skills into the project's `.claude/`). The scenarios
-below exercise each lane and the switch between them.
+**plugin lane** (`/plugin install zs@zskills`, zero project writes until the
+explicit `/zs:update-zskills` init) and the legacy **`/update-zskills`** lane
+(which mirrors the skills into the project's `.claude/`). There is no
+in-place lane switch — a consumer that wants the other lane uninstalls one
+and installs the other. The scenarios below exercise each lane, the explicit
+init, the pre-init gate, and the upgraded-consumer residue path.
 
 ---
 
@@ -27,10 +30,9 @@ and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md`.
 
 **Preconditions.**
 - A fresh consumer repo (git-initialised, NO existing zskills install — no
-  `.claude/skills/`, no `.claude/zskills-install-lane`).
+  `.claude/skills/`).
 - A Claude Code session in that repo with the `update-zskills` skill
-  available (either via the plugin lane's `/zs:update-zskills`, or by
-  pointing at the source tree during dogfooding).
+  available (by pointing at the source tree during dogfooding).
 
 **Steps.**
 1. In the consumer session, run the installer in explicit mode:
@@ -50,12 +52,11 @@ and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md`.
 - `.claude/settings.json` registers the zskills hooks (grep it for the hook
   basenames).
 - `.claude/zskills-config.json` exists.
-- `.claude/rules/zskills/managed.md` exists and is rendered (no unsubstituted
-  `<!-- TODO: ... -->` placeholders for values the config supplies).
-- `.claude/zskills-install-lane` is absent OR — if a switch has ever run —
-  it is NOT `plugin`. (A pure legacy install does not itself write the lock;
-  the lock is written by `switch-install-path.sh`. The defining signal of
-  the legacy lane is the **mirror present**, not the lock value.)
+- `.claude/rules/zskills/managed.md` exists and is rendered.
+- `.claude/agents/verifier.md` + `.claude/agents/implementer.md` exist WITH
+  their frontmatter `hooks:` block (the legacy Layer-0 delivery).
+- `.gitignore` carries the `.zskills/` umbrella entry (the installer appends
+  it idempotently).
 - A subsequent `/update-zskills` (no arg, smart-detect) reports "already
   installed" and pulls/updates rather than re-installing. It now ALSO runs
   the bundled consumer post-install verifier's cheap structural tier
@@ -65,201 +66,133 @@ and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md`.
 
 ---
 
-## Scenario 2 — Plugin install (mirror-less is the goal)
+## Scenario 2 — Plugin install: zero-write default + explicit init
 
-**Purpose.** Accept the plugin lane in its NORMAL shape: skills namespaced
-under `/zs:`, `${CLAUDE_PLUGIN_ROOT}` set, the SessionStart materialiser
-writing the 5 consumer artifacts, and **no `.claude/skills/` mirror**.
+**Purpose.** Accept the plugin lane in its NORMAL shape — install shape (b),
+a REAL marketplace install of a built prod tree: **zero project writes
+before init** (skills, hooks, agents, and rules all run from
+`${CLAUDE_PLUGIN_ROOT}`), the pre-init greeting, the one-time
+`/zs:update-zskills` init, and the **exact post-init footprint**.
 
 **Preconditions.**
-- For in-place dogfooding from this repo: a Claude Code session launched with
-  `claude --plugin-dir .` from the zskills-dev root. (Caveat: this repo
-  carries the `.claude/skills/` mirror — the dogfooding exception, case 3 in
-  the mental model — so it does NOT validate mirror-less resolution. Use
-  Scenario 5 for that.)
-- For the **genuine PRE-PUBLISH consumer path**: the dev manifest
-  self-references the dev repo, so qual uses the SAME two-line flow a real
-  consumer runs — just pointed at `zeveck/zskills-dev` instead of the
-  not-yet-published `zeveck/zskills`:
-  ```
-  /plugin marketplace add zeveck/zskills-dev
-  /plugin install zs@zskills
-  ```
-  run in a clean consumer repo. The marketplace install resolves the dev
-  manifest, clones + caches the dev plugin tree, then the SessionStart
-  materialiser seeds the consumer artifacts — no hand-rolled local test
-  marketplace needed. (POST-publish, the same flow against `zeveck/zskills`
-  is what end consumers run; the publish path rewrites `zs` `source.repo`
-  dev→prod — see RELEASING.md "Marketplace self-reference, translated on
-  publish".)
+- A built, prod-stripped tree (see Scenario 5 step 1, or snapshot + run
+  `scripts/build-prod.sh` in the snapshot).
+- A sandbox `CLAUDE_CONFIG_DIR` (never your real one) with a local
+  marketplace: `claude plugin marketplace add <built-tree-path>` then
+  `claude plugin install zs@zskills`.
+- A fresh consumer repo (git-initialised, NO `.claude/` at all).
 
 **Steps.**
-1. Launch the plugin-loaded session. Either in-place dogfood, or — for the
-   genuine pre-publish consumer flow — the two-line dev-marketplace install:
-   ```bash
-   claude --plugin-dir .        # in-place dogfood from zskills-dev
+1. Open a session in the consumer repo with the plugin installed.
+2. Observe the one-line setup greeting (the `systemMessage` pointing at
+   `/zs:update-zskills`).
+3. Exercise a read-only skill and a verifier/implementer dispatch with a
+   >120s Bash call (Layer-0 live — the call must NOT hit the 120s default).
+4. Check `git status --porcelain` — **empty**; no `.claude/` or `.zskills/`
+   paths exist. The model can quote a managed-rules landmark (the R-b
+   SessionStart `additionalContext` delivery) with still zero writes.
+5. Run the one-time init:
    ```
+   /zs:update-zskills
    ```
-   # genuine pre-publish consumer path (in a CLEAN consumer repo):
-   /plugin marketplace add zeveck/zskills-dev
-   /plugin install zs@zskills
-   ```
-2. Confirm the plugin loaded: the skills are namespaced under `/zs:`
-   (e.g. `/zs:do`, `/zs:fix-issues`).
-3. On SessionStart, `hooks/session-start-materialise.sh` runs. In a
-   mirror-less consumer it seeds a default `.claude/zskills-config.json` (if
-   absent) and materialises the 5 artifacts.
+6. Inspect the footprint and re-open a session.
 
 **Expected observable results (PASS criteria).**
-- Skills dispatch under the `/zs:` namespace (`/zs:update-zskills`,
-  `/zs:do`, etc.).
-- `${CLAUDE_PLUGIN_ROOT}` is set in the session (hooks and skills resolve
-  paths under it).
-- The 5 materialised artifacts exist in the consumer's `.claude/`, each
-  carrying a `zskills-materialised:` sentinel in its first 3 lines:
-  - `.claude/agents/verifier.md`
-  - `.claude/agents/implementer.md`
-  - `.claude/hooks/inject-bash-timeout.sh` (executable)
-  - `.claude/hooks/verify-response-validate.sh` (executable)
-  - `.claude/rules/zskills/managed.md` (rendered)
-- In a **mirror-less** consumer: NO `.claude/skills/` directory. (In the
-  zskills-dev dogfood, the mirror IS present — that is the dogfooding
-  exception, NOT a pass signal for mirror-less behavior.)
-- `.claude/zskills-install-lane` is `plugin` if a switch has run; on a pure
-  fresh plugin install the materialiser does not write the lock — the
-  defining signal is the materialised artifacts + absent mirror.
-- A bare `/update-zskills` on the plugin lane runs the bundled consumer
-  post-install verifier's cheap structural tier (read-only, NON-FATAL)
-  before printing the plugin-lane explanation, reporting `Overall: PASS` —
-  confirming the consumer-side install is healthy in this environment.
+- Pre-init: greeting present; `git status --porcelain` empty; NO
+  `.claude/`, NO `.zskills/`; rules landmark quotable; `/zs:` skills
+  dispatch from the plugin tree.
+- Init transcript shows: gitignore-first append, the optional-config offer
+  (decline ⇒ no file), the verify pass, and the lock-LAST marker write.
+- Post-init footprint is EXACTLY: a `.zskills/` line in `.gitignore`,
+  gitignored `.zskills/init-done` + `.zskills/setup-confirmed`, and — only
+  if you accepted the config offer — `.claude/zskills-config.json` + its
+  schema sibling. Nothing else. NO `.claude/skills/`, NO `.claude/hooks/`,
+  NO `.claude/agents/`, NO `.claude/rules/`.
+- Next session start: the greeting is silent (init-done present).
+- A later bare `/zs:update-zskills` runs the UPDATE arm (re-verify +
+  version-line refresh), not a re-init.
 
 ---
 
-## Scenario 3 — Legacy → plugin switch
+## Scenario 3 — Pre-init gate: block → cure → allow
 
-**Purpose.** Accept the consolidation tool's `--to-plugin` direction: a
-consumer on the `/update-zskills` lane switches to the plugin lane, the
-mirror artifacts are stripped, and the lane lock flips to `plugin`.
+**Purpose.** Accept BOTH branches of the `UserPromptExpansion` gate
+(`hooks/block-unmaterialised-skill.sh`) live: pre-init it blocks
+state-writing `/zs:` skills with a friendly setup pointer (read-only skills
+and `zs:update-zskills` itself pass), and post-init it allows everything.
+(#1132 lesson: a gate is only validated when BOTH branches have run live.)
 
-**Preconditions.**
-- A consumer currently on the legacy lane (Scenario 1 passed): `.claude/skills/`
-  mirror present, zskills hooks registered in `.claude/settings.json`.
+**Preconditions.** Scenario 2's consumer repo, BEFORE its init step (or a
+fresh one in the same install).
 
-**Steps.**
-1. Run the switcher in your Claude session:
-   ```
-   /update-zskills --switch-install-path=to-plugin
-   ```
-   (it dispatches the bundled `scripts/switch-install-path.sh --to-plugin`
-   for you; invoke the script directly only when debugging the switch
-   machinery.)
-2. It strips the zskills hook entries from `.claude/settings.json` FIRST
-   (config write first), prints the
-   `/plugin marketplace add zeveck/zskills` + `/plugin install zs@zskills`
-   steps, and (interactively) blocks until you type `done`. Follow the
-   printed `/plugin` steps in your Claude session, then confirm.
-   (For a non-interactive smoke, set `ZSKILLS_SWITCH_NONINTERACTIVE=1` to
-   skip the `read`-block; the instruction is still printed.)
-3. It then does basename-gated removal of the mirrored `.claude/skills/`,
-   `.claude/hooks/`, and `.claude/rules/zskills/managed.md` (consumer-authored
-   skills/hooks are preserved), and writes the lock LAST.
-
-**Expected observable results (PASS criteria).**
-- `.claude/zskills-install-lane` contains exactly `plugin`.
-- The zskills hook entries are gone from `.claude/settings.json` (consumer
-  hooks preserved).
-- The mirrored zskills skills/hooks/managed.md are removed (only
-  zskills-owned basenames — third-party skills/hooks under `.claude/` are
-  kept).
-- `.zskills/` runtime state (claim markers, tracking) is untouched
-  (lane-independent).
-- Re-running `/update-zskills --switch-install-path=to-plugin` is a
-  no-op-with-INFO ("Already on the plugin lane").
+**Steps + expected observables.**
+1. Pre-init, invoke a state-writing skill (e.g. `/zs:do test task`):
+   **BLOCKED** — the gate's message names `/zs:update-zskills` as the cure;
+   the skill does not execute.
+2. Pre-init, invoke a read-only skill (e.g. `/zs:briefing`): **ALLOWED**.
+3. Run `/zs:update-zskills` (the cure — always allowed pre-init).
+4. Post-init, repeat step 1: **ALLOWED** — zero block records; the skill
+   executes.
 
 ---
 
-## Scenario 4 — Plugin → legacy switch
+## Scenario 4 — Upgraded materialiser-era consumer (residue cleanup)
 
-**Purpose.** Accept the consolidation tool's `--to-update-zskills`
-direction: a consumer on the plugin lane switches back to the legacy lane,
-the sentinelled plugin artifacts are removed, the mirror is restored by
-`/update-zskills install`, and the lane lock flips to `update-zskills` —
-without deadlocking on Step 0.7's hard-refuse.
+**Purpose.** Accept the A1.5 residue path — the one shape a fresh repo can
+never exercise. Consumers upgrading from pre-redesign releases arrive with
+the old SessionStart materialiser's artifacts; the first
+`/zs:update-zskills` on the new release must clean them up.
 
 **Preconditions.**
-- A consumer currently on the plugin lane (Scenario 2 passed): the 5
-  sentinelled artifacts present, no `.claude/skills/` mirror.
+- A consumer repo fabricated as a materialiser-era install: the 5 legacy
+  artifacts (`.claude/agents/{verifier,implementer}.md`,
+  `.claude/hooks/{inject-bash-timeout,verify-response-validate}.sh`,
+  `.claude/rules/zskills/managed.md` — each carrying the legacy D20
+  sentinel prefix in its first 3 lines), the seeded
+  `.claude/zskills-config.json` + schema sibling, and the legacy
+  seeded-config notice marker. Derive ALL the literals — the sentinel
+  prefix, the notice path, the artifact paths, the frozen seed shape —
+  from `skills/update-zskills/scripts/init-state.sh`'s frozen
+  legacy-residue constants (never re-type them; the literal-string
+  discipline keeps them in that one file), or produce them by running the
+  pre-Phase-7 materialiser from a historical checkout.
+- The NEW built release installed over it (Scenario 2's install shape).
 
 **Steps.**
-1. Run the switcher in your Claude session:
-   ```
-   /update-zskills --switch-install-path=to-update-zskills
-   ```
-   (it dispatches the bundled `scripts/switch-install-path.sh
-   --to-update-zskills` for you; invoke the script directly only when
-   debugging the switch machinery.)
-2. It writes `.zskills/switch-in-progress` at its START. This marker is
-   load-bearing: while it is present BOTH (i) the `/update-zskills` Step 0.7
-   W6.1 hard-refuse skips itself (so the mandated `/update-zskills install`
-   is allowed on a `detect==plugin` consumer instead of being refused) AND
-   (ii) `session-start-materialise.sh` skips re-materialising (so it does not
-   re-arm `detect==plugin` across the restart). This is what prevents the
-   switch from deadlocking.
-3. Follow the printed steps in your Claude session:
-   ```
-   /plugin uninstall zs@zskills
-   ```
-   restart Claude Code, then:
-   ```
-   /update-zskills install
-   ```
-   Confirm back at the switcher prompt (type `done`).
-4. The switcher does sentinel-gated removal of any of the 5 artifacts that
-   STILL carry a `zskills-materialised:` sentinel (sentinel-less /
-   re-installed files are `/update-zskills`-owned and preserved), writes the
-   lock LAST, then removes `.zskills/switch-in-progress`.
+1. Run `/zs:update-zskills` in the upgraded consumer.
+2. When the seeded-config offer fires (notice present + config still matches
+   the frozen seed shape), accept the removal.
 
 **Expected observable results (PASS criteria).**
-- `.claude/zskills-install-lane` contains exactly `update-zskills`.
-- `.claude/skills/` mirror is restored (by the `/update-zskills install`
-  step) and `.claude/settings.json` re-registers the zskills hooks.
-- `.claude/rules/zskills/managed.md` is present and NOT sentinelled (it is
-  now `/update-zskills`-rendered, not plugin-materialised).
-- `.zskills/switch-in-progress` is gone (cleared strictly AFTER the lock was
-  written — lock-LAST contract preserved).
-- `.zskills/` runtime state is untouched.
-- Re-running `/update-zskills --switch-install-path=to-update-zskills` is a
-  no-op-with-INFO ("Already on the /update-zskills lane").
+- Every sentinelled artifact is REMOVED (sentinel-less / user-owned files at
+  the same paths would be preserved — that is the discriminator).
+- The seeded-config offer fired with the documented semantics; on accept the
+  config + schema are removed; on every path the notice is consumed exactly
+  once (the offer never repeats).
+- The post-init footprint equals Scenario 2's exact set.
+- A repeat `/zs:update-zskills` performs NO further removals (cleanup is
+  permanent; nothing re-creates the residue).
 
 ---
 
 ## Scenario 5 — Mirror-less `claude --plugin-dir <built-tree>` BEHAVIOR run
 
 **Purpose.** Accept plugin **RUNTIME** behavior in a CLEAN, mirror-less
-consumer dir — the half no non-interactive run proves: skills actually
-resolving under
-`${CLAUDE_PLUGIN_ROOT}`, hooks actually firing, `/zs:` slash dispatch
-working, and the materialiser writing its 5 artifacts.
+consumer dir — skills actually resolving under `${CLAUDE_PLUGIN_ROOT}`,
+hooks actually firing, `/zs:` slash dispatch working — via the fast
+`--plugin-dir` loop. (Scenario 2 is the authoritative shape-(b) proof; this
+is the quick regression-class check.)
 
-**Why this scenario over dual-install consolidation.** The dual-install
-consolidation path is already covered structurally — Scenarios 3 and 4
-exercise the bidirectional `switch-install-path.sh`, and the D27 nag in
-`session-start-materialise.sh` is hit on every dual session. What no other
-scenario or automated test proves is **mirror-less RUNTIME resolution** —
-and that is precisely the gap the "dogfood-mask" exploited in #799/#831,
-where the zskills-dev mirror satisfied skill lookups and hid the fact the
-plugin lane never resolved under `${CLAUDE_PLUGIN_ROOT}`. This is the
-highest-value manual check because it cannot be made automatic (it needs an
-authed `claude` session) and it guards the exact regression class that
-shipped two broken plugin lanes.
+**Why this scenario.** The "dogfood-mask" (#799/#831) shipped because the
+zskills-dev mirror satisfied skill lookups and hid the fact the plugin lane
+never resolved under `${CLAUDE_PLUGIN_ROOT}`. **Never run `--plugin-dir .`
+from inside zskills-dev as plugin-lane evidence.**
 
 **Preconditions.**
 - A built, prod-stripped plugin tree, produced via
   `bash scripts/build-plugin-release.sh` (creates local `prod/main`) and
   checked out with `git worktree add <dir> prod/main`.
-- A CLEAN consumer dir with NO `.claude/skills/` mirror — **never run
-  `--plugin-dir .` from inside zskills-dev** (that reproduces the
-  dogfood-mask).
+- A CLEAN consumer dir with NO `.claude/skills/` mirror.
 
 **Steps.**
 1. Build the prod-stripped tree and check it out into a dir:
@@ -278,19 +211,23 @@ shipped two broken plugin lanes.
    cd /tmp/zs-consumer && claude --plugin-dir /tmp/zs-prod-tree
    ```
 4. In that session: dispatch a `/zs:` skill, trigger a gated git command to
-   make a hook fire, and inspect the materialised artifacts.
+   make a hook fire, and check the project stays clean.
 
 **Expected observable results (PASS criteria).**
 - `/zs:` dispatch works against the BUILT tree (e.g. `/zs:update-zskills`
-  smart-detect reports state) — proving skills resolve under
-  `${CLAUDE_PLUGIN_ROOT}` with NO mirror present.
-- A zskills hook fires (e.g. attempt a `git commit` with a stale skill
-  version, or any command the `block-unsafe-*` hooks gate, and observe the
-  hook envelope) — proving `hooks/hooks.json` registered under the plugin
-  root.
-- The 5 materialised artifacts appear in `/tmp/zs-consumer/.claude/` with
-  `zskills-materialised:` sentinels — proving the SessionStart materialiser
-  ran in a mirror-less consumer.
+  reports state) — proving skills resolve under `${CLAUDE_PLUGIN_ROOT}`
+  with NO mirror present.
+- A zskills hook fires (e.g. any command the `block-unsafe-*` hooks gate —
+  observe the hook envelope) — proving `hooks/hooks.json` registered under
+  the plugin root.
+- The built tree carries root `agents/verifier.md` + `agents/implementer.md`
+  and NONE of the retired pre-redesign machinery (the old SessionStart
+  materialiser hook, the lane-switch script and its strip helper, the
+  lane-switching guide — verify with the end-state item-3 grep in
+  `docs/plans/INSTALL_REDESIGN_PLAN.md`).
+- `git status --porcelain` in `/tmp/zs-consumer` stays EMPTY across the
+  session (zero-write default; only an explicit `/zs:update-zskills` init
+  writes).
 - `/tmp/zs-consumer/.claude/skills/` does NOT exist — confirming mirror-less
   resolution (the norm).
 - Clean up afterward: `git worktree remove /tmp/zs-prod-tree`, remove the

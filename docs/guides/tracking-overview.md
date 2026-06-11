@@ -49,9 +49,10 @@ changes.
 The hook only enforces tracking when your session is part of a running
 pipeline. It decides that two ways:
 
-- **Inside a worktree:** the skill writes a small `.zskills-tracked` file at the
-  worktree root naming the pipeline. If that file is present, the session is
-  part of that pipeline.
+- **Inside a worktree:** the skill writes a small `.zskills/tracked` file in
+  the worktree naming the pipeline. If that file is present, the session is
+  part of that pipeline. (Hooks also still read the legacy root
+  `.zskills-tracked` for worktrees created before the path consolidation.)
 - **On the main checkout:** the skill prints a `ZSKILLS_PIPELINE_ID=<id>` line
   early in the session, which the hook reads back from the session transcript.
 
@@ -126,10 +127,11 @@ the audit and issues state that lives alongside it) by accident.
 
 ## Related concepts
 
-- **`.landed`** is *not* a tracking marker. It is a separate file written at a
-  worktree's root after that worktree's commits are confirmed on `main`, used by
-  cleanup tools to tell which worktrees are safe to remove. It does not affect
-  commit gating.
+- **`.zskills/landed`** is *not* a tracking marker. It is a separate file
+  written in a worktree after that worktree's commits are confirmed on `main`,
+  used by cleanup tools to tell which worktrees are safe to remove. It does
+  not affect commit gating. (Older worktrees may carry the legacy root
+  `.landed` instead — readers check both, new path first.)
 - **Claiming work items** is a related but distinct mechanism: before a pipeline
   works an issue or plan, it claims it so two pipelines don't pick up the same
   item. That is separate from the commit-gating tracking described here.

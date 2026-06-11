@@ -4,8 +4,10 @@ There are two ways to install zskills. Pick one — you can't run both at the
 same time.
 
 → **[Plugin install](#plugin-install)** (recommended for new installs) — two
-  commands inside a Claude Code session. Updates come from the marketplace, and
-  the slash menu lists the skills under a `/zs:` prefix.
+  commands inside a Claude Code session, plus a one-time `/zs:update-zskills`
+  setup. Updates come from the marketplace, the plugin writes nothing into
+  your repo beyond that setup's footprint, and the slash menu lists the
+  skills under a `/zs:` prefix.
 
 → **[`/update-zskills` install](#update-zskills-install)** — the original
   installer. Choose this if you want the bare slash names (`/run-plan` instead
@@ -28,19 +30,19 @@ From inside a Claude Code session in your project:
 The first command registers the `zskills` marketplace; the second installs the
 `zs` plugin (the full distribution).
 
-Then **restart Claude Code (or run `/clear`) to finish setup.** Plugins can't
-write to your project at install time, so the consumer-side files are written on
-the *next* session start (see below) — this first restart is required, not
-optional. Finally, run:
+Then **restart Claude Code (or run `/clear`) so the plugin's skills and hooks
+load**, and run the one-time setup:
 
 ```
-/update-zskills
+/zs:update-zskills
 ```
 
-to confirm the install and check your environment — it reports whether `git`,
-Python, and `gh` are present. `/update-zskills` is the post-install step on
-**both** install paths; until you run it, a one-line greeting on startup reminds
-you. (On the plugin install, type `/zs:update-zskills`.)
+This is the explicit **init** — it adds one `.zskills/` umbrella line to your
+`.gitignore`, offers (but doesn't require) a project config, verifies the
+install, and writes the gitignored `.zskills/init-done` marker. It also
+reports whether `git`, Python, and `gh` are present. Until you run it, a
+one-line greeting on startup reminds you, and the skills that write project
+state are blocked (read-only skills work immediately).
 
 > **If the install fails to clone with a git SSH error** — something like
 > `git@github.com: Permission denied (publickey)` followed by
@@ -49,23 +51,29 @@ you. (On the plugin install, type `/zs:update-zskills`.)
 > plugin clones over **HTTPS**. Tell Claude *"configure git to use HTTPS instead
 > of SSH so the install works"* and re-run `/plugin install zs@zskills`.
 
-On the first session after install, the plugin writes its managed files into
-your project's `.claude/`: the two agent definitions (`.claude/agents/`), two
-hook scripts (`.claude/hooks/`), and the agent-rules file
-(`.claude/rules/zskills/managed.md`). These are plugin-managed — when you
-upgrade, the plugin refreshes them, leaving any you've edited yourself alone.
+**The plugin writes nothing into your project by itself.** Skills, hooks, the
+verifier/implementer agents, and the agent rules all live in (and run from)
+the plugin's own tree — `git status` in your project stays clean across
+sessions. The only project-side footprint is what init creates: the
+`.gitignore` line, the gitignored `.zskills/` runtime state, and — only if
+you say yes at init — `.claude/zskills-config.json` plus its schema sibling.
 
-If you don't already have a `.claude/zskills-config.json`, the plugin also seeds
-a default one (plus its schema) so the skills have settings to read — review it
-and tune it for your project (see [Configuring zskills](zskills-config.md)). An
-existing config is never overwritten. See
-[`.gitignore` guidance](#gitignore-guidance) for whether to track these files.
+The config is **optional**. Without one, zskills runs on built-in defaults:
+work lands in **`direct`** mode (`execution.landing: direct`,
+`main_protected: false` — agents work and commit directly on `main`, the
+simplest default for solo work), timezone `UTC`, and no project test commands.
+A config lets you set test commands, the dev-server command, landing mode,
+and more (see [Configuring zskills](zskills-config.md)). To switch to a
+review workflow (a worktree + pull request, with `main` locked), see
+[Landing mode](#landing-mode).
 
-By default the plugin install lands work in **`direct`** mode
-(`execution.landing: direct`, `main_protected: false`): agents work and commit
-directly on `main`, with no worktree or landing step — the simplest default for
-solo work in a fresh project. To switch to a review workflow (a worktree + pull
-request, with `main` locked), see [Landing mode](#landing-mode).
+**Install scope — prefer project-scoped enablement.** When the CLI asks where
+to enable the plugin (or when you pass a scope flag), choose the **project**
+scope. A user-scope install enables zskills in *every* project you open: its
+agent-rules context (~15KB) and the setup greeting then appear in projects
+that never asked for zskills. Nothing is written into those projects — the
+trade is context noise, not files — but project-scoped enablement avoids it
+entirely.
 
 ## `/update-zskills` install
 
@@ -128,18 +136,19 @@ they were.
 
 | Install | Update command | What it does |
 |---|---|---|
-| Plugin | `/plugin marketplace update` | Pulls the latest plugin from the marketplace. On the next session, the five managed files are refreshed (any you've edited yourself are left alone). |
+| Plugin | `/plugin marketplace update` | Pulls the latest plugin from the marketplace. Everything runs from the plugin's own tree, so there are no project files to refresh. (An optional follow-up `/zs:update-zskills` re-verifies the install and updates the recorded version.) |
 | `/update-zskills` | `/update-zskills install` | Re-fetches the source, copies changed skills and hooks into `.claude/`, and regenerates the rules file. Your existing config is kept. |
 
 ## Comparison
 
 | | Plugin install | `/update-zskills` install |
 |---|---|---|
-| Install | `/plugin marketplace add zeveck/zskills` then `/plugin install zs@zskills` | Clone + copy + `/update-zskills install` |
+| Install | `/plugin marketplace add zeveck/zskills` then `/plugin install zs@zskills`, then one-time `/zs:update-zskills` | Clone + copy + `/update-zskills install` |
 | Update | `/plugin marketplace update` | `/update-zskills install` |
 | Slash prefix | `/zs:` (`/zs:run-plan`) | bare (`/run-plan`) |
 | Needs the `claude` CLI on the host | Yes | No |
 | Skill source in your repo | No (managed by the plugin) | Yes (copied into `.claude/`, shows in a diff) |
+| Files in your repo | `.gitignore` line + gitignored `.zskills/` state + optional config | The full `.claude/` install (skills, hooks, agents, rules, config) |
 
 ## Slash prefix
 
@@ -159,25 +168,17 @@ text) is the lower-friction choice.
 
 What to track depends on your install.
 
-- **Plugin install — gitignore the plugin-managed files.** The plugin rewrites
-  them on each upgrade, so tracking them only produces churn. Add to
-  `.gitignore`:
+- **Plugin install — nothing to do.** Init already added the one line that
+  matters (`.zskills/` — the runtime-state umbrella) to your `.gitignore`.
+  There are no plugin-managed files in your repo to ignore. If you accepted a
+  config at init, `.claude/zskills-config.json` (and its schema sibling) is
+  yours — tracking it in git is recommended so your team shares the settings.
 
-  ```gitignore
-  # zskills plugin-managed files
-  .claude/agents/verifier.md
-  .claude/agents/implementer.md
-  .claude/hooks/
-  .claude/rules/zskills/managed.md
-  ```
-
-  (If your project keeps its own hooks under `.claude/hooks/`, list the two
-  zskills hook files individually instead of ignoring the whole directory.)
-
-- **`/update-zskills` install — keep them tracked.** Under this install those
-  files (and the rest of the `.claude/` copy) *are* your install state. Tracking
-  them in git is correct: your repo records which skill and hook versions you
-  have, and the copy is reviewable in a diff.
+- **`/update-zskills` install — keep the install tracked.** Under this install
+  the `.claude/` copy (skills, hooks, agents, rules, config) *is* your install
+  state. Tracking it in git is correct: your repo records which skill and hook
+  versions you have, and the copy is reviewable in a diff. The installer adds
+  the same `.zskills/` gitignore umbrella for the runtime state.
 
 ## Pinning to a release
 
@@ -198,6 +199,20 @@ re-copy the skills.
 
 ## Switching installs
 
-Already installed one way and want to switch? See
-[`switching-install-lanes.md`](switching-install-lanes.md), which walks through
-the supported switch in both directions, including how to back out.
+Already installed one way and want to switch? **Uninstall one, install the
+other** — there is no in-place switch.
+
+- **Plugin → `/update-zskills`:** run `/plugin uninstall zs@zskills`, restart
+  Claude Code, then follow [`/update-zskills` install](#update-zskills-install).
+  Your `.claude/zskills-config.json` and `.zskills/` runtime state carry over
+  untouched.
+- **`/update-zskills` → plugin:** remove the installed copies (the zskills
+  skills under `.claude/skills/`, the zskills hooks under `.claude/hooks/` and
+  their `.claude/settings.json` registrations, the zskills agents under
+  `.claude/agents/`, and `.claude/rules/zskills/managed.md` — leave your own
+  files alone), then follow [Plugin install](#plugin-install). Keep your
+  config; the plugin reads the same `.claude/zskills-config.json`.
+
+Running both at once is not a supported state — `/update-zskills`'s verifier
+flags it, and `/update-zskills install` refuses to re-create the mirror on a
+plugin-lane project.

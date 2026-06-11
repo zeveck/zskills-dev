@@ -100,23 +100,28 @@ if [ -d "$TEST_OUT_DIR" ]; then
   fi
 fi
 
-# The landed marker is also untracked, so it blocks `git worktree remove`.
-# Remove it right before removal, but SAVE its content so we can restore on
-# failure (preserving proof-of-landing for retry/diagnosis).
+# Remove the landed marker right before worktree removal (its content has
+# been fully extracted above; gitignored files do not themselves block
+# `git worktree remove`, but the marker must not outlive the worktree).
+# SAVE its content so we can restore on failure (preserving
+# proof-of-landing for retry/diagnosis).
 LANDED_CONTENT=$(cat "$LANDED_MARKER")
 if ! rm "$LANDED_MARKER"; then
   echo "ERROR: Failed to rm $LANDED_MARKER"
   exit 1
 fi
 
-# Phase 8 worktree-removal hazard: after the root-turd consolidation the
-# worktree's .zskills/ DIR holds the (gitignored, untracked) markers and any
-# other per-checkout runtime state — all of which block `git worktree
-# remove`. An agent-typed `rm -rf <wt>/.zskills` is BLOCKED by the
-# recursive-rm fence in block-unsafe-project.sh, so land-phase.sh owns this
-# cleanup internally (script internals are invisible to the command-token
-# hook). Refuse if anything under .zskills/ is git-TRACKED — same contract
-# violation as the EPHEMERAL_FILES check above.
+# Phase 8 worktree-removal cleanup: after the root-turd consolidation the
+# worktree's .zskills/ DIR holds the markers and any other per-checkout
+# runtime state. Properly gitignored entries do NOT block `git worktree
+# remove` (verified empirically), but any NON-ignored residue under
+# .zskills/ would — and stale runtime state must not outlive the worktree
+# either way, so land-phase.sh removes the dir wholesale. An agent-typed
+# `rm -rf <wt>/.zskills` is BLOCKED by the recursive-rm fence in
+# block-unsafe-project.sh, so land-phase.sh owns this cleanup internally
+# (script internals are invisible to the command-token hook). Refuse if
+# anything under .zskills/ is git-TRACKED — same contract violation as the
+# EPHEMERAL_FILES check above.
 if [ -d "$WORKTREE_PATH/.zskills" ]; then
   tracked_zs=$(git -C "$WORKTREE_PATH" ls-files .zskills 2>/dev/null)
   if [ -n "$tracked_zs" ]; then

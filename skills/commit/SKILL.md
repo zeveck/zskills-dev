@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.06.10+53d97c"
+  version: "2026.06.10+2773b8"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow

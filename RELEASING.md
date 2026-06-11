@@ -13,8 +13,13 @@ dev-only artifacts from the current dev HEAD and pushes ONE complete,
 plugin-installable tree to the prod repo's **`main` branch** plus a bare
 **`YYYY.MM.N` tag**. That single published tree serves BOTH the legacy
 `/update-zskills` lane (which mirrors `skills/` + hooks) AND the plugin lane
-(`build-prod.sh` keeps the plugin manifests AND generates the D4 suffixless
-hook siblings, so `/plugin install zs@zskills` gets a complete plugin).
+(`build-prod.sh` keeps the plugin manifests, the root `agents/` tree the
+plugin's verifier/implementer dispatch from, AND generates the D4 suffixless
+hook siblings, so `/plugin install zs@zskills` gets a complete plugin). The
+shared finalizer (`scripts/_lib/finalize-prod-tree.sh`) fails the build
+closed if `agents/verifier.md` / `agents/implementer.md` or the R-b rules
+ship-files (`scripts/render-managed-rules.py` + its substitution module +
+`zskills-defaults.json`) are missing from the built tree.
 
 `scripts/build-plugin-release.sh` is **NOT the publish path** — it is a local
 dogfood / prod-tree builder (and the source of the D4/strip test fixtures). It
@@ -45,8 +50,10 @@ Release steps:
    tag, runs `build-prod.sh`, and pushes the stripped tree to prod's `main`
    branch + the bare tag (prod-first, so dev stays clean on any failure).
 4. **Notify consumers.** Plugin-lane consumers refresh via
-   `/plugin marketplace update` (or auto-update if enabled); legacy-lane
-   consumers run `/update-zskills install` (smart-detect pulls the new
+   `/plugin marketplace update` (or auto-update if enabled) — a follow-up
+   bare `/zs:update-zskills` is optional but refreshes the version recorded
+   in `.zskills/init-done` and re-runs the residue cleanup + verify pass.
+   Legacy-lane consumers run `/update-zskills` (smart-detect pulls the new
    skills/hooks and re-renders `managed.md`). The CHANGELOG entry is the
    per-line summary for both.
 
@@ -84,6 +91,45 @@ ONLY `source.repo`, never `ref`). The pin-by-version idiom is the bare
 ↔ workflow push branch ↔ docs pin idiom — and `source.ref` is identical in dev
 and prod since only `source.repo` is translated); `tests/test-plugin-d4-hook-siblings.sh`
 guards that `build-prod.sh`'s published tree actually contains the D4 hook siblings.
+
+## Dogfooding lanes
+
+This repo dogfoods BOTH distribution lanes from one working tree (referenced
+from `CLAUDE.md` "Two install lanes"):
+
+- **Plugin lane:** launch with `claude --plugin-dir .` from the repo root.
+  The plugin loads `.claude-plugin/plugin.json` + `hooks/hooks.json`; iterate
+  with `edit → /reload-plugins → test`. The D16(a) conditional-skip shim
+  (`hooks/_lib/plugin-hook-skip-if-mirrored.sh`) is what makes this safe:
+  this repo also carries the legacy `.claude/` install, so every
+  plugin-registered hook with a settings.json-registered same-basename
+  sibling defers to the sibling instead of double-firing. Dual-load is a
+  permanent fact of THIS repo, never a consumer state.
+- **Legacy `/update-zskills` lane:** the `.claude/skills/` mirror IS the
+  install; iterate with `edit → /update-zskills --rerender → test` (or
+  `bash scripts/mirror-skill.sh <skill>` for a single skill).
+
+**Mirror-less validation recipe (the dogfood-mask guard).** Never accept
+"works in this repo" as plugin-lane evidence — the local mirror satisfies
+skill lookups and masks broken plugin resolution (#799/#831). To validate
+what a real consumer gets:
+
+```bash
+# Snapshot the tree (build-prod.sh strips IN PLACE — never run it in your
+# working tree), then strip the snapshot:
+mkdir -p /tmp/zs-prod-tree
+git archive HEAD | tar -x -C /tmp/zs-prod-tree
+(cd /tmp/zs-prod-tree && bash scripts/build-prod.sh)
+# In a sandbox CLAUDE_CONFIG_DIR (never your real one):
+#   claude plugin marketplace add /tmp/zs-prod-tree
+#   claude plugin install zs@zskills
+# then open a session in a FRESH consumer repo (no .claude/skills/) and
+# exercise the behavior under test.
+```
+
+`--plugin-dir` is the fast iteration loop only — it bypasses marketplace
+resolution and plugin-clone caching, so it is never the sole proof for a
+plugin-lane claim. DEV-QUAL.md holds the full manual scenario set.
 
 ## TL;DR
 

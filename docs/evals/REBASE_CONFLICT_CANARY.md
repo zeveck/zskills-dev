@@ -48,14 +48,14 @@ no conflict occurs and the canary reports a successful clean run
 - Local tests run + pass.
 - Push → PR → CI → auto-merge.
 - Final main: merged version contains both canary's edit AND coordinator's edit.
-- `.landed status: landed`, post-run-invariants 7/7.
+- Landed marker (`.zskills/landed`) `status: landed`, post-run-invariants 7/7.
 
 ### Bail case — agent can't resolve
 
 - Session 2 makes a harder conflict that's not cleanly mergeable.
 - Agent attempts resolve, tests fail after, or agent decides not to guess.
-- `git rebase --abort`, write `.landed status: conflict`, emit
-  the "How to resume" instructions, exit 1.
+- `git rebase --abort`, write the landed marker (`.zskills/landed`) with
+  `status: conflict`, emit the "How to resume" instructions, exit 1.
 - Worktree stays (user resumes manually).
 
 ## Setup
@@ -118,8 +118,8 @@ echo "Coordinator push done. Session 1 should now hit conflict at rebase-point-2
 - [ ] Session 1 enters agent-assisted resolve block (≤5 files).
 - [ ] Either:
       (a) resolve succeeds → tests pass → push → PR → merge, OR
-      (b) resolve fails → `.landed status: conflict` with resume
-          instructions.
+      (b) resolve fails → landed marker (`.zskills/landed`)
+          `status: conflict` with resume instructions.
 - [ ] No silent resolve — log must clearly indicate which branch.
 
 ### Dependencies

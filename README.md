@@ -52,16 +52,17 @@ From inside a Claude Code session in your project:
 /plugin install zs@zskills
 ```
 
-Then **restart Claude Code (or `/clear`) so we can finish setup** — the
-SessionStart hook materialises zskills' consumer-side artifacts on the next
-session start (plugins cannot write at install time). Finally, run:
+Then **restart Claude Code (or `/clear`) so the plugin loads**, and run the
+one-time setup:
 
 ```
-/update-zskills
+/zs:update-zskills
 ```
 
-to confirm the install and check your environment (it reports whether git,
-Python, and gh are present). Until you run it, a one-line greeting on startup
+This init adds a `.zskills/` line to your `.gitignore`, offers an optional
+project config, verifies the install, and checks your environment (it reports
+whether git, Python, and gh are present). The plugin itself writes nothing
+into your repo — until you run the init, a one-line greeting on startup
 reminds you.
 
 > **zskills needs git and bash.** Its worktree, commit, and cherry-pick
@@ -77,8 +78,8 @@ The repo contains prompt files and scripts.
 There's a more flexible **direct install** alternative — instead of the plugin,
 it copies the skill source straight into your repo's `.claude/`. Same skills,
 same behavior; the visible differences are the slash prefix and where the source
-lives. Pick **one** — running both at once isn't a supported end-state (run
-`scripts/switch-install-path.sh` to consolidate).
+lives. Pick **one** — running both at once isn't a supported end-state (to
+switch, uninstall one and install the other; see the install guide).
 
 | | Plugin | `/update-zskills` (direct) |
 |---|---|---|
@@ -154,8 +155,10 @@ safety hook). Every other config field is preserved. See
 
 ### Updating
 
-- **Plugin:** run `/plugin marketplace update`. The SessionStart hook
-  re-materialises the managed `.claude/` artifacts on next session start.
+- **Plugin:** run `/plugin marketplace update`. Everything runs from the
+  plugin's own tree, so there are no project files to refresh; an optional
+  follow-up `/zs:update-zskills` re-verifies the install and updates the
+  recorded version.
 - **`/update-zskills` (direct):** run `/update-zskills` anytime — it pulls the
   latest from the repo, updates changed skills, and fills any new gaps. If
   you have a config already, it will not re-prompt.
@@ -323,15 +326,18 @@ enforcement rules.
 
 Two other file types sit alongside tracking markers:
 
-- **`.zskills-tracked`** (repo root of each pipeline's worktree and the
-  main repo) — a single-line file containing the active pipeline ID. The
-  orchestrator writes it before dispatching work, removes it after the
-  pipeline completes. Hooks use it to scope marker matching.
-- **`.landed`** (worktree root) — a YAML-ish marker written by
+- **`.zskills/tracked`** (in each pipeline's worktree and the main repo) —
+  a single-line file containing the active pipeline ID. The orchestrator
+  writes it before dispatching work, removes it after the pipeline
+  completes. Hooks use it to scope marker matching (they also still read
+  the legacy root `.zskills-tracked` for worktrees created before the
+  path consolidation).
+- **`.zskills/landed`** (in the worktree) — a YAML-ish marker written by
   `/commit land` (via the script bundled in the `commit` skill) when a
   worktree's work has been cherry-picked (or merged) to main. `status: full`
   = safe to remove the worktree. `status: partial` / `not-landed` = inspect
-  first.
+  first. (Older worktrees may carry the legacy worktree-root `.landed`
+  instead — readers check both, new path first.)
 
 ## Hook policies
 
@@ -494,7 +500,7 @@ Agent guardrails that prevent the most common failure modes:
 5. **Never discard others' changes** — ask before touching uncommitted work
 6. **Protect untracked files** — `git stash -u`, not `git stash`
 7. **Feature-complete commits** — trace imports, verify before staging
-8. **Always write `.landed` marker** — so worktrees can be safely cleaned up
+8. **Always write the `.zskills/landed` marker** — so worktrees can be safely cleaned up
 9. **Verify worktrees before removing** — never batch-remove
 10. **Never defer hard parts** — finish the plan, don't stop after the easy phase
 11. **Correctness over speed** — follow instructions exactly, never stub

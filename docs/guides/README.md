@@ -12,10 +12,6 @@ Practical guides for installing zskills and working with it day to day. Start wi
 - **[Inspecting & monitoring](inspecting-and-monitoring.md)** — see what a running zskills project is doing: where its state lives, what files to read, and how to open the dashboard in your browser.
 - **[Tracking system overview](tracking-overview.md)** — how zskills keeps an agent from skipping verification: the checks that gate commits and pushes, and how to clear them if they get stuck.
 
-## Maintenance
-
-- **[Switching install lanes](switching-install-lanes.md)** — move an existing install from one lane to the other, in either direction, with a clean way to back out.
-
 ## Reference
 
 - **[Configuring zskills](zskills-config.md)** — every field in `.claude/zskills-config.json`: landing mode, tests, dev server, paths, and what not to hand-edit.
