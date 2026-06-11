@@ -80,6 +80,17 @@ if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
   fi
 fi
 
+# Shell-portable self-location (issue #1149). Claude Code's Bash tool runs
+# skill fences under the user's snapshot shell — zsh on default macOS/dev
+# setups — where BASH_SOURCE is unset: a bare ${BASH_SOURCE[0]} expanded
+# empty, the sibling-source below degenerated to `. ./zskills-paths.sh`
+# (cwd-relative, absent in a consumer repo), $ZSKILLS_SKILLS_ROOT stayed
+# empty, and the Layer-3 validator path became /update-zskills/... → 127.
+# zsh's default FUNCTION_ARGZERO sets $0 to the sourced file's path, so
+# ${BASH_SOURCE[0]:-$0} self-locates correctly under bash AND zsh (same
+# idiom as sanitize-pipeline-id.sh / claim-*.sh dual-mode detection).
+_ZSK_SELF_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")"
+
 # Source the sibling path-resolution helper so every fence that sources this
 # config helper ALSO gets $ZSKILLS_SKILLS_ROOT (the lane-portable skills root
 # used by Family-2 bundled-script invocations). Corrected Family-1 bootstrap:
@@ -92,7 +103,7 @@ if [ -z "${ZSKILLS_SKILLS_ROOT:-}" ]; then
   # zskills-paths.sh is a sibling in this same scripts/ dir on both lanes —
   # source it env-independently (the ${CLAUDE_PLUGIN_ROOT:-} guard was broken
   # mirror-less: empty in the script env → fell to the absent legacy mirror).
-  . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/zskills-paths.sh"
+  . "$_ZSK_SELF_DIR/zskills-paths.sh"
 fi
 
 # Working-Python-3 interpreter resolution.
@@ -242,13 +253,14 @@ unset -f _zsk_extract_cascade_keys
 # Config-less consumers carry the installed version in the init-done marker
 # (written by the Phase 6a explicit init: `version:` + `date:` lines). The
 # marker path comes from init-state.sh — the #1132 single path definition,
-# shipped in this same directory (BASH_SOURCE self-location) — never a
-# re-typed literal (Phase 6a item A0 closed the documented Phase 5 re-type
-# window). If init-state.sh is somehow unreachable, the fallback is skipped
-# and ZSKILLS_VERSION stays empty (fail-open, no literal fallback).
-if [ -z "$ZSKILLS_VERSION" ] && [ -f "${BASH_SOURCE[0]%/*}/init-state.sh" ]; then
+# shipped in this same directory (shell-portable self-location via
+# $_ZSK_SELF_DIR, captured above — works under zsh fence shells too, #1149)
+# — never a re-typed literal (Phase 6a item A0 closed the documented Phase 5
+# re-type window). If init-state.sh is somehow unreachable, the fallback is
+# skipped and ZSKILLS_VERSION stays empty (fail-open, no literal fallback).
+if [ -z "$ZSKILLS_VERSION" ] && [ -f "$_ZSK_SELF_DIR/init-state.sh" ]; then
   # shellcheck source=skills/update-zskills/scripts/init-state.sh
-  . "${BASH_SOURCE[0]%/*}/init-state.sh"
+  . "$_ZSK_SELF_DIR/init-state.sh"
   if [ -f "$CLAUDE_PROJECT_DIR/$ZSKILLS_INIT_DONE_REL" ]; then
     while IFS= read -r _ZSK_IDLINE || [ -n "$_ZSK_IDLINE" ]; do
       case "$_ZSK_IDLINE" in
@@ -274,4 +286,4 @@ if [ -z "$TIMEZONE" ]; then TIMEZONE="UTC"; fi
 # zskills-defaults-congruence: testing.output_file
 if [ -z "$TEST_OUTPUT_FILE" ]; then TEST_OUTPUT_FILE=".test-results.txt"; fi
 
-unset _ZSK_CFG _ZSK_USER_CFG
+unset _ZSK_CFG _ZSK_USER_CFG _ZSK_SELF_DIR
