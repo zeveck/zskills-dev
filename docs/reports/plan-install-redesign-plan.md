@@ -1,5 +1,28 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 8 Root-turd consolidation into .zskills/
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 220e1ec9 (109 files, +1378/−617)
+
+### Work Items
+Writers flag-day flipped (.zskills/landed, .zskills/worktreepurpose, .zskills/tracked) w/ mkdir + info/exclude self-ensure; readers dual-read (new-first/old-fallback/new-wins): land-phase, briefing._marker_path, collect local copy, block-unsafe-project Tier-1 ×3, post-run-invariants, prose fences; A2.5 one-shot main-root migrate in init; land-phase internal .zskills/ cleanup (tracked-refuse + marker-restore); CLAUDE_TEMPLATE heredoc + managed.md re-render; 19+2 test files re-keyed w/ legacy fixtures KEPT; allowlist rename (collision); 12 skill bumps + 2 hook stamps + tier1 +6.
+
+### Verification
+- Verifier PASS 220e1ec9; Layer-3 exit 0. info/exclude adjudicated APPROVED w/ empirical worktree-remove probe; fence calculus probed live; A2.5 + collect coverage gaps closed by verifier (+6 cases). Suite 7709/7711 pre-commit; post-commit gates 119/119 + 13/13. Weakening: none.
+- Follow-up: #1146 (retire dual-read window + legacy gitignore lines after 2-3 releases).
+
+### Fork-portability notes (drift log)
+- tests/zskills-tracked-allowlist.txt is a DIFFERENT artifact (issue #217 force-tracked list) — fork plan must rename, not re-key.
+- collect.py MUST use a local dual-read (it path-imports possibly-older briefing copies — version-skew tests pin this).
+- Writers' gitignore self-ensure goes to $GIT_COMMON_DIR/info/exclude, never the tracked .gitignore (porcelain clean-gate).
+- Session PreToolUse hooks intercept fence/worktree probes typed inline — route probes through script files.
+- land-phase ~L110 comment wording (gitignored markers don't actually block worktree-remove) — Phase 9 sweep item.
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 7 Deletions: materialiser, switch complex, sentinels
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md

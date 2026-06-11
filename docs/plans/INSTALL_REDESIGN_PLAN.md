@@ -320,7 +320,7 @@ a real attended transcript/marker — as a verification FAIL.
 | 6a — Explicit init (Step 0.7 rework, residue cleanup, lock-LAST) | ✅ | 5e80c4eb | init-state.sh + 49-case oracle; W6.1 byte-untouched; 7752/7752; ATTENDED-PENDING ×1 → Phase 9 |
 | 6b — Gate retarget + verify-install rework | ✅ | a37e87b6 | both gate branches LIVE; VI reworked w/ hard A6 gate; 7796/7796; shape-(b) re-run → Phase 9 |
 | 7 — Deletions: materialiser, switch complex, sentinels | ✅ | 56678268+e9c352ce+9a05851c | materialiser DEAD; −3126 lines; 7695/7695; greeting live-AC → Phase 9 |
-| 8 — Root-turd consolidation into .zskills/ | ⬚ | | |
+| 8 — Root-turd consolidation into .zskills/ | ✅ | 220e1ec9 | 12 skills + 2 hooks flipped; dual-read window; A2.5 migrate; 7711 basis; retirement → #1146 |
 | 9 — Docs, release/dogfood, DEV-QUAL, final sweep | ⬚ | | |
 
 ---
