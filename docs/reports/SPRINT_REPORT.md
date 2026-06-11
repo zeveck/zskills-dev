@@ -80,3 +80,17 @@ status: complete
 (none)
 
 **Per-fire summary:** Picked #1034 (actionable) — symmetric issues.skipped dict-preserve in collect.py + 3 column-iteration guards + round-trip test. Pool: 5 open candidates; #1032/#1029/#1020 held by concurrent pipelines, #67 deferred, so #1034 was the sole actionable unclaimed pick at N=1.
+
+## Sprint — 2026-06-11 04:26 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** user-pinned (#1149 #1150 — review-finding fixes)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #1149 | zsh BASH_SOURCE self-location failure (Layer-3 self-waive on mirror-less lane) | /tmp/zskills-fix-issue-1149 | 9b1670a3 | new 5-case zsh-resolution suite | PASS (four-arm zsh/bash repro; transcript evidence; post-commit gates green) | N/A |
+| #1150 | Polish batch: prose residues, rules-fail nudge, version-preserve guard, guide drift | /tmp/zskills-fix-issue-1150 | 55e29b66 | +2 rules cases, +5 init cases | PASS (own measurements: scope flag, 39,656-byte render; 3g locked case intact) | N/A |
+
+Notes: #1149 triaged bug-unclear-cause by rubric but user-pinned → investigate-first in-batch (root cause PROVEN before patch: zsh leaves BASH_SOURCE unset; fence-sourced helpers self-located to cwd; fix = ${BASH_SOURCE[0]:-$0} idiom ×3 sites — affects every zsh-default consumer, e.g. macOS). Repo-wide tracker sync scoped out this sprint (user-pinned candidates; both researched at file time). No skips, no timeouts, no conflicts at fix time.
+
+### Skipped — none
