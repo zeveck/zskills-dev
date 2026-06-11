@@ -66,7 +66,15 @@ fi
 # worktree-safe, and symlink-safe (readlink -f). Replaces the broken
 # ${CLAUDE_PLUGIN_ROOT:-} guard (the :- form is never harness-substituted and
 # is empty in the script env on the plugin lane → mis-resolved mirror-less).
-ZSKILLS_SKILLS_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+#
+# ${BASH_SOURCE[0]:-$0}: SHELL-portable self-location (issue #1149). Claude
+# Code's Bash tool runs skill fences under the user's snapshot shell — zsh on
+# default macOS/dev setups — where BASH_SOURCE is unset; a bare
+# ${BASH_SOURCE[0]} expanded empty and this line silently resolved
+# <cwd>/../.. as the skills root. zsh's default FUNCTION_ARGZERO sets $0 to
+# the sourced file's path, so the fallback keeps self-location correct there
+# (same idiom as sanitize-pipeline-id.sh / claim-*.sh dual-mode detection).
+ZSKILLS_SKILLS_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")/../.." && pwd)"
 export ZSKILLS_SKILLS_ROOT
 
 # Pre-init vars to empty (empty-pattern-guard from DRIFT_ARCH_FIX). NOT export.

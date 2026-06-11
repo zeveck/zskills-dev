@@ -1529,3 +1529,10 @@ Author's open question on concurrent-sprint shape (multi-sprint list vs single-b
 **Fix outline.** Two viable approaches: (1) parallelize-with-isolation — give each suite a unique tmpdir, audit the ~52 fixed-path suites + shared-git-state mutators, refactor `run_suite` to collect per-suite results from subshells, cap degree (`xargs -P 8`); or (2) slow-tail fix — split/parallelize INSIDE `test-hooks.sh` (the 446s dominant lever) and trim the next 5, lower isolation risk, ~halves wall-clock. Staged: measure -> tail-fix -> isolation audit -> parallelize-with-degree-cap. Must preserve the CI-gate invariant (never soften) + per-phase verification.
 
 **Complexity:** L. **Action now:** /draft-plan — staged phases + harness result-aggregation refactor + isolation audit make this a genuine design surface, not a one-pass change.
+
+### #1149 — Mirror-less plugin lane: Layer-3 validator silently self-waived in a live /zs:do run
+
+**Labels:** (none) | **Verdict:** REPRO-FIRST — n=1 live anomaly from the install-UX review
+**Problem.** In a mirror-less marketplace-install consumer (sandbox preserved at /tmp/tmp.QMVuRrh1y0), a post-init `/zs:do ... direct` session reported the Layer-3 validator "isn't installed" and self-waived the gate — but skills/update-zskills/scripts/verify-response-validate.sh SHIPS in the plugin tree (PR #1147 Phase 3 relocated it there precisely for this lane).
+**Fix outline.** Hypothesis space (issue body): (a) do/SKILL.md dual-lane prelude not executed/mis-resolved live; (b) zskills-resolve-config.sh/zskills-paths.sh computing ZSKILLS_SKILLS_ROOT against the absent .claude/skills mirror instead of ${CLAUDE_PLUGIN_ROOT}/skills; (c) CLAUDE_PLUGIN_ROOT not substituted/exported in the executing fence context. Reproduce headless in an isolated sandbox; trace which hypothesis holds; fix the resolution path; add a live-repro-shaped harness case (the existing conformance pin checks fence TEXT, not live resolution).
+**Complexity:** M. **Action now:** fix-issues in-batch (user-pinned) — investigate-first; no blind patching.
