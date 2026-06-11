@@ -164,8 +164,15 @@ run_init() {
   # ── A2 — gitignore-first (mirrors the SKILL.md fence) ──
   local GI="$PROJ/.gitignore" zs_gi_match
   [ -f "$GI" ] || touch "$GI"
+  # Non-git duplicate guard (#1150 NIT): in a non-git dir check-ignore
+  # cannot run at all — grep-guard the append so re-runs before the STOP
+  # don't stack duplicates. In a git repo the append stays UNCONDITIONAL
+  # on not-ignored (last-match-wins self-heal, case 3g).
   if ! git -C "$PROJ" check-ignore -q .zskills/probe 2>/dev/null; then
-    echo ".zskills/" >> "$GI" 2>/dev/null
+    if git -C "$PROJ" rev-parse --git-dir >/dev/null 2>&1 \
+       || ! grep -qxF ".zskills/" "$GI" 2>/dev/null; then
+      echo ".zskills/" >> "$GI" 2>/dev/null
+    fi
   fi
   zs_gi_match=$(git -C "$PROJ" check-ignore -v .zskills/probe 2>/dev/null) || {
     echo "STOP: .zskills/ is not effectively ignored" >&2
@@ -716,6 +723,60 @@ if [ "$rc" -eq 0 ] && [ ! -e "$P/.zskills/tracked" ] && [ ! -e "$P/.zskills-trac
   pass "11c. A2.5 no-op when no legacy marker exists (no marker fabricated)"
 else
   fail "11c. A2.5 fabricated a marker: new=$([ -e "$P/.zskills/tracked" ] && echo yes || echo no) old=$([ -e "$P/.zskills-tracked" ] && echo yes || echo no)"
+fi
+
+# ── 12. Writer empty-version clobber guard (#1150 item 3) ──────────────────
+# When resolve-repo-version.sh fails the update arm calls the writer with an
+# EMPTY version. The writer must never downgrade a good `version:` record.
+# (a) empty new version + prior good version ⇒ preserved.
+P="$(new_proj ver-guard-preserve)"
+zskills_write_init_markers "$P" "2026.06.0" || fail "12a-pre. seed write failed"
+zskills_write_init_markers "$P" ""
+if grep -q '^version: 2026\.06\.0$' "$P/$ZSKILLS_INIT_DONE_REL"; then
+  pass "12a. empty resolve + prior good version ⇒ old value preserved"
+else
+  fail "12a. good version clobbered: $(head -1 "$P/$ZSKILLS_INIT_DONE_REL")"
+fi
+# (b) empty new version + no prior marker ⇒ empty version line (first-init
+# behavior unchanged).
+P="$(new_proj ver-guard-empty)"
+zskills_write_init_markers "$P" ""
+if grep -q '^version: $' "$P/$ZSKILLS_INIT_DONE_REL"; then
+  pass "12b. empty resolve + no prior marker ⇒ empty version line (unchanged first-init behavior)"
+else
+  fail "12b. unexpected content: $(head -1 "$P/$ZSKILLS_INIT_DONE_REL")"
+fi
+# (b2) empty new version + prior EMPTY version ⇒ still empty (guard keys on
+# a NON-empty prior value only).
+zskills_write_init_markers "$P" ""
+if grep -q '^version: $' "$P/$ZSKILLS_INIT_DONE_REL"; then
+  pass "12c. empty resolve + prior empty version ⇒ stays empty (no fabrication)"
+else
+  fail "12c. unexpected content: $(head -1 "$P/$ZSKILLS_INIT_DONE_REL")"
+fi
+# (c) non-empty new version ⇒ always overwrites (the documented refresh).
+P="$(new_proj ver-guard-overwrite)"
+zskills_write_init_markers "$P" "0.0.1"
+zskills_write_init_markers "$P" "2026.06.5"
+if grep -q '^version: 2026\.06\.5$' "$P/$ZSKILLS_INIT_DONE_REL"; then
+  pass "12d. non-empty new version overwrites the prior value (refresh unchanged)"
+else
+  fail "12d. refresh broken: $(head -1 "$P/$ZSKILLS_INIT_DONE_REL")"
+fi
+
+# ── 13. A2 non-git duplicate-append guard (#1150 NIT) ──────────────────────
+# A non-git project STOPs at the A2 verify (case 3a), but each re-run used
+# to append another `.zskills/` line first. The grep guard caps it at one,
+# without touching the git-repo self-heal behavior (case 3g still passes).
+P="$(new_proj gi-nogit-dup nogit)"
+run_init "$P" >/dev/null 2>&1
+run_init "$P" >/dev/null 2>&1
+run_init "$P" >/dev/null 2>&1
+DUP_COUNT="$(grep -cxF '.zskills/' "$P/.gitignore" 2>/dev/null)"
+if [ "$DUP_COUNT" = "1" ]; then
+  pass "13a. non-git re-runs append exactly one .zskills/ line (no duplicate stacking)"
+else
+  fail "13a. duplicate .zskills/ lines in non-git project: $DUP_COUNT"
 fi
 
 echo ""

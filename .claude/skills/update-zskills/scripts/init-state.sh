@@ -51,7 +51,7 @@ zskills_init_done_present() {
 zskills_write_setup_confirmed() {
   local root="$1" tmp
   mkdir -p "$root/$(dirname "$ZSKILLS_SETUP_CONFIRMED_REL")" || return 1
-  tmp="$root/$ZSKILLS_SETUP_CONFIRMED_REL.zskills-tmp.$$"
+  tmp="$root/$ZSKILLS_SETUP_CONFIRMED_REL.zskills-tmp.${BASHPID:-$$}"
   if ! date -Iseconds > "$tmp" 2>/dev/null; then
     rm -f "$tmp"
     return 1
@@ -70,10 +70,21 @@ zskills_write_setup_confirmed() {
 #   config-less consumers, read by zskills-resolve-config.sh's
 #   ZSKILLS_VERSION fallback. Re-running on an initialised consumer is the
 #   documented refresh path (the A1 update arm re-stamps the version line).
+#
+#   Empty-version clobber guard (#1150): when <version> is EMPTY (the
+#   caller's resolve-repo-version.sh failed) and an existing init-done
+#   marker already carries a non-empty `version:` value, the OLD value is
+#   kept — a failed resolve on the update arm must never downgrade a good
+#   version record to empty. Empty + no prior marker (or a prior empty
+#   value) still writes empty, and a non-empty <version> always overwrites.
 zskills_write_init_markers() {
-  local root="$1" version="${2:-}" tmp
+  local root="$1" version="${2:-}" tmp prior
+  if [ -z "$version" ] && [ -s "$root/$ZSKILLS_INIT_DONE_REL" ]; then
+    prior="$(sed -n 's/^version: //p' "$root/$ZSKILLS_INIT_DONE_REL" 2>/dev/null | head -n 1)"
+    [ -n "$prior" ] && version="$prior"
+  fi
   zskills_write_setup_confirmed "$root" || return 1
-  tmp="$root/$ZSKILLS_INIT_DONE_REL.zskills-tmp.$$"
+  tmp="$root/$ZSKILLS_INIT_DONE_REL.zskills-tmp.${BASHPID:-$$}"
   if ! {
     printf 'version: %s\n' "$version"
     printf 'date: %s\n' "$(date -Iseconds)"

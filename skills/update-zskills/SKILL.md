@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.11+4ec0e3"
+  version: "2026.06.11+b80a9b"
 ---
 
 # Update Z Skills Infrastructure
@@ -1128,8 +1128,16 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
     GI="$CLAUDE_PROJECT_DIR/.gitignore"
     [ -f "$GI" ] || touch "$GI"
     # Idempotent append: only when .zskills/ paths are not already ignored.
+    # Non-git duplicate guard (#1150 NIT): in a non-git dir check-ignore
+    # cannot run at all, so without the grep each re-run before the STOP
+    # below would stack a duplicate line. Inside a git repo the append
+    # stays UNCONDITIONAL on not-ignored — a present-but-overridden line
+    # is deliberately re-appended (last-match-wins self-heal).
     if ! git -C "$CLAUDE_PROJECT_DIR" check-ignore -q .zskills/probe 2>/dev/null; then
-      echo ".zskills/" >> "$GI"
+      if git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 \
+         || ! grep -qxF ".zskills/" "$GI" 2>/dev/null; then
+        echo ".zskills/" >> "$GI"
+      fi
     fi
     # Verify effective ignore (the migrate-paths Step 8 pattern). A probe
     # PATHNAME is enough — check-ignore does not require the file to exist.
@@ -1321,7 +1329,10 @@ PY
   - **Refresh the version line in the init-done marker** — re-run the same
     single writer: `zskills_write_init_markers "$CLAUDE_PROJECT_DIR"
     "$ZS_INIT_VERSION"` (atomic rewrite; re-stamping setup-confirmed is the
-    same "ran /update-zskills" semantics the legacy lane records).
+    same "ran /update-zskills" semantics the legacy lane records). If the
+    version resolve came back EMPTY, the writer keeps the marker's existing
+    non-empty `version:` value instead of clobbering it (#1150 guard —
+    documented in the writer's header in `init-state.sh`).
   - Print the update summary — include A1.5 removals, then the standing
     plugin-lane explanation — and exit 0:
 

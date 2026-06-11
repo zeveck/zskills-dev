@@ -157,10 +157,33 @@ else
   fail "4b. unexpected project writes: $(find "$PROJ4" -type f)"
 fi
 
-# ── Case 5 — defaults artifact missing → no-config render fails CLOSED ─────
+# check_render_fail_nudge <hook-output> — asserts the #1150 render-failure
+# contract: a systemMessage nudge naming the failure + the diagnose command,
+# and NO additionalContext (rules delivery stays fail-closed on the MODEL
+# channel — failure must never fabricate rules).
+check_render_fail_nudge() {
+  printf '%s' "$1" | "$PYTHON" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    print(f"BAD-JSON {e}"); sys.exit(0)
+msg = d.get("systemMessage", "")
+ctx = d.get("hookSpecificOutput", {}).get("additionalContext", "")
+checks = [
+    "zskills rules unavailable" in msg,
+    "/zs:update-zskills" in msg,
+    ctx == "",
+]
+print("OK" if all(checks) else f"BAD {checks}")
+'
+}
+
+# ── Case 5 — defaults artifact missing → render fails CLOSED + USER nudge ──
 # Pins that no-config mode genuinely loads the canonical zskills-defaults.json
 # (not a second in-renderer copy): without it the render errors and the hook
-# emits nothing (fail-safe), rather than fabricating defaults.
+# fabricates NO rules context — but (#1150 item 2) it must no longer be
+# silent: a one-line systemMessage nudge signals the failure to the user.
 PLUG5="$TMP/plugin-nodefaults"
 cp -a "$PLUG" "$PLUG5"
 rm -f "$PLUG5/skills/update-zskills/scripts/zskills-defaults.json"
@@ -168,10 +191,34 @@ PROJ5="$TMP/proj5"
 mkdir -p "$PROJ5"
 OUT5="$(env -u CLAUDE_PLUGIN_ROOT CLAUDE_PROJECT_DIR="$PROJ5" \
   bash "$PLUG5/hooks/session-rules-context.sh" 2>/dev/null)"
-if [ -z "$OUT5" ]; then
-  pass "5. canonical defaults artifact missing → empty output (no-config mode fails closed on it)"
+rc5=$?
+NUDGE5="$(check_render_fail_nudge "$OUT5")"
+if [ "$rc5" -eq 0 ] && [ "$NUDGE5" = "OK" ]; then
+  pass "5. defaults artifact missing → no additionalContext (fails closed) + systemMessage nudge, exit 0"
 else
-  fail "5. hook emitted output without the defaults artifact (no-config mode not pinned to it)"
+  fail "5. render-failure contract broken (rc=$rc5, check=$NUDGE5, out=${OUT5:0:120})"
+fi
+
+# ── Case 6 — broken project config → render fails → nudge, zero writes ─────
+# The M3 scenario the nudge exists for: a corrupt .claude/zskills-config.json
+# silently killed rules delivery every session. The hook must exit 0
+# (fail-open), emit the nudge, fabricate no rules, and write nothing.
+PROJ6="$TMP/proj6"
+mkdir -p "$PROJ6/.claude"
+printf '%s\n' '{ this is not json' > "$PROJ6/.claude/zskills-config.json"
+OUT6="$(run_hook "$PROJ6")"
+rc6=$?
+NUDGE6="$(check_render_fail_nudge "$OUT6")"
+if [ "$rc6" -eq 0 ] && [ "$NUDGE6" = "OK" ]; then
+  pass "6. broken config → render failure signalled via systemMessage nudge, no additionalContext, exit 0"
+else
+  fail "6. broken-config failure contract broken (rc=$rc6, check=$NUDGE6, out=${OUT6:0:120})"
+fi
+PROJ6_FILES="$(find "$PROJ6" -type f | wc -l | tr -d ' ')"
+if [ "$PROJ6_FILES" = "1" ]; then
+  pass "6b. broken-config run wrote nothing (only the fixture config remains)"
+else
+  fail "6b. unexpected project writes: $(find "$PROJ6" -type f)"
 fi
 
 echo ""

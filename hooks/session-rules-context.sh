@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.06.10
+# zskills-hook-version: 2026.06.11
 # session-rules-context.sh — R-b SessionStart rules delivery (INSTALL_REDESIGN
 # Phase 4, branch R-b per the Phase 1 Findings: Claim 3 PASS in both install
 # shapes).
@@ -29,7 +29,7 @@
 # Guards (skip = exit 0 with NO output):
 #   1. Legacy mirror present (detect-style: detect_install_state returns
 #      update-zskills or dual) — the rules already arrive from the mirror's
-#      disk render; delivering them again would duplicate ~15KB of rules in
+#      disk render; delivering them again would duplicate ~40KB of rules in
 #      context every session.
 #   2. A project .claude/rules/zskills/managed.md exists — a rules copy
 #      already delivered from disk (legacy render, R-c render, or a STALE
@@ -41,7 +41,7 @@
 # Scope acceptance (Phase 1 Claim-3 enablement-scope sub-probe, recorded
 # fact): a USER-scope plugin install (the CLI default) fires SessionStart
 # hooks in EVERY project, including non-zskills ones — so under a user-scope
-# install this hook delivers the zskills rules context (~15KB) in unrelated
+# install this hook delivers the zskills rules context (~40KB) in unrelated
 # projects too. The plan ACCEPTS this: it is strictly less invasive than the
 # status quo (the materialiser WRITES 5 files into every such project; this
 # hook writes nothing), and the cure is project-scope enablement — Phase 9's
@@ -103,6 +103,19 @@ fi
 TEMPLATE="$PLUGIN/CLAUDE_TEMPLATE.md"
 [ -f "$TEMPLATE" ] || exit 0
 
+# emit_render_fail_nudge — one-line USER-channel signal when the render
+# fails (#1150 item 2). The old pure-silent `|| exit 0` meant a broken
+# project config killed rules delivery EVERY session with no symptom until
+# verify-install was run. On failure we emit `systemMessage` ONLY — no
+# `additionalContext` is ever fabricated (rules delivery stays fail-closed
+# on the MODEL channel), and the SUCCESS path below stays
+# additionalContext-only (the two-channel design is unchanged). Fail-open:
+# always exit 0.
+emit_render_fail_nudge() {
+  "$PYTHON" -c 'import json; print(json.dumps({"systemMessage": "zskills rules unavailable: managed-rules render failed — run /zs:update-zskills to diagnose"}))' 2>/dev/null
+  exit 0
+}
+
 # ── Render (zero project writes — mktemp outside the project) ─────────────
 RULES_TMP="$(mktemp)" || exit 0
 trap 'rm -f "$RULES_TMP"' EXIT
@@ -110,14 +123,14 @@ trap 'rm -f "$RULES_TMP"' EXIT
 CONFIG="$PROJ/.claude/zskills-config.json"
 if [ -f "$CONFIG" ]; then
   "$PYTHON" "$PLUGIN/scripts/render-managed-rules.py" \
-    --config "$CONFIG" --template "$TEMPLATE" --out "$RULES_TMP" >&2 || exit 0
+    --config "$CONFIG" --template "$TEMPLATE" --out "$RULES_TMP" >&2 || emit_render_fail_nudge
 else
   # No-config mode: the renderer loads the canonical built-in defaults
   # (skills/update-zskills/scripts/zskills-defaults.json) itself.
   "$PYTHON" "$PLUGIN/scripts/render-managed-rules.py" \
-    --template "$TEMPLATE" --out "$RULES_TMP" >&2 || exit 0
+    --template "$TEMPLATE" --out "$RULES_TMP" >&2 || emit_render_fail_nudge
 fi
-[ -s "$RULES_TMP" ] || exit 0
+[ -s "$RULES_TMP" ] || emit_render_fail_nudge
 
 # ── Emit the SessionStart envelope: additionalContext (MODEL channel) ──────
 "$PYTHON" - "$RULES_TMP" <<'PY'
