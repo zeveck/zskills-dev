@@ -319,7 +319,7 @@ a real attended transcript/marker — as a verification FAIL.
 | 5 — Config cascade (project > user > built-ins) | ✅ | 6afc555b | 2-pass bash + Python helper ×3; carve-outs documented; congruence pinned; post-commit 119/119+13/13 |
 | 6a — Explicit init (Step 0.7 rework, residue cleanup, lock-LAST) | ✅ | 5e80c4eb | init-state.sh + 49-case oracle; W6.1 byte-untouched; 7752/7752; ATTENDED-PENDING ×1 → Phase 9 |
 | 6b — Gate retarget + verify-install rework | ✅ | a37e87b6 | both gate branches LIVE; VI reworked w/ hard A6 gate; 7796/7796; shape-(b) re-run → Phase 9 |
-| 7 — Deletions: materialiser, switch complex, sentinels | ⬚ | | |
+| 7 — Deletions: materialiser, switch complex, sentinels | ✅ | 56678268+e9c352ce+9a05851c | materialiser DEAD; −3126 lines; 7695/7695; greeting live-AC → Phase 9 |
 | 8 — Root-turd consolidation into .zskills/ | ⬚ | | |
 | 9 — Docs, release/dogfood, DEV-QUAL, final sweep | ⬚ | | |
 

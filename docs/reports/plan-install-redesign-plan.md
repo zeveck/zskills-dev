@@ -1,5 +1,28 @@
 # Plan Report — Plugin-Lane Install Redesign
 
+## Phase — 7 Deletions: materialiser, switch complex, sentinels
+
+**Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
+**Status:** Completed (verified)
+**Commits:** 56678268 (c1 materialiser→greeting), e9c352ce (c2 switch complex), 9a05851c (c3 sentinels+detect) — 37 files, +573/−3126; each boundary independently green; tree-hash byte-exactness proven.
+
+### Work Items
+Materialiser deleted (+3 suites, D27 nag); NEW read-only session-start-greeting.sh (R-b fold NOT taken — pending combined-envelope proof; two SessionStart registrations); switch complex deleted (script, guide, suite, preset arm, build-catalog entry, W6.1 now unconditional refuse); D16 shim message-only edit; sentinels retired (renderer --sentinel, detect re-keyed to env+mirror evidence, #1080 guard structurally unreachable → deleted, renderer-equivalence suite subject-removed); discipline fix (re-typed sentinel literal → sourced constant).
+
+### Verification
+- Verifier PASS ×3 commits; Layer-3 exit 0. Deletion AC grep: exactly 2 survivors (init-state.sh + mirror). Weakening audit: −101 fully classified; broken-python3/synthetic-consumer/lane-aware surviving subjects spot-verified. Suite 7695/7695 (unattended basis) pre+post.
+- ATTENDED-PENDING #6: greeting live pre-init/post-init observable → Phase 9 DEV-QUAL (hermetic both-branch coverage in place).
+
+### Fork-portability notes (drift log)
+- Patch-sequence commits: use `git apply --cached` after `git reset --mixed` (not --index — working tree already final; failed --index non-atomically restores deleted files → clean residue).
+- D16 shim carries NO stamp (hooks/_lib/ outside the stamp gate) — drop the bump item.
+- Plan's "two SessionStart entries" lands as one matcher with two commands — pin shape via integrity suite, not entry count.
+- renderer-equivalence suite dies WITH --sentinel (hard dependency) — name it in the fork's commit-3 list.
+- detect needs the env-context evidence added IN Phase 7 c3 (6b only touched vi_detect_lane).
+
+### User Sign-off
+(No UI files changed — omitted.)
+
 ## Phase — 6b Gate retarget + verify-install rework
 
 **Plan:** docs/plans/INSTALL_REDESIGN_PLAN.md
