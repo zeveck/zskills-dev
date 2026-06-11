@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.11+6db6d0"
+  version: "2026.06.12+a8a29a"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -92,6 +92,13 @@ through multi-phase plans autonomously.
 3. Fallback: `cherry-pick`
 
 ```bash
+# zsh portability (#1155): on stock macOS, Claude Code snapshots zsh and
+# this fence executes under it. zsh leaves $BASH_REMATCH empty after a
+# `[[ =~ ]]` match unless BASH_REMATCH is set, and indexes it 1-based
+# unless KSH_ARRAYS is set — so the `${BASH_REMATCH[1]}` capture below
+# silently empties and LANDING_MODE wrongly falls to cherry-pick. No-op
+# under bash (ZSH_VERSION unset).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
 # Detect landing mode
 # Resolve repo root before any config read. $PROJECT_ROOT is never exported
 # into a SKILL.md fence (it is only set inside post-run-invariants.sh, a
@@ -199,6 +206,10 @@ verbatim to every impl/verifier/fix-agent dispatch prompt. Three-case
 decision tree (same contract as `/verify-changes`):
 
 ```bash
+# zsh portability (#1155): same $BASH_REMATCH gap as the LANDING_MODE
+# fence above — without these options the `${BASH_REMATCH[1]}` capture is
+# silently empty under zsh and FULL_TEST_CMD is lost. No-op under bash.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 FULL_TEST_CMD=""
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then

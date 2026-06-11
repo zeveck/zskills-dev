@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.10+6dc07c"
+  version: "2026.06.11+0ebe97"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -281,6 +281,15 @@ fi
 # back-compat scalar (= ISSUE_NUMS[0] when non-empty, else empty).
 # claim-issue.sh rejects non-numeric input with exit 2; the `[0-9]+`
 # capture guarantees a bare integer.
+# zsh portability (#1155): on stock macOS, Claude Code snapshots zsh and
+# this fence executes under it. Without these options zsh leaves
+# $BASH_REMATCH empty after a `[[ =~ ]]` match (and indexes it 1-based),
+# so the captures below empty out AND the `${suffix#*"${BASH_REMATCH[0]}"}`
+# loop step becomes a no-op — an infinite loop on multi-ref descriptions
+# (#1155 validated rc=124). KSH_ARRAYS + BASH_REMATCH restore bash
+# semantics; the `[ -n "${BASH_REMATCH[0]-}" ] || break` guards below are a
+# belt-and-braces no-op under bash. No-op under bash (ZSH_VERSION unset).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
 ISSUE_NUMS=()
 _DO_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
 _DO_ISSUE_FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
@@ -318,6 +327,7 @@ fi
 # filler, 5=digit capture.
 if [ "$_DO_HAS_ANCHOR" -eq 1 ]; then
   while [[ "$_DO_CHAIN_SUFFIX" =~ ^[[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER})?#([0-9]+) ]]; do
+    [ -n "${BASH_REMATCH[0]-}" ] || break
     ISSUE_NUMS+=("${BASH_REMATCH[5]}")
     _DO_CHAIN_SUFFIX="${_DO_CHAIN_SUFFIX#*"${BASH_REMATCH[0]}"}"
   done
@@ -330,6 +340,7 @@ unset _DO_HAS_ANCHOR _DO_CHAIN_SUFFIX
 # 4=kw inner, 5=optional filler, 6=digit capture.
 _DO_REMAINING="$ARGUMENTS"
 while [[ "$_DO_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER}#([0-9]+) ]]; do
+  [ -n "${BASH_REMATCH[0]-}" ] || break
   ISSUE_NUMS+=("${BASH_REMATCH[6]}")
   _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
 done

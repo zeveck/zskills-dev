@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.10+a49ae6"
+  version: "2026.06.11+e73556"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -61,6 +61,12 @@ skill's `requires.land-pr.<id>` marker — `/run-plan` PR mode passes this;
 the other 3 callers do not, preserving their no-fulfillment behavior).
 
 ```bash
+# zsh portability (#1155): on stock macOS, Claude Code snapshots zsh and
+# this fence executes under it. zsh defaults to 1-based arrays, so the
+# 0-based `${ARGS[$i]}` indexing below mis-parses every arg. KSH_ARRAYS
+# makes zsh arrays 0-based, matching bash. No-op under bash (ZSH_VERSION
+# unset). `|| true` so a future zsh without these options can't abort.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
 ARGS=( "$@" )
 BRANCH=""
 TITLE=""
