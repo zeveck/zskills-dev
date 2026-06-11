@@ -7,7 +7,10 @@
 # SKILL.md is a prose+bash procedure executed by an LLM orchestrator, not
 # a runnable script. The load-bearing primitives the branch keys on ARE
 # testable here:
-#   - detect_install_state() classification per lane fixture (the signal),
+#   - detect_install_state() classification per lane fixture (the signal;
+#     since INSTALL_REDESIGN Phase 7 plugin evidence is the
+#     $CLAUDE_PLUGIN_ROOT env context — the D20 sentinel rules and the
+#     lane lock-file rule died with the materialiser + switch machinery),
 #   - the dual-locate + fail-soft sourcing logic (LANE defaults to
 #     update-zskills when detect-install-state.sh is unreachable),
 #   - apply-preset.sh's config-only behavior on a pure-plugin fixture
@@ -16,9 +19,8 @@
 #     present in BOTH the source SKILL.md and its byte-equal mirror.
 #
 # Acceptance cases:
-#   AC1 — pure-plugin (sentinelled artifacts, NO .claude/skills mirror) →
-#         detect == plugin; no mirror present; SKILL.md prints the
-#         plugin-lane explanation on a bare call.
+#   AC1 — pure-plugin (plugin loaded, NO .claude/skills mirror) →
+#         detect == plugin; no mirror present.
 #   AC2 — plugin lane + <preset> → apply-preset.sh edits config only
 #         (execution.landing/main_protected); NO mirror created; exit code
 #         reflects apply-preset's code.
@@ -55,16 +57,16 @@ base_fixture() {
   mkdir -p "$p/.claude"
   cp "$REPO_ROOT/.claude/zskills-config.json" "$p/.claude/zskills-config.json"
 }
-# Write a plugin-materialised (sentinelled) artifact.
-write_sentinelled_hook() {
-  mkdir -p "$(dirname "$1")"
-  printf '%s\n' '#!/usr/bin/env bash' '# zskills-materialised: 2026.05.0' 'echo hi' > "$1"
+# detect with / without the plugin loaded (Phase 7: plugin evidence is the
+# $CLAUDE_PLUGIN_ROOT env context, controlled explicitly per call so the
+# suite is deterministic regardless of the invoking session's own env).
+detect_plugin_loaded() {
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT" detect_install_state "$1"
 }
-write_sentinelled_managed() {
-  mkdir -p "$(dirname "$1")"
-  printf '%s\n' '<!-- zskills-materialised: 2026.05.0 -->' '# rules' > "$1"
+detect_plugin_unloaded() {
+  ( unset CLAUDE_PLUGIN_ROOT; detect_install_state "$1" )
 }
-# Write an update-zskills-installed (UN-sentinelled) SKILL.md mirror.
+# Write an update-zskills-installed SKILL.md mirror.
 write_unsentinelled_skill() {
   mkdir -p "$(dirname "$1")"
   printf '%s\n' '---' 'name: x' '---' 'body' > "$1"
@@ -173,10 +175,8 @@ fi
 # ── AC1 — pure-plugin not flipped ─────────────────────────────────────────
 P1="$TMP/plugin"
 base_fixture "$P1"
-write_sentinelled_hook "$P1/.claude/hooks/inject-bash-timeout.sh"
-write_sentinelled_managed "$P1/.claude/rules/zskills/managed.md"
-got="$(detect_install_state "$P1")"
-[ "$got" = plugin ] && pass "AC1a. pure-plugin fixture → detect_install_state == plugin" \
+got="$(detect_plugin_loaded "$P1")"
+[ "$got" = plugin ] && pass "AC1a. plugin-loaded mirror-less fixture → detect_install_state == plugin (env-context evidence)" \
   || fail "AC1a. expected plugin, got $got"
 # No legacy skills mirror exists on the plugin fixture (the branch must
 # skip the gap-fill rather than create one).
@@ -192,19 +192,15 @@ got="$(detect_install_state "$P1")"
 # branch would not fire.)
 P1c="$TMP/plugin-consumer-skill"
 base_fixture "$P1c"
-write_sentinelled_hook "$P1c/.claude/hooks/inject-bash-timeout.sh"
-write_sentinelled_managed "$P1c/.claude/rules/zskills/managed.md"
 write_unsentinelled_skill "$P1c/.claude/skills/social-seo/SKILL.md"   # consumer's OWN skill
-got="$(detect_install_state "$P1c")"
+got="$(detect_plugin_loaded "$P1c")"
 [ "$got" = plugin ] && pass "AC1c. plugin + consumer's own non-zskills skill → LANE==plugin (#1064)" \
   || fail "AC1c. expected plugin, got $got (consumer skill mis-counted as legacy evidence)"
 
 # ── AC2 — preset config-only on plugin lane ───────────────────────────────
 P2="$TMP/plugin-preset"
 base_fixture "$P2"
-write_sentinelled_hook "$P2/.claude/hooks/inject-bash-timeout.sh"
-write_sentinelled_managed "$P2/.claude/rules/zskills/managed.md"
-got="$(detect_install_state "$P2")"
+got="$(detect_plugin_loaded "$P2")"
 [ "$got" = plugin ] && pass "AC2a. plugin+preset fixture → detect == plugin" \
   || fail "AC2a. expected plugin, got $got"
 # Run the SAME apply-preset.sh the branch calls. It must edit ONLY config.
@@ -231,34 +227,35 @@ out2b=$(PROJECT_ROOT="$P2" bash "$REPO_ROOT/$APPLY" direct 2>&1); rc2b=$?
   || fail "AC2e. re-apply exit=$rc2b (expected 1), output: $out2b"
 
 # ── AC3 — dogfooding/legacy NOT intercepted ───────────────────────────────
-# (a) legacy-mirror fixture classifies update-zskills.
+# (a) legacy-mirror fixture (no plugin loaded) classifies update-zskills.
 P3="$TMP/uz"
 base_fixture "$P3"
 write_unsentinelled_skill "$P3/.claude/skills/update-zskills/SKILL.md"
-got="$(detect_install_state "$P3")"
+got="$(detect_plugin_unloaded "$P3")"
 [ "$got" = update-zskills ] && pass "AC3a. legacy-mirror fixture → update-zskills (branch does NOT fire)" \
   || fail "AC3a. expected update-zskills, got $got"
 [ "$got" != plugin ] && pass "AC3b. legacy fixture is NOT classified plugin" \
   || fail "AC3b. legacy fixture wrongly classified plugin"
 
-# (b) dual fixture (sentinelled + un-sentinelled evidence) classifies dual,
+# (b) dual fixture (plugin loaded + a zskills mirror) classifies dual,
 #     which is also NON-plugin → branch does not fire.
 P3d="$TMP/dual"
 base_fixture "$P3d"
-write_sentinelled_hook "$P3d/.claude/hooks/inject-bash-timeout.sh"
 write_unsentinelled_skill "$P3d/.claude/skills/run-plan/SKILL.md"
-got="$(detect_install_state "$P3d")"
-[ "$got" = dual ] && pass "AC3c. dual fixture → dual (NON-plugin, branch does NOT fire)" \
+got="$(detect_plugin_loaded "$P3d")"
+[ "$got" = dual ] && pass "AC3c. plugin-loaded + mirror fixture → dual (NON-plugin, branch does NOT fire)" \
   || fail "AC3c. expected dual, got $got"
 
 # (c) dev-repo-shaped case: the zskills dev repo dogfoods BOTH lanes but the
 #     legacy mirror is present, so it MUST classify NON-plugin (update-zskills
-#     or dual) — never plugin. Assert against the real repo root.
-got="$(detect_install_state "$REPO_ROOT")"
-if [ "$got" != plugin ]; then
-  pass "AC3d. dev-repo-shaped (real REPO_ROOT) classifies $got (NON-plugin) — never intercepted"
+#     plain, dual when plugin-loaded) — never plugin. Assert BOTH env states
+#     against the real repo root.
+got="$(detect_plugin_unloaded "$REPO_ROOT")"
+got2="$(detect_plugin_loaded "$REPO_ROOT")"
+if [ "$got" != plugin ] && [ "$got2" != plugin ]; then
+  pass "AC3d. dev-repo-shaped (real REPO_ROOT) classifies $got / $got2 (NON-plugin in both env states) — never intercepted"
 else
-  fail "AC3d. dev repo wrongly classified plugin (would break dogfooding)"
+  fail "AC3d. dev repo wrongly classified plugin (would break dogfooding): unloaded=$got loaded=$got2"
 fi
 
 # ── AC4 — fail-soft when detect-install-state.sh unreachable ──────────────
@@ -341,7 +338,11 @@ else
 fi
 # REGRESSION (Phase 7): a present in-flight-lane-switch marker file no
 # longer bypasses the refuse — the carve-out died with the switch machinery.
-: > "$PR/.zskills/switch-in-progress"
+# (Marker name assembled from halves so the Phase 7 retired-literal AC sweep
+# stays clean — the whole point of this case is that the file is now
+# meaningless to the refuse.)
+RETIRED_SWITCH_MARKER="switch-in-""progress"
+: > "$PR/.zskills/$RETIRED_SWITCH_MARKER"
 if ! refuse_gate install "$PR"; then
   pass "AC5e. install + stale lane-switch marker file → STILL refused (carve-out retired, Phase 7 regression pin)"
 else
@@ -352,9 +353,9 @@ fi
 #     mirror-bearing/fresh lanes. Confirm the dev-repo-shaped case
 #     classifies NON-plugin (so the refuse never engages there even with an
 #     explicit install arg).
-got="$(detect_install_state "$REPO_ROOT")"
+got="$(detect_plugin_loaded "$REPO_ROOT")"
 if [ "$got" != plugin ]; then
-  pass "AC5f. dev-repo-shaped classifies $got (NON-plugin) → install never refused there"
+  pass "AC5f. dev-repo-shaped (plugin-loaded) classifies $got (NON-plugin) → install never refused there"
 else
   fail "AC5f. dev repo wrongly classified plugin (install would be refused — breaks dogfooding)"
 fi

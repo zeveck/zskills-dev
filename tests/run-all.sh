@@ -383,7 +383,11 @@ run_suite "test-session-rules-context.sh" "tests/test-session-rules-context.sh"
 run_suite "test-synthetic-consumer-install.sh" "tests/test-synthetic-consumer-install.sh"
 run_suite "test-verify-install.sh" "tests/test-verify-install.sh"
 run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"
-run_suite "test-managed-md-renderer-equivalence.sh" "tests/test-managed-md-renderer-equivalence.sh"
+# (test-managed-md-renderer-equivalence.sh was deleted in INSTALL_REDESIGN
+# Phase 7 — subject-removal: its subject was the no-sentinel vs --sentinel
+# render-path byte-equivalence, and the --sentinel path died with the D20
+# convention; the surviving render properties are pinned by
+# test-render-managed-rules-correctness.sh cases 1/2/6b.)
 run_suite "test-inject-bash-timeout-parity.sh" "tests/test-inject-bash-timeout-parity.sh"
 # test-verify-response-validate-parity.sh DELETED (INSTALL_REDESIGN Phase 3,
 # subject-removal): the hooks/ + .claude/hooks/ copies it compared no longer

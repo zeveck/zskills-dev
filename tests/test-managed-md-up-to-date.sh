@@ -33,8 +33,8 @@ FAIL=0
 RENDER_TMP="$(mktemp)"
 trap 'rm -f "$RENDER_TMP"' EXIT
 
-# Render via the canonical Step-D renderer (no --sentinel; the checked-in
-# managed.md is the unsentinelled /update-zskills-lane form).
+# Render via the canonical Step-D renderer (the checked-in managed.md is
+# the /update-zskills-lane form).
 render_err="$(
   "$PYTHON" scripts/render-managed-rules.py \
     --config .claude/zskills-config.json \

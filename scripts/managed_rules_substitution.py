@@ -3,12 +3,11 @@
 This module is the ONE substitution map for rendering
 `CLAUDE_TEMPLATE.md` -> `.claude/rules/zskills/managed.md` (D24). It is
 consumed via ``scripts/render-managed-rules.py`` — the thin CLI wrapper
-invoked by the plugin SessionStart hooks (the materialiser, and the R-b
-``session-rules-context.sh`` rules-delivery hook) AND by ``/update-zskills``
-Step B/D — and by ``tests/test-managed-md-up-to-date.sh`` through that same
+invoked by the plugin SessionStart R-b ``session-rules-context.sh``
+rules-delivery hook AND by ``/update-zskills`` Step B/D — and by ``tests/test-managed-md-up-to-date.sh`` through that same
 wrapper. Because every caller routes through ``build_substitutions`` +
 ``apply`` here, byte-equality across render paths is structural;
-``tests/test-managed-md-renderer-equivalence.sh`` is the canary.
+``tests/test-render-managed-rules-correctness.sh`` is the canary.
 
 INSTALL_REDESIGN Phase 4 — the template is fully DE-PARAMETERIZED: the
 managed rules are install-level, carrying no per-project ``{{TOKEN}}``

@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.10+c51e39"
+  version: "2026.06.10+4ffe2b"
 ---
 
 # Update Z Skills Infrastructure
@@ -963,15 +963,17 @@ user at the uninstall-one-lane-install-the-other model. **Keyed on
 classifies as a mirror-bearing lane) is never blocked, and dogfooding both
 lanes from this repo via `/update-zskills install` still works.
 
-**Signal = `detect_install_state == plugin`**, NOT `$CLAUDE_PLUGIN_ROOT`.
-`lane == plugin` means "plugin-materialised artifacts present AND no legacy
-`.claude/skills` mirror" — the exact flip-risk. `$CLAUDE_PLUGIN_ROOT` is
-rejected: it is set in any `claude --plugin-dir .` session (including the
-dev repo's legacy-lane dogfooding), so keying on it would make
+**Signal = `detect_install_state == plugin`**, NOT a bare
+`$CLAUDE_PLUGIN_ROOT` test. Since INSTALL_REDESIGN Phase 7's detect rework,
+`lane == plugin` means "the plugin is loaded (env context) AND no legacy
+`.claude/skills` mirror evidence" — the exact flip-risk. A bare
+`$CLAUDE_PLUGIN_ROOT` test is still rejected because it ignores the mirror
+side: it is set in any `claude --plugin-dir .` session (including the dev
+repo's legacy-lane dogfooding), so keying on it alone would make
 `/update-zskills install` wrongly hit this branch and refuse to install.
-`detect_install_state` answers "what's installed on disk", not "how was I
-invoked." The dev repo has its legacy mirror present, so it classifies as
-`update-zskills` and this branch **never fires** there.
+The dev repo has its legacy mirror present, so it classifies as
+`update-zskills` (plain session) or `dual` (plugin-loaded session) — both
+NON-plugin — and this branch **never fires** there.
 
 **Resolve the lane (dual-locate + fail-soft).** `detect-install-state.sh`
 is NOT mirrored into `.claude/hooks/_lib/` on the legacy lane, so locate it
@@ -1314,42 +1316,19 @@ PY
     truth for mode).
     ```
 
-**Plugin-pre-materialise guard (`LANE == fresh` AND `$CLAUDE_PLUGIN_ROOT`
-set) — #1080.** Before the bare-preset / Default-Mode dispatch below, handle
-the half-installed plugin state: a consumer who ran `/plugin install
-zs@zskills` then `/reload-plugins` (which does NOT fire SessionStart, so the
-materialiser never ran) lands here with `LANE == fresh` (no on-disk evidence
-of either lane yet) AND `$CLAUDE_PLUGIN_ROOT` set (the plugin IS loaded).
-Running the fresh-install mirror here would copy in ~23 skills + the hooks +
-render `managed.md`, dual-installing the legacy lane alongside the plugin —
-the exact dual state the rest of the system pushes to consolidate. Instead,
-recognize "plugin-pre-materialise", direct the user to finish setup via
-`/clear` (or restart), and exit WITHOUT mirroring:
-
-```bash
-# #1080 — plugin loaded but not yet materialised (SessionStart didn't fire on
-# /reload-plugins). Keying on $CLAUDE_PLUGIN_ROOT is SAFE *in the `fresh`
-# branch specifically* because the dev repo ALWAYS carries a legacy
-# `.claude/skills/` mirror -> it is NEVER classified `fresh` (it classifies
-# `update-zskills` or `dual`). So this guard can never false-positive in the
-# dogfooding repo, even though $CLAUDE_PLUGIN_ROOT is set there too.
-if [ "$LANE" = fresh ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  echo "The zskills plugin is loaded, but setup isn't finished yet." >&2
-  echo "/reload-plugins does NOT run the one-time materialisation step, so the" >&2
-  echo "verifier/implementer agents, the timeout/validate hooks, the rendered" >&2
-  echo "rules file, and your .claude/zskills-config.json have not been written." >&2
-  echo "Run /clear (or exit and restart Claude Code) to fire the SessionStart" >&2
-  echo "hook and finish setup. Re-running /update-zskills is NOT the fix —" >&2
-  echo "it would dual-install the legacy mirror alongside the plugin." >&2
-  exit 0
-fi
-```
+(The former #1080 "plugin-pre-materialise" guard — `LANE == fresh` AND
+`$CLAUDE_PLUGIN_ROOT` set, pointing the user at `/clear` so the SessionStart
+materialiser could run — was deleted in INSTALL_REDESIGN Phase 7. It is
+structurally unreachable now: `detect_install_state`'s plugin-lane evidence
+IS the `$CLAUDE_PLUGIN_ROOT` env context, so a plugin-loaded session can
+never classify `fresh` — it classifies `plugin` (or `dual` when a mirror is
+also present) and the `LANE == plugin` arm above runs the explicit init.)
 
 **Else** (`LANE` is `update-zskills`, `dual`, or `fresh`, OR detection was
-unreachable): proceed to the existing behavior. (The `fresh` + plugin-loaded
-sub-case was intercepted by the plugin-pre-materialise guard immediately
-above; a `fresh` arrival WITHOUT `$CLAUDE_PLUGIN_ROOT` is a genuine legacy
-first-time install and proceeds normally.) **First** check for a bare
+unreachable): proceed to the existing behavior. (A `fresh` arrival is by
+construction plugin-less — `$CLAUDE_PLUGIN_ROOT` set would have classified
+`plugin` — i.e. a genuine legacy first-time install, and proceeds
+normally.) **First** check for a bare
 preset: if `$PRESET_ARG` is non-empty AND `$MODE` is NOT `install`, jump to
 **`## Bare-preset config-only short-circuit`** (config-only — no audit, no
 pull, no fill) and exit there. Otherwise (no preset, or `install <preset>`)

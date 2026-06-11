@@ -10,7 +10,6 @@
 #   - the unsubstituted-placeholder guard STILL fails loudly (exit 2) on any
 #     surviving {{TOKEN}} (regression in the shipped template, or a
 #     consumer-authored template carrying retired tokens);
-#   - --sentinel prefix injection unchanged;
 #   - NEW no-config mode: --config is optional; when omitted the renderer
 #     loads the canonical built-in defaults
 #     (skills/update-zskills/scripts/zskills-defaults.json) and the render
@@ -140,21 +139,9 @@ else
   fail "3. leftover placeholder did NOT trigger exit 2 (rc=$rc)"
 fi
 
-# 4. --sentinel prepends the D20(a) prefix line.
-"$PYTHON" "$RENDERER" --config "$TMP/cfg.json" --template "$TMP/tmpl.md" --out "$TMP/sent.md" --sentinel "2026.05.0"
-if head -n 1 "$TMP/sent.md" | grep -Eq '^<!-- zskills-materialised: 2026.05.0 -->$'; then
-  pass "4. --sentinel injects the HTML-comment materialiser prefix"
-else
-  fail "4. --sentinel prefix missing or malformed"
-  head -1 "$TMP/sent.md" | sed 's/^/      /'
-fi
-
-# 5. With --sentinel the body below the prefix matches the no-sentinel render.
-if [ "$(tail -n +2 "$TMP/sent.md")" = "$(cat "$TMP/out.md")" ]; then
-  pass "5. sentinelled body equals the un-sentinelled render"
-else
-  fail "5. sentinelled body diverges from un-sentinelled render"
-fi
+# (Former cases 4–5 — the --sentinel prefix-injection arm — were deleted in
+# INSTALL_REDESIGN Phase 7 with the D20 sentinel convention:
+# subject-removal; the renderer no longer has a --sentinel flag.)
 
 # 6. The REAL shipped template is de-parameterized: zero {{ tokens, and the
 #    real render (no-config) is a byte-identical pass-through.

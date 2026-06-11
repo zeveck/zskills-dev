@@ -99,13 +99,19 @@ else
 fi
 
 # ── Case 2 — project managed.md present (guard 2): EMPTY output ────────────
+# The guard keys on file EXISTENCE (any disk-delivered rules copy — legacy
+# render, or a stale copy from the retired pre-redesign installer). The
+# stale-copy fixture derives the legacy sentinel prefix by sourcing
+# init-state.sh's frozen constant (#1132 — never a re-typed literal).
+# shellcheck source=skills/update-zskills/scripts/init-state.sh
+. "$REPO_ROOT/skills/update-zskills/scripts/init-state.sh"
 PROJ2="$TMP/proj2"
 mkdir -p "$PROJ2/.claude/rules/zskills"
-printf '%s\n' '<!-- zskills-materialised: 2026.06.0 -->' '# stale rules' \
+printf '%s\n' "<!-- $ZSKILLS_LEGACY_SENTINEL_PREFIX 2026.06.0 -->" '# stale rules' \
   > "$PROJ2/.claude/rules/zskills/managed.md"
 OUT2="$(run_hook "$PROJ2")"
 if [ -z "$OUT2" ]; then
-  pass "2. project managed.md present (stale materialiser-era copy) → empty output (guard 2)"
+  pass "2. project managed.md present (stale legacy-installer copy) → empty output (guard 2)"
 else
   fail "2. guard 2 did not fire (got ${#OUT2} bytes)"
 fi
