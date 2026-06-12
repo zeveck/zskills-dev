@@ -122,3 +122,28 @@ User-directed scope: 4 named issues split into an independent hook fix + a coupl
 
 ### Skipped / Not Fixed
 None.
+
+## Sprint — 2026-06-12 14:12 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** explicit issue set (#1161 #1163 #1164 #1162 — evaluator friction corpus) | **Landing:** pr (main_protected)
+
+User-directed scope: 4 named evaluator-friction issues → 3 work items. #1161+#1162 grouped (shared pr-monitor.sh/land-pr surface). #1162 scoped to items 1+2; item 3 (glab/gh shim, "bigger design item") left as note-only → #1162 stays OPEN.
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #1161 | pr-monitor.sh CI-registration grace window (zero-checks-yet → pending, never none/pass) | fix-issue-1161 | 0e29b83 | +3 grace-window in test-land-pr-scripts.sh | PASS (full suite 7749/7749) | N/A |
+| #1162 (items 1+2) | GH_HOST derived from origin remote (gh-host.sh) + installing-zskills enterprise note | fix-issue-1161 (grouped) | 0e29b83 | +9 gh-host in test-land-pr-scripts.sh | PASS (7749/7749) | N/A |
+| #1163 | worktree-bootstrap stub/doc guidance (npm i && npm run prepare; DON'T symlink node_modules) | fix-issue-1163 | 89e75ea | conformance/hardcode 738/738 | PASS (7738/7738) | N/A |
+| #1164 | claim-plan/claim-issue --pipeline-id/--require-pipeline aliases + test-cmd refusal names candidate | fix-issue-1164 | 9c28d1c | new test-run-plan-test-cmd-candidate.sh + claim alias tests | PASS (7752/7752) | N/A |
+
+**PR close semantics:** #1161/#1163/#1164 → Fixes (close); #1162 → Part of (P0 items 1+2 only; stays OPEN for item 3 glab/gh shim design).
+
+### Follow-ups (NOT skips — deliberate scope boundaries)
+| Item | Disposition |
+|------|-------------|
+| #1162 item 3 (glab/gh shim — gh-vs-glab abstraction) | Issue stays OPEN; bigger design item per the issue body |
+| #1164 interactive auto-write of detected test cmd (consented) | Smaller follow-up; the load-bearing name-the-candidate fix shipped |
+
+### Skipped / Not Fixed
+None.
