@@ -350,6 +350,13 @@ check_fixed run-plan "test-cmd: config.full_cmd read" 'full_cmd'
 check_fixed run-plan "test-cmd: TEST_MODE=config"     'TEST_MODE="config"'
 check_fixed run-plan "test-cmd: TEST_MODE=skipped"    'TEST_MODE="skipped"'
 check_fixed run-plan "test-cmd: misconfig refusal"    'test infra detected but testing.full_cmd is empty'
+# #1164: the Case-2 refusal must NAME the detected candidate — a bare
+# "empty" message dead-ended an overnight /run-plan. The detection block
+# records TEST_CMD_CANDIDATE and the refusal echoes it as a concrete next
+# step. Tripwire: any refactor that drops the candidate capture or stops
+# naming it in the refusal regresses the fix.
+check_fixed run-plan "test-cmd: refusal records candidate" 'TEST_CMD_CANDIDATE='
+check_fixed run-plan "test-cmd: refusal names candidate"   'a likely command is: ${TEST_CMD_CANDIDATE}'
 check       run-plan "test-cmd: no raw npm run test:all in exec paths" \
   '^[[:space:]]*>?[[:space:]]*\$FULL_TEST_CMD'
 # Same contract for /verify-changes.

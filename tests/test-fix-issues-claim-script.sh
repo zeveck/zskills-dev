@@ -554,6 +554,57 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# Test 14: Arg-spelling alias (#1164) — --pipeline-id and
+# --require-pipeline are interchangeable on BOTH acquire AND release.
+#   14a. acquire accepts --require-pipeline (the release spelling).
+#   14b. release accepts --pipeline-id (the acquire spelling) and matches.
+#   14c. mismatched value via the alias spelling is still refused (12).
+# ───────────────────────────────────────────────────────────────────────
+t14_root="$SCRATCH_ROOT/t14"
+make_repo "$t14_root"
+(
+  cd "$t14_root" || exit 1
+  # 14a: acquire with --require-pipeline alias.
+  out=$(bash "$CLAIM_SH" acquire 800 --require-pipeline pipe-A --sprint-id sprint-A 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "FAIL_REASON acquire --require-pipeline alias returned $rc, out: $out"
+    exit 1
+  fi
+  cf="$t14_root/.zskills/claims/issue-800/claim.json"
+  if [ ! -f "$cf" ]; then
+    echo "FAIL_REASON claim.json not written after --require-pipeline acquire"
+    exit 1
+  fi
+  pipe=$("${ZSKILLS_PYTHON:-python3}" -c "import json; print(json.load(open('$cf'))['pipeline_id'])")
+  if [ "$pipe" != "pipe-A" ]; then
+    echo "FAIL_REASON pipeline_id=$pipe, expected pipe-A"
+    exit 1
+  fi
+  # 14b: release with --pipeline-id alias, matching value -> rc 0, removed.
+  out=$(bash "$CLAIM_SH" release 800 --pipeline-id pipe-A 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -d "$t14_root/.zskills/claims/issue-800" ]; then
+    echo "FAIL_REASON release --pipeline-id alias rc=$rc, dir still present? $([ -d "$t14_root/.zskills/claims/issue-800" ] && echo yes || echo no); out: $out"
+    exit 1
+  fi
+  # 14c: mismatched value via alias spelling -> still refused (12), intact.
+  bash "$CLAIM_SH" acquire 801 --pipeline-id pipe-A --sprint-id sprint-A >/dev/null
+  out=$(bash "$CLAIM_SH" release 801 --pipeline-id pipe-WRONG 2>&1)
+  rc=$?
+  if [ "$rc" -ne 12 ] || [ ! -d "$t14_root/.zskills/claims/issue-801" ]; then
+    echo "FAIL_REASON mismatch via alias rc=$rc (expected 12), dir present? $([ -d "$t14_root/.zskills/claims/issue-801" ] && echo yes || echo no); out: $out"
+    exit 1
+  fi
+  exit 0
+)
+if [ "$?" -eq 0 ]; then
+  pass "arg-spelling alias: --pipeline-id/--require-pipeline interchangeable on acquire+release; mismatch still refused (#1164)"
+else
+  fail "arg-spelling alias (#1164)" "see FAIL_REASON above"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""

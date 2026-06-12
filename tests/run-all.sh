@@ -281,6 +281,7 @@ run_suite "test-fix-issues-claim-race-baseline.sh" "tests/test-fix-issues-claim-
 run_suite "test-fix-issues-claim-conformance.sh" "tests/test-fix-issues-claim-conformance.sh"
 run_suite "test-fix-issues-claim-regression-single.sh" "tests/test-fix-issues-claim-regression-single.sh"
 run_suite "test-plan-claim-script.sh" "tests/test-plan-claim-script.sh"
+run_suite "test-run-plan-test-cmd-candidate.sh" "tests/test-run-plan-test-cmd-candidate.sh"
 run_suite "test-plan-claim-race-baseline.sh" "tests/test-plan-claim-race-baseline.sh"
 run_suite "test-plan-claim-hook-deny.sh" "tests/test-plan-claim-hook-deny.sh"
 run_suite "test-plan-claim-main-root-anchor.sh" "tests/test-plan-claim-main-root-anchor.sh"
