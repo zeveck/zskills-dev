@@ -38,6 +38,13 @@
 #   5. (zsh) ZSKILLS_VERSION init-done fallback: config-less consumer with
 #      .zskills/init-done `version:` line → resolved under zsh (the
 #      "$_ZSK_SELF_DIR/init-state.sh" site).
+#   6. (zsh, #1154) resolve-config CASCADE extraction: the key-extraction
+#      regexes COMPILE under zsh (0 "failed to compile regex" on stderr) AND
+#      a NON-DEFAULT configured value (timezone/test cmds/max-worktrees) is
+#      actually extracted, not silently defaulted. Guards the `\{`→`[{]` ERE
+#      fix + the LOCAL_OPTIONS KSH_ARRAYS/BASH_REMATCH zsh indexing fix.
+#   7. (zsh, #1154) zskills-paths.sh extraction: same compile + non-default
+#      extraction assertion for the output.*_dir cascade keys.
 #
 # Run from repo root: bash tests/test-zsh-fence-resolution.sh
 
@@ -204,6 +211,82 @@ else
   fail "Case 5: zsh init-done fallback" "got '$OUT5', expected '2026.06.0-test' err='$(cat "$TEST_OUT/.zsh-fence-c5-err.txt")'"
 fi
 rm -f "$CONSUMER/.zskills/init-done"
+
+# --- Case 6: zsh — cascade key extraction compiles AND matches (#1154) ---------
+# Pre-fix: the cascade-extract regexes used `\{[^}]*` / `[^}]*\}` (a literal
+# `\{`/`\}` that bash's ERE engine tolerates but zsh's REJECTS), so sourcing
+# under zsh emitted `failed to compile regex: Invalid content of \{\}` and —
+# compounded by zsh's bash-incompatible $BASH_REMATCH indexing without
+# KSH_ARRAYS+BASH_REMATCH — every configured cascade value silently extracted
+# EMPTY and fell to the built-in defaults. This case configures NON-DEFAULT
+# values and asserts (a) ZERO "failed to compile regex" lines on stderr, and
+# (b) the configured values come back (NOT the built-in defaults).
+echo ""
+echo "=== Case 6: zsh — resolve-config cascade extraction compiles + extracts configured values (#1154) ==="
+mkdir -p "$CONSUMER/.claude"
+cat > "$CONSUMER/.claude/zskills-config.json" <<'CFG6'
+{
+  "timezone": "America/Chicago",
+  "testing": { "unit_cmd": "make unit", "full_cmd": "make full" },
+  "execution": { "max_concurrent_worktrees": 7 }
+}
+CFG6
+OUT6=$(
+  env -i PATH="$PATH" HOME="$EMPTY_HOME" \
+    CONSUMER_DIR="$CONSUMER" PLUGIN_DIR="$PLUGIN" \
+    zsh -c 'cd "$CONSUMER_DIR"
+export CLAUDE_PROJECT_DIR="$CONSUMER_DIR"
+. "$PLUGIN_DIR/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf "TZ=%s\n" "$TIMEZONE"
+printf "UNIT=%s\n" "$UNIT_TEST_CMD"
+printf "FULL=%s\n" "$FULL_TEST_CMD"
+printf "MCW=%s\n" "$ZSKILLS_MAX_CONCURRENT_WORKTREES"' 2>"$TEST_OUT/.zsh-fence-c6-err.txt"
+)
+ERR6=$(cat "$TEST_OUT/.zsh-fence-c6-err.txt")
+REGEX_ERRS6=$(printf '%s\n' "$ERR6" | grep -c "failed to compile regex")
+if [ "$REGEX_ERRS6" -eq 0 ] \
+  && printf '%s\n' "$OUT6" | grep -qx "TZ=America/Chicago" \
+  && printf '%s\n' "$OUT6" | grep -qx "UNIT=make unit" \
+  && printf '%s\n' "$OUT6" | grep -qx "FULL=make full" \
+  && printf '%s\n' "$OUT6" | grep -qx "MCW=7"; then
+  pass "Case 6: zsh cascade extraction — 0 regex-compile errors, configured (non-default) values extracted"
+else
+  fail "Case 6: zsh cascade extraction" "regex-compile-errs=$REGEX_ERRS6 (want 0; TZ should be America/Chicago not the UTC default) out='$OUT6' err='$ERR6'"
+fi
+rm -f "$CONSUMER/.claude/zskills-config.json"
+
+# --- Case 7: zsh — paths key extraction compiles AND matches (#1154) -----------
+# Same `\{`/`\}` regex-compile failure + $BASH_REMATCH indexing trap in
+# zskills-paths.sh's _zsk_paths_extract_keys. Configure NON-DEFAULT output
+# dirs and assert 0 compile errors + the configured dirs resolve (not the
+# built-in docs/ defaults).
+echo ""
+echo "=== Case 7: zsh — zskills-paths.sh extraction compiles + extracts configured output dirs (#1154) ==="
+mkdir -p "$CONSUMER/.claude"
+cat > "$CONSUMER/.claude/zskills-config.json" <<'CFG7'
+{
+  "output": { "plans_dir": "myplans", "issues_dir": "myissues", "reports_dir": "myreports" }
+}
+CFG7
+OUT7=$(
+  env -i PATH="$PATH" HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$CONSUMER" \
+    PATHS_HELPER="$PATHS_HELPER" \
+    zsh -c 'cd "$CLAUDE_PROJECT_DIR" && . "$PATHS_HELPER"
+printf "PLANS=%s\n" "$ZSKILLS_PLANS_DIR"
+printf "ISSUES=%s\n" "$ZSKILLS_ISSUES_DIR"
+printf "REPORTS=%s\n" "$ZSKILLS_REPORTS_DIR"' 2>"$TEST_OUT/.zsh-fence-c7-err.txt"
+)
+ERR7=$(cat "$TEST_OUT/.zsh-fence-c7-err.txt")
+REGEX_ERRS7=$(printf '%s\n' "$ERR7" | grep -c "failed to compile regex")
+if [ "$REGEX_ERRS7" -eq 0 ] \
+  && printf '%s\n' "$OUT7" | grep -qx "PLANS=$CONSUMER/myplans" \
+  && printf '%s\n' "$OUT7" | grep -qx "ISSUES=$CONSUMER/myissues" \
+  && printf '%s\n' "$OUT7" | grep -qx "REPORTS=$CONSUMER/myreports"; then
+  pass "Case 7: zsh paths extraction — 0 regex-compile errors, configured (non-default) output dirs extracted"
+else
+  fail "Case 7: zsh paths extraction" "regex-compile-errs=$REGEX_ERRS7 (want 0; dirs should be the configured myplans/myissues/myreports, not the docs/ defaults) out='$OUT7' err='$ERR7'"
+fi
+rm -f "$CONSUMER/.claude/zskills-config.json"
 
 rm -rf "$SANDBOX"
 summary_and_exit

@@ -96,20 +96,28 @@ _ZSK_PATHS_REPORTS_RAW=""
 # (INSTALL_REDESIGN Phase 5 two-pass cascade).
 #
 # Nested-key scoping per zskills-resolve-config.sh idiom (BASH_REMATCH).
-# Trailing `[^}]*\}` closing-brace anchor (round-3 reviewer F6): a
+# Trailing `[^}]*[}]` closing-brace anchor (round-3 reviewer F6): a
 # malformed input like `{"output":{"plans_dir":"DROP"}` (missing outer
 # `}`) used to match because `[^}]*` greedily consumed past the value;
-# the trailing `\}` requires a real close, so unbalanced JSON falls
+# the trailing `[}]` requires a real close, so unbalanced JSON falls
 # back to the built-in defaults instead of yielding a path-shaped string.
 _zsk_paths_extract_keys() {
+  # zsh portability (#1154): see zskills-resolve-config.sh — under zsh,
+  # $BASH_REMATCH is only bash-compatible (1 == first capture) with KSH_ARRAYS
+  # + BASH_REMATCH set; LOCAL_OPTIONS scopes the flip to this function. No-op
+  # under bash. Without it, configured output.*_dir paths silently extracted
+  # empty under zsh and fell to the built-in defaults.
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
   local _zsk_paths_body="$1"
-  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*[{][^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*[}] ]]; then
     _ZSK_PATHS_PLANS_RAW="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"issues_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*[{][^}]*\"issues_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*[}] ]]; then
     _ZSK_PATHS_ISSUES_RAW="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+  if [[ "$_zsk_paths_body" =~ \"output\"[[:space:]]*:[[:space:]]*[{][^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*[}] ]]; then
     _ZSK_PATHS_REPORTS_RAW="${BASH_REMATCH[1]}"
   fi
 }

@@ -39,6 +39,15 @@
 
 set -e
 
+# Portable epoch → formatted-date (#1156 item 2). GNU coreutils `date` reads
+# an epoch via `-d "@SECONDS"`; BSD/macOS `date` rejects that and instead
+# takes `-r SECONDS`. Without the BSD arm, /run-plan cron scheduling produced
+# garbage cron expressions on every Mac. Probe the GNU form and fall back to
+# the BSD form on failure. Usage: _epoch_to <epoch> <strftime-format>.
+_epoch_to() {
+  date -d "@$1" +"$2" 2>/dev/null || date -r "$1" +"$2"
+}
+
 OFFSET=5
 AVOID_MARKS=1
 
@@ -83,7 +92,7 @@ fi
 
 # Target epoch = now + OFFSET minutes.
 TARGET_EPOCH=$(( NOW_EPOCH + OFFSET * 60 ))
-TARGET=$(date -d "@$TARGET_EPOCH" +"%M %H %d %m")
+TARGET=$(_epoch_to "$TARGET_EPOCH" "%M %H %d %m")
 read -r MIN HOUR DAY MONTH <<<"$TARGET"
 
 # :00/:30 avoidance — if enabled and we landed on one of those, bump +1
@@ -91,7 +100,7 @@ read -r MIN HOUR DAY MONTH <<<"$TARGET"
 # compute via epoch arithmetic so rollover stays correct.
 if [ "$AVOID_MARKS" = "1" ] && { [ "$MIN" = "00" ] || [ "$MIN" = "30" ]; }; then
   TARGET_EPOCH=$(( TARGET_EPOCH + 60 ))
-  TARGET=$(date -d "@$TARGET_EPOCH" +"%M %H %d %m")
+  TARGET=$(_epoch_to "$TARGET_EPOCH" "%M %H %d %m")
   read -r MIN HOUR DAY MONTH <<<"$TARGET"
 fi
 

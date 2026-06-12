@@ -103,6 +103,39 @@ expect "offset 5 at 10:26 → 10:31 (no bump; already past :30)" \
 expect "offset 5 at 11:54 → 11:59"              "2026-04-19 11:54:00" ""                "59 11 19 04 *"
 
 echo ""
+echo "=== BSD/macOS date portability (#1156 item 2): -d "@epoch" → -r fallback ==="
+# macOS/BSD `date` rejects GNU's `-d "@SECONDS"` and instead takes `-r SECONDS`.
+# Simulate a BSD userland with a fake `date` on PATH that fails on `-d` (like
+# BSD) but implements `-r` by delegating to the real GNU date's `-d "@N"`.
+# The script must still produce the correct cron expression (it does NOT fall
+# to garbage). We verify both the GNU arm (real date) above and the BSD arm
+# here resolve to the SAME expression for a fixed epoch.
+BSD_SIM_DIR=$(mktemp -d /tmp/zskills-bsd-date-XXXXXX)
+REAL_DATE=$(command -v date)
+cat > "$BSD_SIM_DIR/date" <<BSDDATE
+#!/bin/bash
+# Fake BSD date: reject -d (GNU epoch form), accept -r SECONDS FORMAT.
+if [ "\$1" = "-d" ]; then
+  echo "date: illegal option -- d" >&2
+  exit 1
+fi
+if [ "\$1" = "-r" ]; then
+  sec="\$2"; shift 2
+  exec "$REAL_DATE" -d "@\$sec" "\$@"
+fi
+exec "$REAL_DATE" "\$@"
+BSDDATE
+chmod +x "$BSD_SIM_DIR/date"
+BSD_EPOCH=$(date -d "2026-04-19 10:12:00" +%s)
+BSD_OUT=$(FAKE_NOW_EPOCH="$BSD_EPOCH" PATH="$BSD_SIM_DIR:$PATH" bash "$SCRIPT" 2>&1)
+if [ "$BSD_OUT" = "17 10 19 04 *" ]; then
+  pass "BSD date fallback — -d rejected, -r used → '$BSD_OUT' (matches GNU arm)"
+else
+  fail "BSD date fallback — expected '17 10 19 04 *', got '$BSD_OUT'"
+fi
+rm -rf "$BSD_SIM_DIR"
+
+echo ""
 echo "=== Usage errors ==="
 expect_rc "unknown flag"    "--bogus"       2
 expect_rc "bad offset (text)" "--offset foo" 2
