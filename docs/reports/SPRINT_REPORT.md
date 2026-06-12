@@ -96,3 +96,29 @@ Notes: #1149 triaged bug-unclear-cause by rubric but user-pinned → investigate
 Fix-cycle: PR #1151's first CI run failed on migration case 6d — 2 Tier-1 registry hashes orphaned by the #1145/#1147 SQUASH-merges (intermediate blobs unreachable on fresh clones; passed locally via pre-squash object stores). Pruned in aa693b1b; latent main-CI landmine defused for all future PRs.
 
 ### Skipped — none
+
+## Sprint — 2026-06-12 12:03 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** explicit issue set (#1154 #1156 #1155 #1148), user-decomposed into 3 work items | **Landing:** pr (main_protected)
+
+User-directed scope: 4 named issues split into an independent hook fix + a coupled macOS-portability cluster. #1154/#1156-P0 grouped into ONE worktree (shared `skills/update-zskills/scripts/` surface). #1155 fixed as its P0 subset only (issue stays OPEN for the plan-scale remainder → /draft-plan). #1156 P1 deferred (issue stays OPEN). #1159 deliberately excluded (hook semantics need a design round).
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #1148 | block-unsafe hook false-positives (xargs read-only sweep; literal-/tmp rm in compound w/ unrelated $VAR) | fix-issue-1148 | 7bb9eed | 11 new (allow+deny) in test-hooks-block-unsafe.sh | PASS (full suite 7734/7734) | N/A |
+| #1154 | zsh cascade/paths extractor regex compile-fail → silent default | fix-issue-1154 | 5f16fb19 | zsh cases 6/7 + cron BSD + worktree BSD | PASS (7731/7731; zsh repro 8→0 compile-fail, configured values extracted) | N/A |
+| #1156 (P0 items 1+2 only) | realpath -m BSD fallback (create-worktree.sh) + date -d→-r fallback (compute-cron-fire.sh) | fix-issue-1154 (grouped) | 5f16fb19 | test-compute-cron-fire BSD case + test-create-worktree case 27 | PASS (7731/7731) | N/A |
+| #1155 (P0 subset only) | zsh-safe arg/regex idiom: land-pr arg loop, /do loop guard, run-plan config reads | fix-issue-1155 | 6ecbb13 | bash↔zsh fence probes + conformance 738/738 | PASS (7723/7723) | N/A |
+
+**PR close semantics:** #1148 → `Fixes #1148`; #1154 → `Fixes #1154`, #1156 → `Part of #1156` (P0 only, stays open for P1); #1155 → `Part of #1155` (P0 only, stays open for plan-scale remainder).
+
+### Follow-ups (NOT skips — deliberate scope boundaries)
+| Item | Disposition |
+|------|-------------|
+| #1156 P1 (readlink -f, init-state date probe, bash-3.2-isms in ~15 scripts, $CLAUDE_PROJECT_DIR quoting nit) | Issue stays OPEN; future fix-sprint or plan |
+| #1155 remainder (~105 lines across ~20 more skills + conformance tripwire + macOS-only shell-pin decision) | → /draft-plan; HOLD drafting until real-Mac shell-pin probe runs (probe spec in #1155 mitigation section; ~20 min, evaluator's Mac) |
+| #1159 | Deliberately excluded from this sprint; hook semantics deserve their own design round |
+
+### Skipped / Not Fixed
+None.
