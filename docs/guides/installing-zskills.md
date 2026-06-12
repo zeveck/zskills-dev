@@ -208,6 +208,29 @@ commit).
 `./CLAUDE.md.pre-zskills-migration` backup — review it, then delete it;
 don't commit it.)
 
+## Per-project worktree bootstrap
+
+zskills runs agent work in throwaway git worktrees (a fresh checkout per
+task). A fresh worktree has **no installed dependencies and no installed
+git hooks** — so if your project installs commit-time hooks (husky, a
+`prepare` script, etc.), every `git commit` in a fresh worktree fails until
+those hooks exist.
+
+`scripts/post-create-worktree.sh` is **THE place** for per-project worktree
+bootstrap. It's a consumer-customizable stub that `/create-worktree` runs
+once, right after a worktree is created, with the worktree path as `$1`.
+Put your dependency install and hook setup there — the canonical npm shape
+is `npm i && npm run prepare` (use your project's actual commands) — so a
+new worktree is commit-ready without baking install steps into agent
+dispatch prompts.
+
+**Do not symlink `node_modules` from the main repo into the worktree.**
+A shared `node_modules` shares build-tool caches (vite / webpack / esbuild
+`.vite`, `.cache`) across worktrees and causes stale-cache corruption. Do a
+real install into the worktree; rely on your package manager's shared global
+cache for speed instead of a project-local symlink. See the stub's inline
+comments for the full template.
+
 ## `.gitignore` guidance
 
 What to track depends on your install.

@@ -9,7 +9,7 @@ description: >-
   and sanitised .zskills/tracked / .zskills/worktreepurpose writes. Prints the
   worktree path on stdout.
 metadata:
-  version: "2026.06.11+ec2b25"
+  version: "2026.06.12+e32c6d"
 ---
 
 # /create-worktree — Unified Worktree Creation
@@ -100,6 +100,15 @@ Codes 2/3/4 propagate from `.claude/skills/create-worktree/scripts/worktree-add-
 - `.zskills/worktreepurpose` is written iff `--purpose` was given.
 - Both files are untracked and not safe to commit — `.claude/skills/commit/scripts/land-phase.sh`
   refuses to clean up a worktree that has git-tracked copies of either.
+- The consumer `scripts/post-create-worktree.sh` stub runs LAST (the worktree
+  path is `$1`). This is THE place for per-project worktree bootstrap —
+  dependency install and git-hook setup (e.g. `npm i && npm run prepare`) so a
+  fresh worktree is commit-ready. A fresh worktree has no installed deps and no
+  installed hooks, so do the bootstrap in the stub rather than baking install
+  commands into agent dispatch prompts. **Never symlink `node_modules` from the
+  main repo** — a shared `node_modules` shares build-tool caches (vite / webpack
+  / esbuild) across worktrees and serves stale output; do a real install into
+  the worktree. See the stub's inline comments for the template.
 
 ## Pointer
 
