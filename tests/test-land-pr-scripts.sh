@@ -405,6 +405,167 @@ fi
 cleanup_fixture "$F"
 
 # ----------------------------------------------------------------------
+# Issue #1161 — registration grace window. pr-monitor.sh must NOT emit
+# CI_STATUS=none when checks haven't REGISTERED yet but the base branch
+# REQUIRES status checks (GitHub lag right after push). Mapping zero-
+# checks-yet to `none` green-lit a premature merge (rows 6-10 treat `none`
+# as mergeable). Required-checks-configured + zero-registered → `pending`.
+#
+# Sequence (PR_MONITOR_REGISTER_SLEEP=0 → no wall-clock wait):
+#   auth_status                  → 0
+#   pr_checks 1..6 (all attempts)→ stdout="[]" (empty array, never registers)
+#   pr_view (baseRefName)        → stdout={"baseRefName":"main"}
+#   api_..._required_status_checks → 200 with non-empty contexts
+# Expect: CI_STATUS=pending (NOT none/pass).
+# ----------------------------------------------------------------------
+# The sanitized mock key for the branch-protection api call (mirrors
+# mock-gh.sh's `/`,`{`,`}` → `_` transform).
+api_key_for() {
+  local key="api_repos/{owner}/{repo}/branches/$1/protection/required_status_checks"
+  key="${key//\//_}"; key="${key//\{/_}"; key="${key//\}/_}"
+  printf '%s' "$key"
+}
+
+F=$(new_fixture issue1161_required_lag)
+mkdir -p "$F/work"
+prep_gh "$F/state-gh" auth_status 1 exit 0
+# All 6 registration attempts return an empty array → never registers.
+for n in 1 2 3 4 5 6; do prep_gh "$F/state-gh" pr_checks "$n" stdout '[]'; done
+prep_gh "$F/state-gh" pr_view 1 stdout '{"baseRefName":"main"}'
+PROT_KEY=$(api_key_for main)
+prep_gh "$F/state-gh" "$PROT_KEY" 1 stdout '{"contexts":["build"],"checks":[{"context":"build"}]}'
+prep_gh "$F/state-gh" "$PROT_KEY" 1 exit 0
+SUT_OUT_FILE="$F/sut.stdout"; SUT_ERR_FILE="$F/sut.stderr"
+set +e
+PATH="$F/bin:$PATH" \
+  MOCK_GH_STATE_DIR="$F/state-gh" \
+  MOCK_GIT_STATE_DIR="$F/state-git" \
+  PR_MONITOR_REGISTER_SLEEP=0 \
+  bash "$SCRIPTS_DIR/pr-monitor.sh" --pr 42 --timeout 1 --log-out "$F/work/ci.log" \
+  >"$SUT_OUT_FILE" 2>"$SUT_ERR_FILE"
+SUT_RC=$?
+set -e
+SUT_OUT=$(cat "$SUT_OUT_FILE")
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$SUT_OUT" == *"CI_STATUS=pending"* ]] \
+   && [[ "$SUT_OUT" != *"CI_STATUS=none"* ]]; then
+  pass "[issue1161] required-checks-configured + zero-registered → CI_STATUS=pending (not none)"
+else
+  fail "[issue1161] required-checks lag → pending" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR"
+fi
+cleanup_fixture "$F"
+
+# Companion: genuinely no required checks configured (404 / empty
+# contexts) → CI_STATUS=none is STILL correct (no behavior regression for
+# real no-CI repos). The api call returns rc!=0 (404) OR empty contexts.
+F=$(new_fixture issue1161_no_checks)
+mkdir -p "$F/work"
+prep_gh "$F/state-gh" auth_status 1 exit 0
+for n in 1 2 3 4 5 6; do prep_gh "$F/state-gh" pr_checks "$n" stdout '[]'; done
+prep_gh "$F/state-gh" pr_view 1 stdout '{"baseRefName":"main"}'
+PROT_KEY=$(api_key_for main)
+# 404: no branch protection → gh api exits non-zero with an error body.
+prep_gh "$F/state-gh" "$PROT_KEY" 1 stderr 'gh: Branch not protected (HTTP 404)'
+prep_gh "$F/state-gh" "$PROT_KEY" 1 exit 1
+SUT_OUT_FILE="$F/sut.stdout"; SUT_ERR_FILE="$F/sut.stderr"
+set +e
+PATH="$F/bin:$PATH" \
+  MOCK_GH_STATE_DIR="$F/state-gh" \
+  MOCK_GIT_STATE_DIR="$F/state-git" \
+  PR_MONITOR_REGISTER_SLEEP=0 \
+  bash "$SCRIPTS_DIR/pr-monitor.sh" --pr 42 --timeout 1 --log-out "$F/work/ci.log" \
+  >"$SUT_OUT_FILE" 2>"$SUT_ERR_FILE"
+SUT_RC=$?
+set -e
+SUT_OUT=$(cat "$SUT_OUT_FILE")
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$SUT_OUT" == *"CI_STATUS=none"* ]]; then
+  pass "[issue1161] no required checks (404) → CI_STATUS=none (no regression)"
+else
+  fail "[issue1161] no-required-checks → none" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR"
+fi
+cleanup_fixture "$F"
+
+# Companion: base branch unresolvable (gh pr view fails) → fail SAFE to
+# pending (never none on uncertainty — a stuck pending costs a manual
+# nudge; a false none is the premature-merge bug).
+F=$(new_fixture issue1161_base_unknown)
+mkdir -p "$F/work"
+prep_gh "$F/state-gh" auth_status 1 exit 0
+for n in 1 2 3 4 5 6; do prep_gh "$F/state-gh" pr_checks "$n" stdout '[]'; done
+prep_gh "$F/state-gh" pr_view 1 exit 1
+prep_gh "$F/state-gh" pr_view 1 stderr 'gh: could not resolve PR'
+SUT_OUT_FILE="$F/sut.stdout"; SUT_ERR_FILE="$F/sut.stderr"
+set +e
+PATH="$F/bin:$PATH" \
+  MOCK_GH_STATE_DIR="$F/state-gh" \
+  MOCK_GIT_STATE_DIR="$F/state-git" \
+  PR_MONITOR_REGISTER_SLEEP=0 \
+  bash "$SCRIPTS_DIR/pr-monitor.sh" --pr 42 --timeout 1 --log-out "$F/work/ci.log" \
+  >"$SUT_OUT_FILE" 2>"$SUT_ERR_FILE"
+SUT_RC=$?
+set -e
+SUT_OUT=$(cat "$SUT_OUT_FILE")
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$SUT_OUT" == *"CI_STATUS=pending"* ]]; then
+  pass "[issue1161] base-branch unresolvable → fail-safe CI_STATUS=pending"
+else
+  fail "[issue1161] base-unknown fail-safe pending" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR"
+fi
+cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
+# Issue #1162 — gh-host.sh resolves GH_HOST from origin URL shapes.
+# Direct unit test of the sourceable helper (no gh involved).
+# ----------------------------------------------------------------------
+ghhost_resolves() {
+  local label="$1" url="$2" expect="$3"
+  local F; F=$(new_fixture "ghhost-$label")
+  # mock-git returns the canned origin URL for `git remote get-url origin`.
+  prep_git "$F/state-git" remote 1 stdout "$url"
+  local out
+  out=$(PATH="$F/bin:$PATH" MOCK_GIT_STATE_DIR="$F/state-git" \
+        bash -c '. "'"$SCRIPTS_DIR"'/gh-host.sh"; printf "%s" "${GH_HOST:-<unset>}"')
+  if [ "$out" = "$expect" ]; then
+    pass "[issue1162] gh-host $label ($url) → GH_HOST=$expect"
+  else
+    fail "[issue1162] gh-host $label" "url=$url got='$out' expected='$expect'"
+  fi
+  cleanup_fixture "$F"
+}
+ghhost_resolves scp-enterprise 'git@github.example.com:org/repo.git' 'github.example.com'
+ghhost_resolves https-enterprise 'https://github.example.com/org/repo.git' 'github.example.com'
+ghhost_resolves https-userinfo 'https://user@github.example.com/org/repo.git' 'github.example.com'
+ghhost_resolves ssh-url 'ssh://git@github.example.com:22/org/repo.git' 'github.example.com'
+ghhost_resolves dotcom-scp 'git@github.com:org/repo.git' 'github.com'
+ghhost_resolves dotcom-https 'https://github.com/org/repo.git' 'github.com'
+
+# Origin absent → GH_HOST stays unset (fail-open; gh keeps its default).
+F=$(new_fixture ghhost-no-origin)
+prep_git "$F/state-git" remote 1 exit 1
+prep_git "$F/state-git" remote 1 stderr "error: No such remote 'origin'"
+out=$(PATH="$F/bin:$PATH" MOCK_GIT_STATE_DIR="$F/state-git" \
+      bash -c '. "'"$SCRIPTS_DIR"'/gh-host.sh"; printf "%s" "${GH_HOST:-<unset>}"')
+if [ "$out" = "<unset>" ]; then
+  pass "[issue1162] gh-host no-origin → GH_HOST unset (fail-open)"
+else
+  fail "[issue1162] gh-host no-origin" "got='$out' expected='<unset>'"
+fi
+cleanup_fixture "$F"
+
+# Explicit caller-provided GH_HOST is respected (not clobbered).
+F=$(new_fixture ghhost-respect-existing)
+prep_git "$F/state-git" remote 1 stdout 'git@github.com:org/repo.git'
+out=$(PATH="$F/bin:$PATH" MOCK_GIT_STATE_DIR="$F/state-git" GH_HOST='preset.example.com' \
+      bash -c '. "'"$SCRIPTS_DIR"'/gh-host.sh"; printf "%s" "${GH_HOST:-<unset>}"')
+if [ "$out" = "preset.example.com" ]; then
+  pass "[issue1162] gh-host respects pre-set GH_HOST (no clobber)"
+else
+  fail "[issue1162] gh-host respects pre-set GH_HOST" "got='$out' expected='preset.example.com'"
+fi
+cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
 # Failure mode #9 — auto-merge-disabled-on-repo (benign, exit 0)
 # ----------------------------------------------------------------------
 F=$(new_fixture mode9)

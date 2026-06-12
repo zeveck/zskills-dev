@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.11+e73556"
+  version: "2026.06.12+fc7540"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -233,6 +233,18 @@ PR_STATE="not-checked"
 REASON=""
 CONFLICT_FILES_LIST=""
 CALL_ERROR_FILE=""
+
+# Enterprise-host awareness (#1162): resolve GH_HOST from origin ONCE, up
+# front, so every inline `gh` call in this skill (Step 2 resume `gh pr
+# view`, Step 6b/6c auto-rebase `gh pr view --json mergeStateStatus`) and
+# the gh-using scripts target the repo's ACTUAL host, not the github.com
+# default. gh-host.sh is sourced (exports GH_HOST when resolvable;
+# fail-open otherwise) and respects a pre-set GH_HOST.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/land-pr/scripts/gh-host.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/land-pr/scripts/gh-host.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/gh-host.sh"
+fi
 ```
 
 ### Step 2 — Resume-mode short-circuit (`--pr <num>`)
