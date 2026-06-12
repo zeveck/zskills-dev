@@ -340,6 +340,62 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# 26. Arg-spelling alias (#1164): --pipeline-id and --require-pipeline are
+# interchangeable on BOTH acquire AND release.
+#   26a. acquire accepts --require-pipeline (the release spelling).
+#   26b. release accepts --pipeline-id (the acquire spelling) and matches.
+#   26c. cross-spelling round-trip: acquire --require-pipeline X then
+#        release --pipeline-id X succeeds; mismatched value still refused.
+# ───────────────────────────────────────────────────────────────────────
+REPO_ALIAS="$SCRATCH_ROOT/r_alias"
+make_repo "$REPO_ALIAS" || { echo "FATAL repo init"; exit 1; }
+
+# 26a. acquire with --require-pipeline (alias for --pipeline-id).
+(cd "$REPO_ALIAS" && bash "$CLAIM_SH" acquire aliasacq --require-pipeline "run-plan.alias") 2>/dev/null
+rc_acq_alias=$?
+ALIAS_FILE="$REPO_ALIAS/.zskills/claims/plan-aliasacq/claim.json"
+ALIAS_PIPE=""
+[ -f "$ALIAS_FILE" ] && ALIAS_PIPE=$("$PYTHON" -c "import json; print(json.load(open('$ALIAS_FILE'))['pipeline_id'])")
+if [ "$rc_acq_alias" -eq 0 ] && [ "$ALIAS_PIPE" = "run-plan.alias" ]; then
+  pass "acquire accepts --require-pipeline alias (rc=0, pipeline_id persisted) (#1164)"
+else
+  fail "acquire --require-pipeline alias" "rc=$rc_acq_alias pipeline_id=<$ALIAS_PIPE>"
+fi
+
+# 26b. release with --pipeline-id (alias for --require-pipeline), matching
+# value — must succeed and remove the claim dir.
+(cd "$REPO_ALIAS" && bash "$CLAIM_SH" release aliasacq --pipeline-id "run-plan.alias") 2>/dev/null
+rc_rel_alias=$?
+if [ "$rc_rel_alias" -eq 0 ] && [ ! -d "$REPO_ALIAS/.zskills/claims/plan-aliasacq" ]; then
+  pass "release accepts --pipeline-id alias and matches (rc=0, claim removed) (#1164)"
+else
+  fail "release --pipeline-id alias" "rc=$rc_rel_alias dir=$([ -d "$REPO_ALIAS/.zskills/claims/plan-aliasacq" ] && echo yes || echo no)"
+fi
+
+# 26c. The alias is a pure value-passthrough: a MISMATCHED value supplied
+# via the alias spelling is still refused with exit 12 (no behavior
+# change — the alias only changes the accepted flag name, not the check).
+(cd "$REPO_ALIAS" && bash "$CLAIM_SH" acquire aliasmm --pipeline-id "run-plan.right") 2>/dev/null
+(cd "$REPO_ALIAS" && bash "$CLAIM_SH" release aliasmm --pipeline-id "run-plan.wrong") 2>/dev/null
+rc_rel_mm=$?
+if [ "$rc_rel_mm" -eq 12 ] && [ -d "$REPO_ALIAS/.zskills/claims/plan-aliasmm" ]; then
+  pass "release --pipeline-id alias still refuses mismatched value (rc=12, claim intact) (#1164)"
+else
+  fail "release --pipeline-id alias mismatch" "rc=$rc_rel_mm dir=$([ -d "$REPO_ALIAS/.zskills/claims/plan-aliasmm" ] && echo yes || echo no)"
+fi
+
+# 26d. set-phase also accepts --pipeline-id as an alias for
+# --require-pipeline (full-verb symmetry).
+(cd "$REPO_ALIAS" && bash "$CLAIM_SH" set-phase aliasmm --pipeline-id "run-plan.right" --current-phase "Phase 2 — aliased") 2>/dev/null
+rc_sp_alias=$?
+SP_ALIAS_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$REPO_ALIAS/.zskills/claims/plan-aliasmm/claim.json'))['current_phase'])" 2>/dev/null)
+if [ "$rc_sp_alias" -eq 0 ] && [ "$SP_ALIAS_PHASE" = "Phase 2 — aliased" ]; then
+  pass "set-phase accepts --pipeline-id alias (rc=0, phase updated) (#1164)"
+else
+  fail "set-phase --pipeline-id alias" "rc=$rc_sp_alias phase=<$SP_ALIAS_PHASE>"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""

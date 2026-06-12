@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.12+a8a29a"
+  version: "2026.06.12+cddf24"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -225,17 +225,63 @@ if [ -n "$FULL_TEST_CMD" ]; then
 else
   # Check for test infra (same list as preflight hook-placeholder gate):
   # package.json with a "test" script, vitest/jest/pytest configs,
-  # Makefile, tests/*.sh, tests/*.py, tests/*.js.
+  # Makefile, tests/*.sh, tests/*.py, tests/*.js. When infra is found,
+  # also record a concrete CANDIDATE command (#1164) so the Case-2 refusal
+  # can NAME a next step instead of dead-ending — "test infra detected but
+  # empty" with no concrete command left an overnight /run-plan stuck.
   TEST_INFRA_DETECTED=0
-  [ -f "$PROJECT_ROOT/package.json" ] && grep -q '"test"[[:space:]]*:' "$PROJECT_ROOT/package.json" && TEST_INFRA_DETECTED=1
-  ls "$PROJECT_ROOT"/vitest.config.* "$PROJECT_ROOT"/jest.config.* "$PROJECT_ROOT"/pytest.ini \
-     "$PROJECT_ROOT"/.mocharc.* "$PROJECT_ROOT"/Makefile 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
-  ls "$PROJECT_ROOT/tests"/*.sh "$PROJECT_ROOT/tests"/*.py "$PROJECT_ROOT/tests"/*.js 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
+  TEST_CMD_CANDIDATE=""
+  if [ -f "$PROJECT_ROOT/package.json" ] && grep -q '"test"[[:space:]]*:' "$PROJECT_ROOT/package.json"; then
+    TEST_INFRA_DETECTED=1
+    [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="npm test"
+  fi
+  if ls "$PROJECT_ROOT"/vitest.config.* 2>/dev/null | grep -q .; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="npx vitest run"
+  fi
+  if ls "$PROJECT_ROOT"/jest.config.* "$PROJECT_ROOT"/.mocharc.* 2>/dev/null | grep -q .; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="npm test"
+  fi
+  if [ -f "$PROJECT_ROOT/pytest.ini" ]; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="pytest"
+  fi
+  if [ -f "$PROJECT_ROOT/Makefile" ] && grep -q '^test:' "$PROJECT_ROOT/Makefile"; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="make test"
+  fi
+  if ls "$PROJECT_ROOT/tests"/*.sh 2>/dev/null | grep -q .; then
+    TEST_INFRA_DETECTED=1
+    if [ -z "$TEST_CMD_CANDIDATE" ]; then
+      if [ -f "$PROJECT_ROOT/tests/run-all.sh" ]; then
+        TEST_CMD_CANDIDATE="bash tests/run-all.sh"
+      else
+        TEST_CMD_CANDIDATE="bash tests/*.sh"
+      fi
+    fi
+  fi
+  if ls "$PROJECT_ROOT/tests"/*.py 2>/dev/null | grep -q .; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="pytest"
+  fi
+  if ls "$PROJECT_ROOT/tests"/*.js 2>/dev/null | grep -q .; then
+    TEST_INFRA_DETECTED=1; [ -z "$TEST_CMD_CANDIDATE" ] && TEST_CMD_CANDIDATE="npm test"
+  fi
 
   if [ "$TEST_INFRA_DETECTED" -eq 1 ]; then
-    # Case 2: tests exist but no command — misconfigured. Refuse.
+    # Case 2: tests exist but no command configured. NAME the detected
+    # candidate (#1164) so the user has a concrete next step — the bare
+    # "empty" message previously dead-ended an overnight /run-plan.
     echo "ERROR: /run-plan: test infra detected but testing.full_cmd is empty." >&2
-    echo "  Run /update-zskills to configure, or edit .claude/zskills-config.json." >&2
+    echo "  Detected test infra; a likely command is: ${TEST_CMD_CANDIDATE}" >&2
+    echo "  Set it in .claude/zskills-config.json under testing.full_cmd, e.g.:" >&2
+    echo "      \"testing\": { \"full_cmd\": \"${TEST_CMD_CANDIDATE}\" }" >&2
+    echo "  Or run /update-zskills to configure interactively. Verify the" >&2
+    echo "  candidate matches your project before using it." >&2
+    # Interactive auto-write offer (#1164): the auto-write is intentionally
+    # NOT performed here — this resolution runs in a non-interactive,
+    # config-read-only fence with no consent/prompt affordance to hook
+    # into, and writing config without explicit consent is forbidden. When
+    # /run-plan is driven interactively, the orchestrator SHOULD offer to
+    # write testing.full_cmd=${TEST_CMD_CANDIDATE} (project tier) on the
+    # user's confirmation before re-running. A standalone consented
+    # auto-write affordance is tracked as a smaller follow-up.
     exit 1
   else
     # Case 3: no test infra, no command — docs-only/greenfield. Skip test gate.

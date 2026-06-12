@@ -7,8 +7,16 @@
 # (NEVER $PWD — the per-issue dispatch fence in /fix-issues runs from a
 # sprint worktree, so $PWD points at the wrong root at acquire time).
 #
+# Arg-spelling alias (#1164): the pipeline-id flag is accepted under BOTH
+# spellings --pipeline-id and --require-pipeline on the acquire AND release
+# verbs. They are pure aliases — same value, no behavior change — so a
+# caller that mixes spellings across verbs (the historical
+# acquire=--pipeline-id, release=--require-pipeline asymmetry) no longer
+# hits an "unknown arg" usage error.
+#
 # Subcommands:
 #   acquire <N> --pipeline-id <id> --sprint-id <id>
+#     (--require-pipeline accepted as an alias for --pipeline-id)
 #     Exit 0  — acquired-fresh OR self-re-entry (caller already owns this
 #               claim — the stored pipeline_id matches --pipeline-id).
 #     Exit 2  — usage error.
@@ -17,6 +25,7 @@
 #     Exit 11 — non-EEXIST mkdir failure / fs error / atomic-write failure
 #               (EACCES/ENOSPC/EDQUOT/EROFS/...).
 #   release <N> [--require-pipeline <id>]
+#     (--pipeline-id accepted as an alias for --require-pipeline)
 #     Exit 0  — released (or already absent — idempotent).
 #     Exit 2  — usage error.
 #     Exit 12 — release pipeline-id mismatch (claim left intact).
@@ -166,7 +175,10 @@ cmd_acquire() {
   n="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --pipeline-id) pipeline_id="${2:-}"; shift 2 ;;
+      # --require-pipeline accepted as an alias for --pipeline-id (#1164):
+      # release spells the same value --require-pipeline, so accept both
+      # spellings on every verb. Pure alias — no behavior change.
+      --pipeline-id|--require-pipeline) pipeline_id="${2:-}"; shift 2 ;;
       --sprint-id)   sprint_id="${2:-}"; shift 2 ;;
       *) echo "fix-issues claim-issue.sh acquire: unknown arg '$1'" >&2; return 2 ;;
     esac
@@ -270,7 +282,10 @@ cmd_release() {
   n="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --require-pipeline) require_pipeline="${2:-}"; shift 2 ;;
+      # --pipeline-id accepted as an alias for --require-pipeline (#1164):
+      # acquire spells the same value --pipeline-id, so accept both
+      # spellings on every verb. Pure alias — no behavior change.
+      --require-pipeline|--pipeline-id) require_pipeline="${2:-}"; shift 2 ;;
       *) echo "fix-issues claim-issue.sh release: unknown arg '$1'" >&2; return 2 ;;
     esac
   done

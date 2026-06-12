@@ -11,8 +11,16 @@
 # (NEVER $PWD — /run-plan PR-mode dispatches run from a worktree so $PWD
 # points at the wrong root; DA4.1 / DA7 invariant).
 #
+# Arg-spelling alias (#1164): the pipeline-id flag is accepted under BOTH
+# spellings --pipeline-id and --require-pipeline on EVERY verb
+# (acquire/release/set-phase). They are pure aliases — same value, no
+# behavior change — so a caller that mixes spellings across verbs (the
+# historical acquire=--pipeline-id, release=--require-pipeline asymmetry)
+# no longer hits an "unknown arg" usage error.
+#
 # Subcommands:
 #   acquire <slug> --pipeline-id <id> [--dispatch-mode <mode>]
+#     (--require-pipeline accepted as an alias for --pipeline-id)
 #     Exit 0  — acquired-fresh OR self-re-entry (caller already owns this
 #               claim — the stored pipeline_id matches --pipeline-id).
 #     Exit 2  — usage error (bad slug, missing flags, invalid dispatch-mode).
@@ -30,6 +38,7 @@
 #     Sibling to #858 (the wrapper-lifetime batch_mode signal); this
 #     field covers the claim's full duration.
 #   release <slug> --require-pipeline <id>
+#     (--pipeline-id accepted as an alias for --require-pipeline)
 #     Exit 0  — released (or already absent — idempotent).
 #     Exit 2  — usage error.
 #     Exit 12 — release pipeline-id mismatch (claim left intact).
@@ -233,7 +242,10 @@ cmd_acquire() {
   raw_slug="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --pipeline-id) pipeline_id="${2:-}"; shift 2 ;;
+      # --require-pipeline is an accepted alias for --pipeline-id (#1164):
+      # release/set-phase spell the same value --require-pipeline, so accept
+      # both spellings on every verb. Pure alias — no behavior change.
+      --pipeline-id|--require-pipeline) pipeline_id="${2:-}"; shift 2 ;;
       --dispatch-mode) dispatch_mode="${2:-}"; shift 2 ;;
       *) echo "run-plan claim-plan.sh acquire: unknown arg '$1'" >&2; return 2 ;;
     esac
@@ -426,7 +438,10 @@ cmd_release() {
   raw_slug="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --require-pipeline) require_pipeline="${2:-}"; shift 2 ;;
+      # --pipeline-id is an accepted alias for --require-pipeline (#1164):
+      # acquire spells the same value --pipeline-id, so accept both
+      # spellings on every verb. Pure alias — no behavior change.
+      --require-pipeline|--pipeline-id) require_pipeline="${2:-}"; shift 2 ;;
       *) echo "run-plan claim-plan.sh release: unknown arg '$1'" >&2; return 2 ;;
     esac
   done
@@ -481,7 +496,8 @@ cmd_set_phase() {
   raw_slug="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --require-pipeline) require_pipeline="${2:-}"; shift 2 ;;
+      # --pipeline-id alias accepted for symmetry (#1164).
+      --require-pipeline|--pipeline-id) require_pipeline="${2:-}"; shift 2 ;;
       --current-phase)    current_phase="${2:-}"; current_phase_set=1; shift 2 ;;
       *) echo "run-plan claim-plan.sh set-phase: unknown arg '$1'" >&2; return 2 ;;
     esac
