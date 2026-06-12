@@ -80,6 +80,11 @@ case "$CI_STATUS" in
     ;;
 esac
 
+# Enterprise-host awareness (#1162): resolve GH_HOST from origin so gh
+# talks to the repo's ACTUAL host, not the github.com default. Sourced —
+# exports GH_HOST when resolvable; fail-open otherwise.
+. "$(dirname "${BASH_SOURCE[0]}")/gh-host.sh"
+
 # Step 3 — Request auto-merge with squash.
 STDERR_LOG="/tmp/land-pr-merge-stderr-$PR_NUMBER-$$.log"
 

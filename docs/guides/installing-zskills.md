@@ -57,6 +57,29 @@ state are blocked (read-only skills work immediately).
 > plugin clones over **HTTPS**. Tell Claude *"configure git to use HTTPS instead
 > of SSH so the install works"* and re-run `/plugin install zs@zskills`.
 
+### Enterprise GitHub (GitHub Enterprise Server / `github.example.com`)
+
+zskills works against an enterprise GitHub host, with two things to know:
+
+- **Marketplace add over SSH.** `/plugin marketplace add zeveck/zskills`
+  resolves `zeveck/zskills` against **github.com**. If your zskills source
+  lives on an enterprise host (or your network can only reach GitHub over
+  SSH), pass an explicit **git URL** instead of the `owner/repo` shorthand,
+  e.g. `/plugin marketplace add git@github.example.com:org/zskills.git` (or
+  the HTTPS form). The SSH URL also sidesteps the HTTPS-can't-prompt-for-
+  credentials problem on a credential-gated enterprise remote.
+
+- **`GH_HOST` is derived automatically for landing/commit flows.** The
+  land-pr / commit / fix-issues scripts that call `gh` (auth status, branch
+  protection, PR create/merge/checks) resolve the target host from your
+  repo's `origin` remote and export **`GH_HOST`** for the duration of the
+  call — so `gh` talks to *your* host, not the github.com default. This
+  prevents the false "authenticated, no branch protection" green-light that
+  could otherwise auto-merge a PR against the wrong host. You normally need
+  to do nothing; an explicitly pre-set `GH_HOST` in your environment is
+  always respected and not overridden. (Make sure you are `gh auth login`'d
+  to that enterprise host so the `gh` calls succeed.)
+
 **The plugin writes nothing into your project by itself.** Skills, hooks, the
 verifier/implementer agents, and the agent rules all live in (and run from)
 the plugin's own tree — `git status` in your project stays clean across

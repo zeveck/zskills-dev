@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.12+0c837a"
+  version: "2026.06.12+c4f5cc"
 ---
 
 # /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -404,3 +404,17 @@ Do not proceed until you have read the file.
   instead of "reset mappings to defaults" because only the title was read.
 - **Ultrathink** — use careful, thorough reasoning. Read code, understand
   what changed and why, verify correctness.
+- **Enterprise GitHub host (#1162)** — before the inline `gh issue view` /
+  `gh issue close` calls, export `GH_HOST` from the repo's actual remote so
+  `gh` targets *your* host (not the github.com default) on a GitHub
+  Enterprise repo. Source the shared helper once near the top of the
+  sprint's gh-using shell (it exports `GH_HOST` when resolvable, fail-open
+  otherwise, and respects a pre-set value):
+
+  ```bash
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/land-pr/scripts/gh-host.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/land-pr/scripts/gh-host.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/gh-host.sh"
+  fi
+  ```

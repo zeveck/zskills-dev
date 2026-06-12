@@ -70,6 +70,11 @@ fi
 BRANCH_SLUG="${BRANCH//\//-}"
 STDERR_LOG="/tmp/land-pr-push-create-stderr-$BRANCH_SLUG-$$.log"
 
+# Enterprise-host awareness (#1162): resolve GH_HOST from origin so gh
+# talks to the repo's ACTUAL host, not the github.com default. Sourced —
+# exports GH_HOST when resolvable; fail-open otherwise.
+. "$(dirname "${BASH_SOURCE[0]}")/gh-host.sh"
+
 # Step 1 — Detect existing PR via bash regex on `gh pr list --json`.
 PR_LIST_JSON=""
 if ! PR_LIST_JSON=$(gh pr list --head "$BRANCH" --base "$BASE" --json number,url 2>"$STDERR_LOG"); then

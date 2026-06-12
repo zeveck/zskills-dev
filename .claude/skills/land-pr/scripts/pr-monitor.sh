@@ -65,6 +65,12 @@ fi
 
 STDERR_LOG="$LOG_OUT.stderr"
 
+# Enterprise-host awareness (#1162): resolve GH_HOST from origin so every
+# gh call below (auth status, pr checks, run view) targets the repo's
+# ACTUAL host, not the github.com default. Sourced — exports GH_HOST when
+# resolvable; fail-open otherwise.
+. "$(dirname "${BASH_SOURCE[0]}")/gh-host.sh"
+
 # Pre-flight: gh auth must work before we try to query.
 if ! gh auth status >"$STDERR_LOG" 2>&1; then
   echo "ERROR: pr-monitor.sh: gh auth status failed — see $STDERR_LOG" >&2
@@ -72,9 +78,22 @@ if ! gh auth status >"$STDERR_LOG" 2>&1; then
   exit 20
 fi
 
-# Step 1 — Pre-check loop. Up to 3 attempts × 10s for checks to register.
+# Step 1 — Registration grace window (#1161). GitHub lags a few seconds-
+# to-tens-of-seconds after a push before the first check run is REGISTERED
+# on the PR. Pre-fix this loop ran only 3×10s (≤30s) and then emitted
+# `none` — indistinguishable from a repo that has NO checks configured.
+# Callers (/land-pr Step 6, rows 6-10) treat `none` as "safe to merge", so
+# a green-light could fire BEFORE CI even started — the documented
+# premature merge. The window is now longer and configurable; zero checks
+# registered yet maps to `pending` (NOT `none`/`pass`) below — see Step 2.
+#   PR_MONITOR_REGISTER_ATTEMPTS — poll count   (default 6)
+#   PR_MONITOR_REGISTER_SLEEP    — seconds/poll (default 10; test seam → 0)
+REGISTER_ATTEMPTS="${PR_MONITOR_REGISTER_ATTEMPTS:-6}"
+REGISTER_SLEEP="${PR_MONITOR_REGISTER_SLEEP:-10}"
 CHECK_COUNT=0
-for _i in 1 2 3; do
+_attempt=0
+while [ "$_attempt" -lt "$REGISTER_ATTEMPTS" ]; do
+  _attempt=$((_attempt + 1))
   PR_CHECKS_JSON=""
   if PR_CHECKS_JSON=$(gh pr checks "$PR_NUMBER" --json name 2>"$STDERR_LOG"); then
     # `gh pr checks --json name` returns a JSON array. Detect "non-empty
@@ -84,11 +103,61 @@ for _i in 1 2 3; do
       break
     fi
   fi
-  sleep 10
+  # Don't sleep after the last attempt.
+  if [ "$_attempt" -lt "$REGISTER_ATTEMPTS" ]; then
+    sleep "$REGISTER_SLEEP"
+  fi
 done
 
-# Step 2 — No checks ever registered. Emit none and exit cleanly.
+# Step 2 — Zero checks registered after the grace window. We must NOT
+# conflate two cases (#1161):
+#   (a) checks are CONFIGURED but haven't registered yet (GitHub lag) —
+#       a merge here is premature; map to `pending` so the caller waits.
+#   (b) the repo genuinely has NO required checks — `none` is correct.
+# Distinguish via branch protection: query the PR's base branch for
+# required status checks. If any are required → case (a), emit `pending`.
+# Otherwise → case (b), emit `none`. The query is best-effort: if it
+# fails or we can't resolve the base branch, we FAIL SAFE to `pending`
+# (never auto-merge on uncertainty), since a stuck-`pending` only costs a
+# manual nudge whereas a false `none` is the premature-merge bug.
 if [ "$CHECK_COUNT" -eq 0 ]; then
+  BASE_BRANCH=""
+  BASE_JSON=""
+  if BASE_JSON=$(gh pr view "$PR_NUMBER" --json baseRefName 2>"$STDERR_LOG"); then
+    if [[ "$BASE_JSON" =~ \"baseRefName\":[[:space:]]*\"([^\"]+)\" ]]; then
+      BASE_BRANCH="${BASH_REMATCH[1]}"
+    fi
+  fi
+
+  if [ -z "$BASE_BRANCH" ]; then
+    # Couldn't resolve the base branch — fail safe to pending.
+    echo "CI_STATUS=pending"
+    echo "CI_LOG_FILE="
+    exit 0
+  fi
+
+  # Query required status checks on the base branch. 200 with a non-empty
+  # `contexts`/`checks` array ⇒ checks ARE required (case a → pending).
+  # 404 (no protection) or empty contexts ⇒ no required checks (case b →
+  # none). `gh api` resolves {owner}/{repo} from the current repo.
+  REQ_JSON=""
+  set +e
+  REQ_JSON=$(gh api \
+    "repos/{owner}/{repo}/branches/$BASE_BRANCH/protection/required_status_checks" \
+    2>"$STDERR_LOG")
+  REQ_RC=$?
+  # Leave errexit OFF (its state on entry to this block) — every path here
+  # exits explicitly; matches the script's lazy errexit management.
+  set +e
+
+  if [ "$REQ_RC" -eq 0 ] && [[ "$REQ_JSON" =~ \"(contexts|checks)\":[[:space:]]*\[[[:space:]]*[^][:space:]] ]]; then
+    # Required checks ARE configured but none registered yet → lag.
+    echo "CI_STATUS=pending"
+    echo "CI_LOG_FILE="
+    exit 0
+  fi
+
+  # No required checks configured (404 / empty contexts) → genuine no-CI.
   echo "CI_STATUS=none"
   echo "CI_LOG_FILE="
   exit 0

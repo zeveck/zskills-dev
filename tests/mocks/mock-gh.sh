@@ -50,6 +50,15 @@ case "$ARG1" in
     ;;
 esac
 
+# Sanitize path separators in the key — `gh api repos/{owner}/{repo}/...`
+# yields an ARG2 containing slashes, which would otherwise produce a
+# slash-bearing state-file path. Replace `/` and `{`/`}` with `_` so the
+# key is a safe flat filename. (No pre-existing key contains these chars,
+# so this is backward-compatible.)
+KEY="${KEY//\//_}"
+KEY="${KEY//\{/_}"
+KEY="${KEY//\}/_}"
+
 COUNT_FILE="$STATE_DIR/$KEY.count"
 PREV_COUNT=0
 if [ -f "$COUNT_FILE" ]; then
