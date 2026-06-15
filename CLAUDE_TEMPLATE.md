@@ -146,6 +146,47 @@ $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
 Then read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to inspect failures. Never pipe
 through `| tail`, `| head`, `| grep` -- it loses output and forces re-runs.
 
+### Tests — result provenance / de-duplication
+
+A `tests/run-all.sh` run now carries a provenance header recording the
+tree it measured (`tree`, a CONTENT-sensitive `fingerprint`, `timestamp` +
+`epoch`). The sourced validator `tests/lib/suite-result-valid.sh <file>`
+answers "is this result still true for the current tree?" — exit 0 iff the
+recorded `tree` and content `fingerprint` match the live tree AND the result
+is under 30 minutes old; it fails closed on any empty field or absent git.
+
+**Reusing a provenance-validated result for the SAME tree is
+de-duplication, NOT skipping verification.** When a fresh verifier finds a
+result that validates for the current tree, it verifies the tally, ALWAYS
+re-runs the cross-cutting concern suites (conformance, mirror-parity,
+skill-version, catalog, managed-md, agents-parity), and additionally re-runs
+the suites covering the changed area (derived from the diff paths by
+judgment) — instead of blindly re-running everything that was just run on the
+identical tree. A suite is elided ONLY when it is provably unrelated; an
+empty or uncertain targeted set means a FULL re-run, never "ran nothing."
+
+**The safety floor is non-negotiable and is never weakened by reuse:**
+CI runs the full suite on every PR (the fresh-clone backstop); the
+post-commit committed-state gates stay in force; Layer-3 response
+validation stays in force; the fresh verifier's INDEPENDENCE is preserved
+— de-dup changes WHAT the verifier executes, never WHO; a full LOCAL run
+is mandatory before landing ANY PR that touches shared infra (`tests/`,
+`hooks/`, `scripts/_lib/`, shared skill scripts, the runner); the
+plan-completion boundary runs stay mandatory; and the two-attempt fix
+discipline is unchanged.
+
+**A full re-run is MANDATORY** when the result is invalid/stale, when the
+diff touches `tests/`, `hooks/`, `scripts/_lib/`, shared skill scripts, the
+runner, ANY `skills/**/*.md` (skill bodies are behavior), `agents/*.md`,
+`.claude/agents/*.md`, `CLAUDE_TEMPLATE.md`, or `managed.md`, when the
+targeted set is empty, or when the verifier judges the change risky.
+
+**Threat model:** a fabricated or stale results file fails at three
+independent layers — the validator (content-sensitive tree fingerprint
+mismatch), the targeted re-run plus the always-on concern suites (the
+changed area must actually pass), and CI (a fresh full run). Provenance
+reuse never accepts a result for a tree whose CONTENT was not measured.
+
 **Pre-existing test failures.** If a test fails in code you didn't touch,
 verify with `git log` that the test/source predates your changes. You may
 file a GitHub issue with the error output and mark the test `it.skip('name
