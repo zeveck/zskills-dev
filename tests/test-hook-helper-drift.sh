@@ -36,6 +36,8 @@ fn_source() {
       echo "hooks/_lib/resolve-python.sh" ;;
     zskills_normalize_tool_path)
       echo "hooks/_lib/normalize-tool-path.sh" ;;
+    zskills_enforcement_config_root|zskills_enforcement_predicate|zskills_enforcement_load_toggles|zskills_enforcement_mode|zskills_enforcement_tag|zskills_enforcement_json_escape|zskills_enforcement_warn|zskills_enforcement_flush_warnings)
+      echo "hooks/_lib/zskills-enforcement.sh" ;;
     *)
       echo "" ;;
   esac
@@ -194,6 +196,54 @@ else
     fi
   done
 fi
+
+# ── enforcement-lib drift (ENFORCEMENT_V2_PLAN Phase 1, #1159) ──────────────
+# Source-of-truth bodies live in hooks/_lib/zskills-enforcement.sh. Each of the
+# eight zskills_enforcement_* functions is inlined VERBATIM into each consuming
+# hook (the .claude/hooks/ legacy mirrors and plugin-served copies cannot reach
+# _lib at runtime), so the bodies must be byte-identical to the source-of-truth.
+#
+# Per-function consumer lists. In Phase 1 NO hook inlines the lib yet, so every
+# list is EMPTY — a zero-consumer entry IS expressible (the map entry exists,
+# the iteration loop is a no-op). Phases 2–3 add each inlining hook to the
+# relevant list(s) in the SAME commit as its inline; the gate only checks hooks
+# it iterates, so a forgotten list entry is silent drift — hence each phase
+# carries an explicit consumer-list work item.
+declare -A ENF_CONSUMERS
+ENF_CONSUMERS[zskills_enforcement_config_root]=""
+ENF_CONSUMERS[zskills_enforcement_predicate]=""
+ENF_CONSUMERS[zskills_enforcement_load_toggles]=""
+ENF_CONSUMERS[zskills_enforcement_mode]=""
+ENF_CONSUMERS[zskills_enforcement_tag]=""
+ENF_CONSUMERS[zskills_enforcement_json_escape]=""
+ENF_CONSUMERS[zskills_enforcement_warn]=""
+ENF_CONSUMERS[zskills_enforcement_flush_warnings]=""
+for ENF_FN in "${!ENF_CONSUMERS[@]}"; do
+  ENF_SRC="$(fn_source "$ENF_FN")"
+  if [ -z "$ENF_SRC" ] || [ ! -f "$ENF_SRC" ]; then
+    fail "drift: $ENF_FN source-of-truth file not found ($ENF_SRC)"
+    continue
+  fi
+  # Source-of-truth body must extract non-empty (guards against a rename/typo
+  # that would make every later phase's byte-equality check vacuously pass).
+  if [ -z "$(sed -n "/^$ENF_FN()/,/^}$/p" "$ENF_SRC")" ]; then
+    fail "drift: $ENF_FN body not found in $ENF_SRC (renamed or malformed?)"
+    continue
+  fi
+  for CONSUMER in ${ENF_CONSUMERS[$ENF_FN]}; do
+    if [ ! -f "$CONSUMER" ]; then
+      fail "drift: $CONSUMER $ENF_FN consumer file not found"
+      continue
+    fi
+    if diff <(sed -n "/^$ENF_FN()/,/^}$/p" "$CONSUMER") \
+            <(sed -n "/^$ENF_FN()/,/^}$/p" "$ENF_SRC") \
+            > /dev/null; then
+      pass "drift: $CONSUMER $ENF_FN matches source-of-truth"
+    else
+      fail "drift: $CONSUMER $ENF_FN drifted from $ENF_SRC"
+    fi
+  done
+done
 
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed (of $((PASS_COUNT + FAIL_COUNT)))"
