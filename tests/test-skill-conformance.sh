@@ -3146,13 +3146,13 @@ echo "=== zsh fence-portability tripwire (#1155) ==="
 #
 # The scanner (tests/lib/zsh-fence-scan.py — Python, repo convention permits it
 # for unwieldy line-state scanners; no jq) is a PURE REPORTER (always exit 0);
-# this bash block interprets its output. Phase-1 scoping: a violation in a file
-# listed in tests/fixtures/zsh-fence-pending.txt is report-only
-# (ZSH-FENCE-PENDING WARN); a violation in any UNLISTED file FAILs immediately
-# (new/edited files are born compliant — the protective half stays strict).
-# A listed file that is clean or gone emits ZSH-FENCE-STALE (WARN, never FAIL)
-# so sibling PRs that incidentally clean/delete a listed file are never forced
-# to edit this plan's fixture. Drainage is owned by the plan's phase ACs.
+# this bash block interprets its output. UNSCOPED/STRICT mode (Phase 5 #1155
+# close-out): the pending-list ratchet was RETIRED — enforcement is now
+# unconditional and repo-wide. ANY exec fence with an un-guarded / un-wrapped /
+# un-rewritten setopt-unfixable or check-(b)/(b2)/(c)/(d) construct FAILs; there
+# is no pending allowance. The pending fixture (tests/fixtures/zsh-fence-pending.txt)
+# is deleted; if one reappears, the scanner emits ZSH-FENCE-PENDING-RETIRED and
+# this block FAILs ("full compliance is mandatory").
 ZF_SCANNER="$REPO_ROOT/tests/lib/zsh-fence-scan.py"
 ZF_PENDING="$REPO_ROOT/tests/fixtures/zsh-fence-pending.txt"
 ZF_PY="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
@@ -3160,59 +3160,49 @@ ZF_PY="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 if [ ! -f "$ZF_SCANNER" ]; then
   fail "zsh-fence scanner present" "$ZF_SCANNER missing"
 else
-  # Real-tree scan WITH the pending fixture (the Phase-1 ratchet state).
-  ZF_OUT="$(ZS_SCAN_ROOT="$REPO_ROOT/skills" ZS_PENDING_FILE="$ZF_PENDING" "$ZF_PY" "$ZF_SCANNER" 2>&1)"
-  ZF_SUMMARY="$(printf '%s\n' "$ZF_OUT" | grep '^ZSH-FENCE-SUMMARY:' | tail -1)"
-
-  # --- malformed fixture is a hard FAIL ---
-  if printf '%s\n' "$ZF_OUT" | grep -q '^ZSH-FENCE-FIXTURE-MALFORMED:'; then
-    fail "zsh-fence pending fixture well-formed" "fixture malformed — see below"
-    printf '%s\n' "$ZF_OUT" | grep '^ZSH-FENCE-FIXTURE-MALFORMED:' | while IFS= read -r m; do
-      printf '    %s\n' "$m" >&2
-    done
+  # --- the pending fixture must be GONE (retired in the #1155 close-out) ---
+  if [ -f "$ZF_PENDING" ]; then
+    fail "zsh-fence pending fixture removed (Phase 5 #1155 close-out)" \
+      "$ZF_PENDING still exists — the pending ratchet was retired; full compliance is mandatory. Delete it."
   else
-    pass "zsh-fence pending fixture well-formed (sorted, skills/-prefixed, no dupes/blanks)"
+    pass "zsh-fence pending fixture removed (enforcement is unconditional)"
   fi
 
-  # --- unlisted violations FAIL ---
-  ZF_UNLISTED="$(printf '%s\n' "$ZF_OUT" | grep -c '^ZSH-FENCE:')"
-  if [ "$ZF_UNLISTED" -eq 0 ]; then
-    pass "zsh-fence: no violations in UNLISTED files (new/edited files born compliant)"
+  # Real-tree scan, UNCONDITIONAL (no fixture — every violation FAILs).
+  ZF_OUT="$(ZS_SCAN_ROOT="$REPO_ROOT/skills" "$ZF_PY" "$ZF_SCANNER" 2>&1)"
+  ZF_SUMMARY="$(printf '%s\n' "$ZF_OUT" | grep '^ZSH-FENCE-SUMMARY:' | tail -1)"
+
+  # --- ALL violations FAIL (strict, repo-wide) ---
+  ZF_VIOL="$(printf '%s\n' "$ZF_OUT" | grep -c '^ZSH-FENCE:')"
+  if [ "$ZF_VIOL" -eq 0 ]; then
+    pass "zsh-fence: zero divergent-construct violations repo-wide (strict, unscoped)"
   else
-    fail "zsh-fence: $ZF_UNLISTED violation(s) in unlisted file(s)" "fix or remediate — see below"
+    fail "zsh-fence: $ZF_VIOL violation(s) repo-wide" "guard/wrap/rewrite/marker each — see below"
     printf '%s\n' "$ZF_OUT" | grep '^ZSH-FENCE:' | while IFS= read -r v; do
       printf '    %s\n' "$v" >&2
     done
   fi
 
-  # --- stale listed entries are a WARN, never a FAIL ---
-  ZF_STALE="$(printf '%s\n' "$ZF_OUT" | grep -c '^ZSH-FENCE-STALE:')"
-  if [ "$ZF_STALE" -gt 0 ]; then
-    printf '\033[33m  WARN\033[0m zsh-fence: %d stale pending entr(y/ies) — drop them (the list must be EMPTY by Phase 5)\n' "$ZF_STALE"
-    printf '%s\n' "$ZF_OUT" | grep '^ZSH-FENCE-STALE:' | while IFS= read -r s; do
-      printf '    %s\n' "$s" >&2
-    done
-  fi
-
-  # --- pending (report-only) count, informational ---
-  ZF_PENDING_CNT="$(printf '%s\n' "$ZF_OUT" | grep -c '^ZSH-FENCE-PENDING:')"
-  echo "  (zsh-fence: $ZF_PENDING_CNT file(s) on the pending list — report-only this phase)"
-
-  # --- anti-vacuous (i)/(ii): always on, fixture or not ---
-  # (i) total exec fences scanned > 0 — a regression that gutted fence
-  #     detection trips this instead of passing vacuously.
+  # --- anti-vacuous (i): total exec fences scanned > 0 ---
+  # A regression that gutted fence detection trips this instead of passing
+  # vacuously.
   ZF_EXEC="$(printf '%s\n' "$ZF_SUMMARY" | sed -n 's/.*exec_fences=\([0-9]*\).*/\1/p')"
   if [ -n "$ZF_EXEC" ] && [ "$ZF_EXEC" -gt 0 ]; then
     pass "zsh-fence anti-vacuous (i): exec fences scanned = $ZF_EXEC (> 0)"
   else
     fail "zsh-fence anti-vacuous (i): exec fences scanned > 0" "got '$ZF_EXEC' — scanner fence detection regressed?"
   fi
-  # (ii) fences containing check-(b) constructs >= floor.
-  # Floor = 75% of the Phase-1-recorded check-(b) fence census, rounded down.
-  # Recorded census (## Findings — Phase 1, seeding run 2026-06-15, zsh 5.9):
-  #   check_b_fences = 46  →  floor (ii) = floor(46 * 0.75) = 34
-  # Guards do NOT remove constructs, so this count is stable post-plan.
-  ZF_CHECKB_FLOOR=34
+
+  # --- anti-vacuous (ii): fences containing check-(b) constructs >= floor ---
+  # Floor (ii) = 75% of the FINAL scanner-reported check-(b) fence census,
+  # rounded down (re-pinned at Phase 5 per WI 5.1). Guards do NOT remove the
+  # constructs, so the census is stable post-plan.
+  # Final scanner-reported census (Phase-5 sweep, 2026-06-15, zsh 5.9):
+  #   check_b_fences = 65  →  floor (ii) = floor(65 * 0.75) = 48
+  # (Phase-1 seeding-run census was 46 on the UNTOUCHED tree; the FINAL census
+  # is higher because Phases 2–4 added guards/rewrites whose fences are now all
+  # detectable check-(b) fences. See "## Findings — Phase 1" + Phase 5 report.)
+  ZF_CHECKB_FLOOR=48
   ZF_CHECKB="$(printf '%s\n' "$ZF_SUMMARY" | sed -n 's/.*check_b_fences=\([0-9]*\).*/\1/p')"
   if [ -n "$ZF_CHECKB" ] && [ "$ZF_CHECKB" -ge "$ZF_CHECKB_FLOOR" ]; then
     pass "zsh-fence anti-vacuous (ii): check-(b) fences = $ZF_CHECKB (>= floor $ZF_CHECKB_FLOOR)"
@@ -3220,12 +3210,50 @@ else
     fail "zsh-fence anti-vacuous (ii): check-(b) fences >= $ZF_CHECKB_FLOOR" "got '$ZF_CHECKB'"
   fi
 
+  # --- anti-vacuous (iii): guard-satisfied fences >= floor (unscoped only) ---
+  # Floor (iii) = 75% of the Phase-1-recorded guard-expected census. WI 1.3
+  # recorded the floor-(iii) BASE literal in "## Findings — Phase 1" as 67
+  # (distinct scanner-flagged fences in the fixture-absent seeding run whose
+  # flagged constructs are all (b)/(b2)/(c)-class — no (a)-class/Track-R hit).
+  # Phase 5 READS that recorded literal (does NOT re-derive it):
+  #   floor (iii) = floor(67 * 0.75) = 50
+  # The scanner's guard_expected_fences field is that same class measured on
+  # the (now-clean) tree — the fences carry guards but still contain the
+  # (b)/(b2)/(c) constructs, so the count is stable. Satisfied with margin per
+  # the plan (Track-R fences also gain guards; the rare normalize-only fence
+  # drops out).
+  ZF_GUARDEXP_BASE=67          # WI-1.3 floor-(iii) base literal (## Findings — Phase 1)
+  ZF_GUARDEXP_FLOOR=50         # floor(67 * 0.75)
+  ZF_GUARDEXP="$(printf '%s\n' "$ZF_SUMMARY" | sed -n 's/.*guard_expected_fences=\([0-9]*\).*/\1/p')"
+  if [ -n "$ZF_GUARDEXP" ] && [ "$ZF_GUARDEXP" -ge "$ZF_GUARDEXP_FLOOR" ]; then
+    pass "zsh-fence anti-vacuous (iii): guard-expected fences = $ZF_GUARDEXP (>= floor $ZF_GUARDEXP_FLOOR = 75% of recorded base $ZF_GUARDEXP_BASE)"
+  else
+    fail "zsh-fence anti-vacuous (iii): guard-expected fences >= $ZF_GUARDEXP_FLOOR" "got '$ZF_GUARDEXP'"
+  fi
+
+  # --- anti-vacuous (iii): scanner wrapped count EQUALS repo grep ---
+  # No minimum wrap floor — zero wraps is acceptable (Settled decision 1) —
+  # but the scanner's wrapped-fence detection must agree with the repo grep so
+  # a detection regression cannot hide.
+  ZF_WRAPPED="$(printf '%s\n' "$ZF_SUMMARY" | sed -n 's/.*wrapped_fences=\([0-9]*\).*/\1/p')"
+  ZF_WRAP_GREP="$(grep -rl "bash <<'ZSKILLS_BASH_FENCE'" "$REPO_ROOT/skills" --include='*.md' 2>/dev/null \
+                  | xargs -r grep -c "bash <<'ZSKILLS_BASH_FENCE'" 2>/dev/null \
+                  | awk -F: '{s+=$1} END{print s+0}')"
+  if [ "${ZF_WRAPPED:-x}" = "${ZF_WRAP_GREP:-y}" ]; then
+    pass "zsh-fence anti-vacuous (iii): wrapped fences scanner=$ZF_WRAPPED == repo grep=$ZF_WRAP_GREP (no minimum; 0 acceptable)"
+  else
+    fail "zsh-fence anti-vacuous (iii): wrapped scanner count == repo grep" "scanner=$ZF_WRAPPED grep=$ZF_WRAP_GREP"
+  fi
+
   # --- synthetic self-checks (n1–n5), mirroring the WI-5.2 precedent ---
   ZF_FIX_DIR="$(mktemp -d)"
   mkdir -p "$ZF_FIX_DIR/skills/syn"
 
   run_syn_scan() {
-    # run_syn_scan <fixture-arg-or-empty> — scans $ZF_FIX_DIR/skills, prints output.
+    # run_syn_scan <fixture-arg-or-empty> — scans $ZF_FIX_DIR/skills, prints
+    # output. UNSCOPED mode is the default (empty arg); a non-empty arg passes
+    # ZS_PENDING_FILE, which now ONLY exercises the retired-mechanism FAIL path
+    # (n4) — there is no pending scoping anymore.
     local pend="$1"
     if [ -n "$pend" ]; then
       ZS_SCAN_ROOT="$ZF_FIX_DIR/skills" ZS_PENDING_FILE="$pend" "$ZF_PY" "$ZF_SCANNER" 2>&1
@@ -3234,7 +3262,7 @@ else
     fi
   }
 
-  # n1: unguarded BASH_REMATCH fence NOT in the pending list → FAIL (unlisted hit)
+  # n1: unguarded BASH_REMATCH fence → FAIL unconditionally (unscoped, strict)
   cat > "$ZF_FIX_DIR/skills/syn/n1.md" <<'N1'
 # n1
 ```bash
@@ -3282,9 +3310,9 @@ N3
   fi
   rm -f "$ZF_FIX_DIR/skills/syn/n3.md"
 
-  # n4: a stale pending entry → ZSH-FENCE-STALE present AND scanner caller would
-  #     still pass (WARN-not-FAIL). We assert the STALE line appears and there
-  #     is no ZSH-FENCE: (unlisted) line for a clean tree.
+  # n4: the RETIRED pending mechanism — a pending fixture passed to the scanner
+  #     now emits ZSH-FENCE-PENDING-RETIRED (a hard-FAIL signal); the
+  #     pending-list ratchet no longer scopes anything (Phase 5 #1155 close-out).
   cat > "$ZF_FIX_DIR/skills/syn/n4.md" <<'N4'
 # n4 — clean fence, no divergent construct
 ```bash
@@ -3294,11 +3322,10 @@ N4
   N4_PEND="$ZF_FIX_DIR/pending-n4.txt"
   printf 'skills/syn/n4.md\n' > "$N4_PEND"
   N4_OUT="$(run_syn_scan "$N4_PEND")"
-  if printf '%s\n' "$N4_OUT" | grep -q '^ZSH-FENCE-STALE:.*n4.md' \
-     && ! printf '%s\n' "$N4_OUT" | grep -q '^ZSH-FENCE:'; then
-    pass "zsh-fence n4: stale listed entry → ZSH-FENCE-STALE WARN (no FAIL)"
+  if printf '%s\n' "$N4_OUT" | grep -q '^ZSH-FENCE-PENDING-RETIRED:'; then
+    pass "zsh-fence n4: a pending fixture → ZSH-FENCE-PENDING-RETIRED (ratchet retired, hard FAIL signal)"
   else
-    fail "zsh-fence n4: stale entry should WARN not FAIL" "$N4_OUT"
+    fail "zsh-fence n4: pending fixture should emit ZSH-FENCE-PENDING-RETIRED" "$N4_OUT"
   fi
   rm -f "$ZF_FIX_DIR/skills/syn/n4.md" "$N4_PEND"
 

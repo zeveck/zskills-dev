@@ -10,21 +10,21 @@
 #
 # Environment:
 #   ZS_SCAN_ROOT     — directory to scan recursively for *.md (required)
-#   ZS_PENDING_FILE  — path to the pending-list fixture (optional; absent →
-#                      unconditional enforcement)
+#   ZS_PENDING_FILE  — path to the (now-RETIRED) pending-list fixture. The
+#                      pending/ratchet mechanism was retired in the #1155
+#                      close-out (ZSH_FENCE_WRAP_PLAN Phase 5): enforcement is
+#                      unconditional. If this var points at an existing file,
+#                      the scanner emits ZSH-FENCE-PENDING-RETIRED (a hard
+#                      FAIL signal the bash caller surfaces) instead of
+#                      scoping anything — the fixture must not exist.
 #
 # Output lines (stdout):
 #   ZSH-FENCE: <file>:<open_line> — <check>: <construct> — <remedy>
-#       a violation in an UNLISTED file (FAIL) — or any violation when no
-#       pending fixture is given.
-#   ZSH-FENCE-PENDING: <n> violations in <file>
-#       per-file count for a LISTED file with >0 violations (report-only WARN).
-#   ZSH-FENCE-STALE: <file> — listed but clean/missing; drop the entry (the
-#       list must be EMPTY by Phase 5)
-#       a listed file with ZERO violations or that no longer exists (WARN).
-#   ZSH-FENCE-FIXTURE-MALFORMED: <reason>
-#       the pending fixture is malformed (duplicate / non-skills/ / unsorted).
-#   ZSH-FENCE-SUMMARY: exec_fences=<N> check_b_fences=<N> guard_expected_fences=<N> wrapped_fences=<N> unlisted_violations=<N> fixture_malformed=<0|1>
+#       any violation (unconditional — every exec fence in every file).
+#   ZSH-FENCE-PENDING-RETIRED: <file>
+#       a pending-list fixture was passed but the pending mechanism was
+#       retired in the #1155 close-out — full compliance is mandatory.
+#   ZSH-FENCE-SUMMARY: exec_fences=<N> check_b_fences=<N> guard_expected_fences=<N> wrapped_fences=<N> violations=<N>
 #
 # Exit code: always 0 (the bash caller interprets the summary + line classes;
 # this keeps the scanner a pure reporter, matching the WI-5.2 precedent).
@@ -79,37 +79,11 @@ def repo_rel(path):
     return os.path.relpath(os.path.abspath(path), scan_parent)
 
 
-# ── pending-list load + format validation ────────────────────────────────
-pending = None          # None == fixture absent (unconditional mode)
-fixture_malformed = 0
-malformed_lines = []
-if pending_file and os.path.isfile(pending_file):
-    with open(pending_file, encoding="utf-8") as fh:
-        raw = fh.read()
-    lines = raw.split("\n")
-    if lines and lines[-1] == "":
-        lines = lines[:-1]          # tolerate the single LF terminator
-    seen = set()
-    pending = []
-    for ln in lines:
-        if ln.strip() == "":
-            malformed_lines.append("blank line")
-            continue
-        if ln.lstrip().startswith("#"):
-            malformed_lines.append("comment line: %r" % ln)
-            continue
-        if not ln.startswith("skills/"):
-            malformed_lines.append("non-skills/-prefixed line: %r" % ln)
-        if ln in seen:
-            malformed_lines.append("duplicate line: %r" % ln)
-        seen.add(ln)
-        pending.append(ln)
-    if pending != sorted(pending):   # default str sort == LC_ALL=C codepoint
-        malformed_lines.append("not LC_ALL=C sorted")
-    if malformed_lines:
-        fixture_malformed = 1
-
-pending_set = set(pending) if pending is not None else set()
+# ── retired pending-list mechanism ────────────────────────────────────────
+# The pending-list ratchet was retired in the #1155 close-out
+# (ZSH_FENCE_WRAP_PLAN Phase 5): enforcement is now unconditional. A pending
+# fixture must NOT exist. If one is passed and present, that is a hard FAIL.
+pending_retired = bool(pending_file and os.path.isfile(pending_file))
 
 
 def scan_file(path):
@@ -310,33 +284,22 @@ for f in sorted(files):
     if viols:
         per_file_violations[repo_rel(f)] = viols
 
-# ── emit fixture-malformed lines ──────────────────────────────────────────
-for r in malformed_lines:
-    print("ZSH-FENCE-FIXTURE-MALFORMED: %s" % r)
+# ── retired pending fixture is a hard FAIL signal ─────────────────────────
+if pending_retired:
+    print("ZSH-FENCE-PENDING-RETIRED: %s — the pending-list ratchet was "
+          "retired in the #1155 close-out (full compliance is mandatory); "
+          "delete this fixture" % pending_file)
 
-# ── classify per-file violations against the pending list ─────────────────
-unlisted_violations = 0
+# ── emit ALL violations unconditionally (no pending scoping) ──────────────
+violations_total = 0
 for relpath in sorted(per_file_violations):
-    viols = per_file_violations[relpath]
-    if pending is not None and relpath in pending_set:
-        print("ZSH-FENCE-PENDING: %d violations in %s" % (len(viols), relpath))
-    else:
-        for v in viols:
-            print(v)
-        unlisted_violations += len(viols)
-
-# ── stale-entry detection (listed but clean/missing) ──────────────────────
-if pending is not None:
-    for entry in pending:
-        abs_entry = os.path.join(scan_parent, entry)
-        if (not os.path.isfile(abs_entry)) or (entry not in per_file_violations):
-            print("ZSH-FENCE-STALE: %s — listed but clean/missing; drop the "
-                  "entry (the list must be EMPTY by Phase 5)" % entry)
+    for v in per_file_violations[relpath]:
+        print(v)
+        violations_total += 1
 
 print("ZSH-FENCE-SUMMARY: exec_fences=%d check_b_fences=%d "
-      "guard_expected_fences=%d wrapped_fences=%d unlisted_violations=%d "
-      "fixture_malformed=%d"
+      "guard_expected_fences=%d wrapped_fences=%d violations=%d"
       % (agg["exec_fences"], agg["check_b_fences"],
          agg["guard_expected_fences"], agg["wrapped_fences"],
-         unlisted_violations, fixture_malformed))
+         violations_total))
 sys.exit(0)

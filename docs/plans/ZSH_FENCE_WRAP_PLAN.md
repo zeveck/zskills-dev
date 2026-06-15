@@ -1208,7 +1208,7 @@ closable.
 
 ### Work Items
 
-- [ ] **5.1 — Delete `tests/fixtures/zsh-fence-pending.txt`** and the
+- [x] **5.1 — Delete `tests/fixtures/zsh-fence-pending.txt`** and the
   scanner's pending-branch becomes dead code — REMOVE the branch (don't
   leave an untaken path); the only fixture-related logic kept is: fixture
   present → FAIL ("pending mechanism was retired in #1155 close-out —
@@ -1221,7 +1221,7 @@ closable.
   landed passed the classification protocol (phase-report evidence), and
   zero wraps is an acceptable outcome.** Re-pin floor (ii) at 75% of the
   final scanner-reported check-(b) census.
-- [ ] **5.2 — Docs:** verified 2026-06-12 that `CLAUDE_TEMPLATE.md`,
+- [x] **5.2 — Docs:** verified 2026-06-12 that `CLAUDE_TEMPLATE.md`,
   `.claude/rules/zskills/managed.md`, and `references/canonical-config-prelude.md`
   contain zero mentions of the guard/wrap idiom today — re-verify by grep
   (`grep -n 'KSH_ARRAYS\|ZSKILLS_BASH_FENCE\|allow-zsh-unwrapped' CLAUDE_TEMPLATE.md`);
@@ -1231,12 +1231,12 @@ closable.
   (record as verified-absent). If a mention has appeared since (concurrent
   sprints), update it to the v2 string in the same style and re-render via
   the managed-rules flow only if CLAUDE_TEMPLATE.md itself changed.
-- [ ] **5.3 — #1155 close-out comment** (posted at landing, referenced from
+- [x] **5.3 — #1155 close-out comment** (posted at landing, referenced from
   the PR): three-track disposition table (counts per track from the final
   scanner run), the declare-A branch + probe evidence pointer, the
   guard-v2 rationale, and the tripwire's enforcement summary. The PR body
   carries `Closes #1155` (single issue — one keyword).
-- [ ] **5.4 — Final sweep:** full suite; verify end-state items 1–5 from
+- [x] **5.4 — Final sweep:** full suite; verify end-state items 1–5 from
   the Overview verbatim and quote each command + result in the phase
   report.
 
@@ -1328,6 +1328,56 @@ synthetic self-check.
 (the 83 unlisted_violations is the total violation COUNT across the 28 files
 when no fixture scopes them; with the seeded fixture present,
 unlisted_violations drops to 0 and all 28 files report as PENDING).
+
+---
+
+## Findings — Phase 5 (close-out)
+
+> (Heading deliberately does NOT match `^## Phase \d` — keeps /run-plan's
+> phase extraction from treating this section as a phase.)
+
+**Final scanner sweep (fixture absent, unscoped — 2026-06-15, zsh 5.9):**
+`ZSH-FENCE-SUMMARY: exec_fences=523 check_b_fences=65 guard_expected_fences=65 wrapped_fences=0 violations=0`
+The whole repo passes STRICT, repo-wide: zero divergent-construct violations
+after Phases 2–4. The summary schema dropped the now-meaningless
+`unlisted_violations`/`fixture_malformed` fields and renamed the total to
+`violations` (the pending mechanism is retired).
+
+**Floor re-pin (per WI 5.1):**
+- Floor (ii) re-pinned at 75% of the FINAL check-(b) census:
+  `floor(65 × 0.75) = 48` (literal `ZF_CHECKB_FLOOR=48`). The Phase-1 seeding
+  census was 46 on the UNTOUCHED tree; the final census is 65 because
+  Phases 2–4 added guards/Track-R rewrites — those fences still CONTAIN the
+  check-(b) constructs (guards do not remove constructs), so they all count.
+- Floor (iii) activated, reading the Phase-1-recorded floor-(iii) base
+  literal **67** (NOT re-derived, per the plan): `floor(67 × 0.75) = 50`
+  (literals `ZF_GUARDEXP_BASE=67`, `ZF_GUARDEXP_FLOOR=50`). Scanner reports
+  `guard_expected_fences=65 ≥ 50` — satisfied with margin.
+- Wrapped-fence count: scanner `wrapped_fences=0` EQUALS the repo grep for
+  `bash <<'ZSKILLS_BASH_FENCE'` (0). No minimum wrap floor; zero is the
+  accepted outcome (Settled decision 1) — every Track-W candidate demoted to
+  Track G.
+
+**Tripwire mode flip:** the scanner (`tests/lib/zsh-fence-scan.py`) lost its
+pending-branch (removed, not left as an untaken path); a pending fixture, if
+one reappears, now emits `ZSH-FENCE-PENDING-RETIRED` (a hard-FAIL signal). The
+conformance block (`tests/test-skill-conformance.sh`) FAILs on ANY violation
+repo-wide, FAILs if the fixture file exists, and self-checks n1/n2/n3/n5 run
+unscoped while n4 now pins the retired-mechanism FAIL path.
+
+**Docs (WI 5.2):** re-verified `grep -n 'KSH_ARRAYS\|ZSKILLS_BASH_FENCE\|allow-zsh-unwrapped'`
+finds ZERO hits in `CLAUDE_TEMPLATE.md` and `.claude/rules/zskills/managed.md`
+— the Phase-1 marker spec + "Writing portable fences" authoring note in
+`references/canonical-config-prelude.md` are the complete doc surface; no
+CLAUDE_TEMPLATE/managed.md edit (verified-absent), so no managed re-render.
+
+**#1155 close-out (WI 5.3):** three-track disposition — Track G (guard v2)
+the workhorse; Track R rewrites (mapfile, read -a, ${var,,}, ${!var},
+compgen) at all sites; Branch-B subscript normalization for the assoc-array
+caller-loop family; zero Track-W wraps (all candidates demoted to G);
+allow-zsh-unwrapped markers for the display-only/prohibition fences. #1169's
+shipped setopt guards stay as-shipped, upgraded in place to the v2 canonical
+string (adds `SH_WORD_SPLIT`). The PR body carries `Closes #1155`.
 
 ---
 
