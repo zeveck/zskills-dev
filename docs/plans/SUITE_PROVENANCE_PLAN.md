@@ -615,7 +615,7 @@ that would trip the deny-list.
 | 1 — STAMP (run-all.sh header) + VALIDATE helper + triplet unit suite | ✅ Done | 4fa87b9 | Suite 7776/7776; unit suite 13/13; fingerprint flip verified |
 | 2 — VERIFIER PROTOCOL: verifier.md twin + 4 dispatch templates + version bumps + mirrors | ✅ Done | 3e1e9fb | Suite 7776/7776; parity/mirror/conformance/version/managed all green |
 | 3 — ORCHESTRATOR baseline reuse + DOCS-ONLY classifier refinement | ✅ Done | ec7c841 | Verified PASS; classifier excludes skills/**/*.md; gates green |
-| 4 — POLICY PROSE: CLAUDE_TEMPLATE Tests subsection + managed.md re-render + conformance pins | ⬚ | | |
+| 4 — POLICY PROSE: CLAUDE_TEMPLATE Tests subsection + managed.md re-render + conformance pins | ✅ Done | 0701e97 | Suite 7788/7788; 12 conformance pins; managed re-render lockstep green |
 
 ---
 
