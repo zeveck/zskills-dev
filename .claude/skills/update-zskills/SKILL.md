@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.15+9c2175"
+  version: "2026.06.15+7ef5d3"
 ---
 
 # Update Z Skills Infrastructure
@@ -381,6 +381,7 @@ Parser pseudocode (classify each token; presets and mode
 are orthogonal and can coexist):
 
 ```
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 PRESET_ARG=""
 MODE=""          # "install" or "" (default = smart detection)
 for tok in $ARGUMENTS; do
@@ -445,6 +446,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    regex.
 
    ```bash
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
    # CASCADE v2 (ENFORCEMENT_V2 Phase 4): execution.landing and
    # execution.branch_prefix are plain-cascade workflow keys — source the
@@ -877,6 +879,7 @@ clone's latest tag (authoritative), plus how many skills have a different
 `metadata.version` upstream. Compute it like this:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1593,6 +1596,7 @@ local clone has not yet fetched:
 # clone is $ZSKILLS_PATH when Step 0 resolved a git clone; if it is unset,
 # not a git repo, or the fetch fails (no network / no remote), SKIP the
 # nudge entirely — NEVER fail or abort the config write because of it.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -n "${ZSKILLS_PATH:-}" ] && [ -d "$ZSKILLS_PATH/.git" ]; then
   git -C "$ZSKILLS_PATH" fetch --tags --quiet || true
 fi

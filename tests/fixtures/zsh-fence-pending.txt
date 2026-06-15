@@ -1,7 +1,0 @@
-skills/draft-plan/SKILL.md
-skills/refine-plan/SKILL.md
-skills/research-and-go/SKILL.md
-skills/research-and-plan/SKILL.md
-skills/update-zskills/SKILL.md
-skills/verify-changes/SKILL.md
-skills/zskills-dashboard/SKILL.md

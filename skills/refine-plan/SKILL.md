@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.06.04+478e45"
+  version: "2026.06.15+60b6fe"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [<guidance>] — Adversarial Plan Refiner
@@ -60,6 +60,7 @@ and export `ZSKILLS_PATHS_ROOT` so downstream path-resolution anchors on
 the worktree, not main:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
 HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
@@ -162,6 +163,7 @@ parse the rest of the skill reads (`ROUNDS_MAX`, `AUTO_FLAG`, `GUIDANCE`).
 # Outputs: PLAN_FILE, ROUNDS_MAX (default 2), AUTO_FLAG (0/1), GUIDANCE.
 
 # auto — whitespace-anchored, case-insensitive (consumed; not guidance).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
@@ -748,6 +750,7 @@ plan on main. Without `auto`, the worktree commit stands and the caller
 lands manually.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -782,11 +785,14 @@ BODY
   # Allow-list parse the /land-pr result (canonical caller-loop pattern —
   # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
   if [ -f "$RESULT_FILE" ]; then
+    # zsh portability (#1155): assoc subscripts must be UNQUOTED — zsh uses
+    # the subscript text verbatim, so LP["$KEY"] and ${LP[STATUS]} address
+    # different keys. Keep assignment and lookup styles consistent-unquoted.
     declare -A LP
     while IFS='=' read -r KEY VALUE; do
       case "$KEY" in
         STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
-          LP["$KEY"]="$VALUE" ;;
+          LP[$KEY]="$VALUE" ;;
         "") ;;
         *) ;;  # unknown keys ignored (forward-compat)
       esac

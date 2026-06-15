@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.06.15+b3eca3"
+  version: "2026.06.15+6af336"
 ---
 
 # /verify-changes [<scope> | last [N]] — Verify, Test & Fix Changes
@@ -108,6 +108,7 @@ scripts, and do NOT default to `npm run test:all`, `scripts/test-all.sh`,
 or any template file. Three-case decision tree:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)
 CONFIG_FILE="$MAIN_ROOT/.claude/zskills-config.json"
 
@@ -193,6 +194,7 @@ lockdown marker created by `/research-and-go` Step 0.
 ### Parsing $ARGUMENTS
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 SCOPE=""
 TRACKING_ID=""
 for tok in $ARGUMENTS; do

@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.10+344b88"
+  version: "2026.06.15+e152b7"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -49,6 +49,7 @@ and export `ZSKILLS_PATHS_ROOT` so downstream path-resolution anchors on
 the worktree, not main:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
 HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
@@ -165,6 +166,7 @@ fi
   the description
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
@@ -209,6 +211,7 @@ order). A repeated SAME token (`brainstorm brainstorm X`) is a harmless
 no-op:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 STEERING_MODE=""   # "" | brainstorm | quiz — single mutually-exclusive selector
 # set_steering MODE: set STEERING_MODE the first time; fail loud (exit 2) on
 # a conflicting second mode; no-op on a repeat of the same mode. The illegal
@@ -928,6 +931,7 @@ After each round of review + refinement:
    lands manually.
 
    ```bash
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
      if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
        export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -962,11 +966,14 @@ BODY
      # Allow-list parse the /land-pr result (canonical caller-loop pattern —
      # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
      if [ -f "$RESULT_FILE" ]; then
+       # zsh portability (#1155): assoc subscripts must be UNQUOTED — zsh uses
+       # the subscript text verbatim, so LP["$KEY"] and ${LP[STATUS]} address
+       # different keys. Keep assignment and lookup styles consistent-unquoted.
        declare -A LP
        while IFS='=' read -r KEY VALUE; do
          case "$KEY" in
            STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
-             LP["$KEY"]="$VALUE" ;;
+             LP[$KEY]="$VALUE" ;;
            "") ;;
            *) ;;  # unknown keys ignored (forward-compat)
          esac

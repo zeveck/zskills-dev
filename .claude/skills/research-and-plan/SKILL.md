@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.06.10+5f506d"
+  version: "2026.06.15+2d335e"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -140,6 +140,7 @@ For each sub-problem:
      into every `/draft-plan` dispatch so the child skill's `AUTO_FLAG`
      detection fires. Resolve once near the argument-detection block:
      ```bash
+     if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
      AUTO_ARG=""
      if [[ "$ARGUMENTS" =~ (^|[[:space:]])auto($|[[:space:]]) ]]; then
        AUTO_ARG=" auto"
@@ -352,6 +353,7 @@ meta-plan filename gives a stable, per-run scope):
 # parent skill (`/research-and-go` exports it; standalone invocations
 # parse it from the `output FILE` positional argument or fall back to
 # the canonical default).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -z "${META_PLAN_PATH:-}" ]; then
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
