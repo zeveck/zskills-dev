@@ -337,6 +337,7 @@ needed here; the adaptive machinery (`SKILL.md:421-566`) is correct by design.
 ```bash
 # === BEGIN CANONICAL /land-pr CALLER LOOP ===
 # Per skills/land-pr/references/caller-loop-pattern.md.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 
 ATTEMPT=0
 MAX="${CI_MAX_ATTEMPTS:-2}"
@@ -422,13 +423,16 @@ while :; do
   # SAFE allow-list parsing (per WI 1.7). Never `source`. Reading line by
   # line and dispatching on a fixed key set guarantees that even
   # maliciously-crafted values cannot reach shell evaluation.
+  # zsh portability (#1155): assoc subscripts must be UNQUOTED — zsh uses the
+  # subscript text verbatim, so LP["$KEY"] and ${LP[STATUS]} address different
+  # keys. Keep assignment and lookup styles consistent-unquoted.
   declare -A LP
   while IFS='=' read -r KEY VALUE; do
     case "$KEY" in
       STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
       MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
       CONFLICT_FILES_LIST|CALL_ERROR_FILE|REBASE_STDERR_FILE)
-        LP["$KEY"]="$VALUE" ;;
+        LP[$KEY]="$VALUE" ;;
       "") ;;  # blank line — ignore
       *) printf 'WARN: /land-pr result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
     esac

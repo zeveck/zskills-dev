@@ -17,6 +17,7 @@ If `$ARGUMENTS` contains `status` (case-insensitive):
    # recipe (first `.md` token in $ARGUMENTS is the plan-file path).
    # Status-mode exits before Phase 1 preflight, so PLAN_FILE must be
    # resolved here rather than inheriting from Phase 1's later resolver.
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    if [ -z "${PLAN_FILE:-}" ]; then
      for tok in $ARGUMENTS; do
        case "$tok" in *.md) PLAN_FILE="$tok"; break ;; esac

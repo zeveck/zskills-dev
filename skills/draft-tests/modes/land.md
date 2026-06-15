@@ -166,6 +166,7 @@ lands the test-spec-augmented plan on main. Without `auto`, the
 worktree commit stands and the caller lands manually.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
     export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
@@ -201,11 +202,14 @@ BODY
   # Allow-list parse the /land-pr result (canonical caller-loop pattern —
   # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
   if [ -f "$RESULT_FILE" ]; then
+    # zsh portability (#1155): assoc subscripts must be UNQUOTED — zsh uses the
+    # subscript text verbatim, so LP["$KEY"] and ${LP[STATUS]} address different
+    # keys. Keep assignment and lookup styles consistent-unquoted.
     declare -A LP
     while IFS='=' read -r KEY VALUE; do
       case "$KEY" in
         STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
-          LP["$KEY"]="$VALUE" ;;
+          LP[$KEY]="$VALUE" ;;
         "") ;;
         *) ;;  # unknown keys ignored (forward-compat)
       esac

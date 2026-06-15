@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.06.04+d110af"
+  version: "2026.06.15+bcc06e"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [<guidance>] — Adversarial Test-Spec Drafter
@@ -63,6 +63,7 @@ and export `ZSKILLS_PATHS_ROOT` so downstream path-resolution anchors on
 the worktree, not main:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
 HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
@@ -173,6 +174,7 @@ fi
   `Usage: /draft-tests <plan-file> [rounds N] [auto] [guidance...]`
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
