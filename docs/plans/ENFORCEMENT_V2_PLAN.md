@@ -1,7 +1,7 @@
 ---
 title: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
 created: 2026-06-12
-status: "active"
+status: "complete"
 ---
 
 # Plan: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
