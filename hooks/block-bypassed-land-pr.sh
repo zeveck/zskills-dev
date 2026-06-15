@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # block-bypassed-land-pr.sh — PreToolUse Bash hook.
 #
 # Unconditionally denies direct `gh pr create` and `gh pr merge --auto`
@@ -37,11 +37,13 @@
 # Differs from block-stale-skill-version.sh in one key way: there,
 # fail-open on missing script means ALLOW (consumer may not have
 # /update-zskills'd yet — a stale stage-check is not worth bricking
-# every commit). Here, the deny decision is UNCONDITIONAL — only the
-# message-enrichment fails-open to the static fallback. The hook still
-# denies even if scripts/land-pr-bypass-message.sh is absent or
-# crashing; the only thing the script controls is which STOP wording
-# the agent sees.
+# every commit). Here, the deny default is UNCONDITIONAL — an explicit
+# project toggle (hooks.pr_discipline.direct_gh_pr) is the only override
+# (this is a keep-hard check; the predicate never demotes it — Settled
+# decision 6). Only the message-enrichment fails-open to the static
+# fallback. The hook still denies even if scripts/land-pr-bypass-message.sh
+# is absent or crashing; the only thing the script controls is which STOP
+# wording the agent sees.
 #
 # Carve-out: /land-pr's own `gh pr create` lives inside
 # pr-push-and-create.sh (a script /land-pr invokes via
@@ -56,6 +58,415 @@
 # prevent double-fire when both install lanes are active. Must be the first
 # executable line; the shim controls its own exit/return.
 [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
+
+# ── Worktree-root resolvers (inlined from
+# hooks/_lib/resolve-effective-worktree-root.sh, #401). Drift gate:
+# tests/test-hook-helper-drift.sh. Used to resolve ENF_LOCAL (the
+# tracked-marker read root) for the enforcement predicate below.
+extract_cd_target() {
+  local cmd
+  # JSON wire format escapes embedded newlines as the two-character
+  # sequence `\n`. The regex below uses [[:space:]] as a stop-class —
+  # without decoding `\n` to a real newline, multi-line bash commands
+  # like `cd /tmp/wt\ngit commit` would capture `/tmp/wt\ngit` (literal
+  # backslash-n) into the path and fail the [ -d ] check, causing
+  # is_on_main to fall back to the ambient cwd. Decode `\n` here in the
+  # same spirit as the existing `\"` decoding. `\n` is the only escape
+  # we currently see in practice from Claude Code's wire format.
+  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
+  # Wrapper unwrap (#427): if the command's first non-env-prefix token is
+  # a shell wrapper (bash/sh/dash/ash/ksh/zsh -c '<inner>') or `eval
+  # '<inner>'`, peel one layer and re-inspect the inner string. Mirrors
+  # is_git_subcommand_in_wrappers's recursion: PR #417 made the classify
+  # check wrapper-aware but left this resolver one-level, so wrapped
+  # commits like `bash -c 'cd /tmp/wt && git commit'` fired the hook on
+  # the OUTER command (starts with `bash`, not `cd`) → empty extraction
+  # → fallback to $CLAUDE_PROJECT_DIR (main repo) → stage-check and
+  # tracking-marker enforcement silently passed against MAIN's empty
+  # index. Bounded depth (3) matches the wrapper-helper convention.
+  local depth=3
+  while [ "$depth" -gt 0 ]; do
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$cmd"
+    local i=0 n=${#TOKENS[@]}
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    local first="${TOKENS[$i]:-}"
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+    local inner=""
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+        fi
+        ;;
+      eval)
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        ;;
+    esac
+    if [ -n "$inner" ]; then
+      cmd="$inner"
+      ((depth--))
+      continue
+    fi
+    break
+  done
+  # Segment-walk: split $cmd on statement separators (`;`, `&&`, `||`, `|`,
+  # newline) and look for the first `cd <target>` whose preamble in the
+  # segment is purely env-mutating / inert shell statements. Issue #924:
+  # the previous `^cd[[:space:]]+` regex against the whole command missed
+  # `set -e; cd /tmp/wt && …`, `export X=Y; cd …`, `. resolver.sh && cd …`,
+  # `VAR=val cd …`, all common in orchestrator-side worktree bookkeeping.
+  # Segment separators we split on are exactly those that terminate the
+  # previous statement in bash; they cannot appear inside `cd`'s target
+  # token (it's stop-classed on the same chars).
+  local SEG_IFS=$'\n'
+  # Replace each `&&`, `||`, `|`, `;` with a newline so we can read -a.
+  local segs="${cmd//&&/$'\n'}"
+  segs="${segs//||/$'\n'}"
+  segs="${segs//|/$'\n'}"
+  segs="${segs//;/$'\n'}"
+  local IFS_OLD="$IFS"
+  IFS="$SEG_IFS"
+  local -a SEGMENTS
+  # shellcheck disable=SC2206
+  SEGMENTS=( $segs )
+  IFS="$IFS_OLD"
+  local seg
+  for seg in "${SEGMENTS[@]}"; do
+    # Trim leading/trailing whitespace.
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -z "$seg" ] && continue
+    local -a STOKENS
+    # shellcheck disable=SC2206
+    read -ra STOKENS <<< "$seg"
+    local si=0 sn=${#STOKENS[@]}
+    # Skip env-var assignment prefixes (KEY=val ...).
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    # Skip `env` wrapper (and its KEY=val args).
+    [[ $si -lt $sn && "${STOKENS[$si]}" == "env" ]] && ((si++))
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    local stok="${STOKENS[$si]:-}"
+    case "$stok" in
+      */*) stok="${stok##*/}" ;;
+    esac
+    case "$stok" in
+      set|export|unset|source|.|:|true|false|alias|unalias|shopt|declare|local|readonly|typeset)
+        # Inert / env-mutating preamble statement — skip this segment.
+        continue
+        ;;
+      cd)
+        local stgt="${STOKENS[$((si+1))]:-}"
+        [ -z "$stgt" ] && continue
+        # Strip surrounding quotes if present.
+        stgt="${stgt%\"}"; stgt="${stgt#\"}"
+        stgt="${stgt%\'}"; stgt="${stgt#\'}"
+        if [ -d "$stgt" ]; then
+          echo "$stgt"
+          return 0
+        fi
+        # cd target didn't resolve — stop walking; downstream segments
+        # operate on a different cwd we can't reason about.
+        return 0
+        ;;
+      *)
+        # First "real" statement is not a cd — no preamble-cd in this
+        # command. Stop walking; per design, only a leading preamble of
+        # env-mutating statements is allowed before the cd.
+        return 0
+        ;;
+    esac
+  done
+}
+resolve_effective_worktree_root() {
+  local env_override="$1"
+  local cd_target="$2"
+  local fallback="$3"
+  if [ -n "$env_override" ]; then
+    printf '%s\n' "$env_override"
+  elif [ -n "$cd_target" ]; then
+    printf '%s\n' "$cd_target"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+# ── Enforcement library (ENFORCEMENT_V2_PLAN #1159) ───────────────────────
+# Inlined VERBATIM from hooks/_lib/zskills-enforcement.sh (source-of-truth).
+# The .claude/hooks/ legacy mirrors and plugin-served copies cannot reach
+# _lib/ at runtime, so the bodies are pasted in; tests/test-hook-helper-drift.sh
+# enforces byte-equality. Maintain in _lib only.
+zskills_enforcement_config_root() {
+  if [ -n "${ZSKILLS_ENF_CONFIG_ROOT:-}" ]; then
+    printf '%s\n' "${ZSKILLS_ENF_CONFIG_ROOT%/}"
+    return 0
+  fi
+  local gcd
+  gcd=$(git rev-parse --git-common-dir 2>/dev/null) || gcd=""
+  if [ -n "$gcd" ]; then
+    # git-common-dir is the MAIN .git dir even from a linked worktree; its
+    # parent is the main checkout root. May be relative — resolve it.
+    local parent
+    parent=$(cd "$gcd/.." 2>/dev/null && pwd) || parent=""
+    if [ -n "$parent" ]; then
+      printf '%s\n' "${parent%/}"
+      return 0
+    fi
+  fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s\n' "${CLAUDE_PROJECT_DIR%/}"
+    return 0
+  fi
+  printf '%s\n' "$(pwd)"
+}
+zskills_enforcement_predicate() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _json="$1" _main="${2%/}" _local="${3%/}"
+  local PERM=""
+  # SPOOF-PROOF BY CONSTRUCTION: in valid JSON, any quote inside a string
+  # value (tool_input.command, new_string, …) is escaped as \" — so a
+  # counterfeit "permission_mode" literal embedded in command content can
+  # only appear with a backslash before its opening quote, which (^|[^\\])
+  # rejects. Only the real top-level key (whose quote follows `{`, `,`, or
+  # whitespace) can match, regardless of field order. The value class
+  # [a-zA-Z]+ cannot span an escape. No tool_input stripping or field-order
+  # assumption needed.
+  if [[ "$_json" =~ (^|[^\\])\"permission_mode\"[[:space:]]*:[[:space:]]*\"([a-zA-Z]+)\" ]]; then
+    PERM="${BASH_REMATCH[2]}"
+  fi
+  # enforce-autonomous iff bypassPermissions OR not a recognized attended
+  # mode (absent/unrecognized — fail-safe TOWARD enforcement).
+  case "$PERM" in
+    default|acceptEdits|plan)
+      : # attended modes — fall through to the pipeline-live check
+      ;;
+    *)
+      printf '%s\n' "enforce-autonomous"
+      return 0
+      ;;
+  esac
+  # enforce-pipeline iff a zskills pipeline is LIVE. The LOCAL-root tracked
+  # arm is load-bearing: worktree pipeline agents inherit "default" mode, so
+  # only the worktree's own .zskills/tracked keeps them enforced (subagent
+  # permission_mode VALUE is unpinned by Probe B — it verified PRESENCE only).
+  if [ -f "$_local/.zskills/tracked" ] || [ -f "$_local/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Main-root OR-arm (CLAUDE.md Tracking Enforcement prose — orchestrator
+  # writes both roots; kept even though no skill implements the main-root
+  # write today). Legacy dual-read; drop the .zskills-tracked arm when #1146
+  # lands.
+  if [ -f "$_main/.zskills/tracked" ] || [ -f "$_main/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Inflight sentinel younger than the TTL (120 min = 7200 s, the
+  # check-inflight-batch.sh default). Supplementary signal — ages by file
+  # MTIME (check-inflight-batch ages by the started_at JSON field; congruent
+  # because sentinels are only ever written/rewritten whole). Only the
+  # cron-shaped workers write sentinels; runs >2h age out mid-run, falling
+  # back to the tracked-marker arm.
+  if [ -d "$_main/.zskills/inflight" ]; then
+    if [ -n "$(find "$_main/.zskills/inflight" -name '*.json' -mmin -120 2>/dev/null | head -1)" ]; then
+      printf '%s\n' "enforce-pipeline"; return 0
+    fi
+  fi
+  # NOTE: bare [ -d "$_main/.zskills/tracking" ] is deliberately NOT tested —
+  # finished pipelines leave subdirs there indefinitely (20+ stale dirs in
+  # the dogfood repo), which would make enforce permanent in every repo that
+  # ever ran a pipeline.
+  printf '%s\n' "watched"
+}
+zskills_enforcement_load_toggles() {
+  [ "${_ZSK_ENF_TOGGLES_LOADED:-0}" = "1" ] && return 0
+  _ZSK_ENF_TOGGLES=""
+  _ZSK_ENF_TOGGLES_LOADED=1
+  local _cfg="$1"
+  [ -n "$_cfg" ] && [ -f "$_cfg" ] || return 0
+  # Resolve a working Python 3 interpreter (probe-run; honors ZSKILLS_PYTHON).
+  local _py="" _cand
+  for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_cand" ] || continue
+    command -v "$_cand" >/dev/null 2>&1 || continue
+    if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      _py=$(command -v "$_cand"); break
+    fi
+  done
+  [ -n "$_py" ] || return 0   # Python unavailable → shipped defaults
+  local _dump
+  _dump=$("$_py" - "$_cfg" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(0)   # parse error → empty dump → shipped defaults
+hooks = data.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+out = []
+for group, body in hooks.items():
+    if not isinstance(body, dict):
+        continue
+    for key, val in body.items():
+        if key == "enabled":
+            if isinstance(val, bool):
+                out.append("%s.enabled=%s" % (group, "true" if val else "false"))
+        elif isinstance(val, str):
+            out.append("%s.%s=%s" % (group, key, val))
+print("\n".join(out))
+PYEOF
+)
+  # A non-zero exit or empty dump leaves _ZSK_ENF_TOGGLES="" (defaults).
+  [ -n "$_dump" ] && _ZSK_ENF_TOGGLES="$_dump"
+  return 0
+}
+zskills_enforcement_mode() {
+  local _group="$1" _check="$2" _class="$3" _pred="$4"
+  local _explicit="" _group_enabled="" _line
+  # Read the cached toggles. Linear scan — the list is tiny (<=37 lines).
+  if [ -n "${_ZSK_ENF_TOGGLES:-}" ]; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        "$_group.$_check="*) _explicit="${_line#*=}" ;;
+        "$_group.enabled="*) _group_enabled="${_line#*=}" ;;
+      esac
+    done <<EOF
+$_ZSK_ENF_TOGGLES
+EOF
+  fi
+
+  # Group ceiling: enabled:false turns the whole group off — EXCEPT
+  # config_hooks_tamper, which is ceiling-EXEMPT (Settled decision 13
+  # self-protection: a group ceiling write must not take the tamper gate down
+  # with it; only its own explicit per-check value can turn it off).
+  if [ "$_group_enabled" = "false" ] && [ "$_check" != "config_hooks_tamper" ]; then
+    _ZSK_ENF_SOURCE="group disabled in project config"
+    printf '%s\n' "off"; return 0
+  fi
+
+  # Explicit per-check value always wins (Settled decision 6) — for hard AND
+  # demotable checks alike. Only block|warn|off are honored values.
+  case "$_explicit" in
+    block|warn|off)
+      _ZSK_ENF_SOURCE="project config: $_explicit"
+      printf '%s\n' "$_explicit"; return 0
+      ;;
+  esac
+
+  # Unset → class-derived default.
+  if [ "$_class" = "hard" ]; then
+    # A hard check is never silent, even watched.
+    case "$_pred" in
+      enforce-autonomous) _ZSK_ENF_SOURCE="autonomous default" ;;
+      enforce-pipeline)   _ZSK_ENF_SOURCE="pipeline-active default" ;;
+      *)                  _ZSK_ENF_SOURCE="hard default" ;;
+    esac
+    printf '%s\n' "block"; return 0
+  fi
+
+  # Demotable, unset.
+  case "$_pred" in
+    enforce-autonomous)
+      _ZSK_ENF_SOURCE="autonomous default"
+      printf '%s\n' "block"; return 0
+      ;;
+    enforce-pipeline)
+      _ZSK_ENF_SOURCE="pipeline-active default"
+      printf '%s\n' "block"; return 0
+      ;;
+    *)
+      # watched + demotable + unset.
+      if [ "$_check" = "config_hooks_tamper" ]; then
+        # NAMED EXCEPTION (DA4): the tamper gate's effect is durable +
+        # cross-session, so a config-disarm must be VISIBLE at write time —
+        # warn, NOT silent.
+        _ZSK_ENF_SOURCE="attended default (warn — tamper exception)"
+        printf '%s\n' "warn"; return 0
+      fi
+      # OWNER-AMENDMENT zero-config quiet default (was "warn"): emit NOTHING.
+      _ZSK_ENF_SOURCE="attended default (silent)"
+      printf '%s\n' "silent"; return 0
+      ;;
+  esac
+}
+zskills_enforcement_tag() {
+  printf '[hooks.%s.%s — block|warn|off in .claude/zskills-config.json; currently: %s]' \
+    "$1" "$2" "${_ZSK_ENF_SOURCE:-unknown}"
+}
+zskills_enforcement_json_escape() {
+  local LC_ALL=C
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\b'/\\b}"
+  s="${s//$'\f'/\\f}"
+  s="${s//[[:cntrl:]]/}"
+  printf '%s' "$s"
+}
+zskills_enforcement_warn() {
+  local _w="WARNING (not blocked by this check): $1"
+  if [ -z "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _ZSK_ENF_WARNINGS="$_w"
+  else
+    _ZSK_ENF_WARNINGS="$_ZSK_ENF_WARNINGS
+$_w"
+  fi
+}
+zskills_enforcement_flush_warnings() {
+  [ -n "${_ZSK_ENF_WARNINGS:-}" ] || return 0
+  local _esc
+  _esc=$(zskills_enforcement_json_escape "$_ZSK_ENF_WARNINGS")
+  printf '{"systemMessage":"%s"}' "$_esc"
+}
 
 set -u
 
@@ -361,6 +772,22 @@ is_gh_pr_subcommand_in_wrappers "$COMMAND" "create" && deny=1
 is_gh_pr_subcommand_in_wrappers "$COMMAND" "merge" '^--auto$' && deny=1
 [ "${deny:-0}" -eq 0 ] && exit 0
 
+# ── Enforcement mode resolution (ENFORCEMENT_V2_PLAN Phase 2, #1159) ───────
+# direct_gh_pr is a KEEP-HARD check: the UNSET default is block-always (the
+# deny default is unconditional; an explicit project toggle is the only
+# override — Settled decision 6). ENF_ROOT (config_root) drives the toggle
+# loader + the predicate's main-root arm; ENF_LOCAL (effective local root)
+# drives the predicate's tracked-marker arm.
+ENF_ROOT=$(zskills_enforcement_config_root)
+ENF_LOCAL=$(resolve_effective_worktree_root "" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+PRED=$(zskills_enforcement_predicate "$INPUT" "$ENF_ROOT" "$ENF_LOCAL")
+zskills_enforcement_load_toggles "$ENF_ROOT/.claude/zskills-config.json"
+MODE=$(zskills_enforcement_mode pr_discipline direct_gh_pr hard "$PRED")
+[ "$MODE" = "off" ] && exit 0
+# Re-run WITHOUT command substitution so _ZSK_ENF_SOURCE is set in THIS shell
+# (the tag formatter reads it; a $()-captured call would lose the side effect).
+zskills_enforcement_mode pr_discipline direct_gh_pr hard "$PRED" >/dev/null
+
 # Resolve message-enrichment script. Lane-portable (W1.4 pattern 1): the
 # plugin lane resolves it under ${CLAUDE_PLUGIN_ROOT}/scripts/; the
 # /update-zskills lane resolves it under ${CLAUDE_PROJECT_DIR}/scripts/
@@ -405,8 +832,27 @@ if ! printf '%s' "$STDERR" | grep -qF 'STOP: direct gh pr'; then
   USE_STATIC_FALLBACK=1
 fi
 
+# Both deny messages end with the toggle tag (Settled decision 14: each deny
+# site names its toggle). Tag the static-fallback body and the dynamic
+# script-enriched body INDEPENDENTLY so whichever path produced STDERR carries
+# the tag.
 if [ "$USE_STATIC_FALLBACK" -eq 1 ]; then
-  STDERR="$STATIC_FALLBACK"
+  STDERR="$STATIC_FALLBACK
+
+$(zskills_enforcement_tag pr_discipline direct_gh_pr)"
+else
+  STDERR="$STDERR
+
+$(zskills_enforcement_tag pr_discipline direct_gh_pr)"
+fi
+
+# Route on resolved mode. warn → DECISION-LESS systemMessage on the warn
+# channel (command still runs); block → the existing deny envelope. The
+# `off` arm already early-exited above.
+if [ "$MODE" = "warn" ]; then
+  zskills_enforcement_warn "$STDERR"
+  zskills_enforcement_flush_warnings
+  exit 0
 fi
 
 # Pure-bash JSON string escape (verbatim from

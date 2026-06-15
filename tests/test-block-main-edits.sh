@@ -117,6 +117,14 @@ mkdir -p "$SANDBOX"
 run_hook() {
   local project_dir="$1"
   local input="$2"
+  # Optional $3 = the MAIN-root the enforcement lib's config_root() should
+  # resolve to (ENFORCEMENT_V2_PLAN Phase 2). The hook's cwd here is the test
+  # process cwd (this repo), so without this override
+  # zskills_enforcement_config_root() would resolve to THIS repo via
+  # git-common-dir, not the sandbox. For most cases ENF_CONFIG_ROOT == the
+  # sandbox; for the worktree-session tamper case it stays the MAIN sandbox
+  # even though CLAUDE_PROJECT_DIR points at the worktree.
+  local enf_root="${3:-$project_dir}"
   local errf
   errf=$(mktemp)
   # Subshell with exported CLAUDE_PROJECT_DIR — `VAR=val cmd1 | cmd2` only
@@ -124,6 +132,7 @@ run_hook() {
   # CLAUDE_PROJECT_DIR to resolve MAIN_ROOT.
   HOOK_OUT=$(
     export CLAUDE_PROJECT_DIR="$project_dir"
+    export ZSKILLS_ENF_CONFIG_ROOT="$enf_root"
     printf '%s' "$input" | bash "$HOOK" 2>"$errf"
   )
   HOOK_EXIT=$?
@@ -137,6 +146,66 @@ mkenv_edit()   { printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "
 mkenv_write()  { printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$1"; }
 mkenv_bash()   { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1"; }
 mkenv_edit_no_path() { printf '{"tool_name":"Edit","tool_input":{}}'; }
+
+# Phase 2 (#1159) builders. $1 = file_path, $2 = permission_mode (e.g.
+# "bypassPermissions" / "default" / "" for absent). The top-level
+# permission_mode field is what the enforcement predicate keys on.
+mkenv_edit_pm() {
+  if [ -n "$2" ]; then
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"},"permission_mode":"%s"}' "$1" "$2"
+  else
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1"
+  fi
+}
+# Tamper-arm builders: an Edit/Write whose new_string / content carries the
+# `hooks` token (intersects the hooks block). $1 = file_path, $2 = permission_mode.
+mkenv_edit_hooks() {
+  if [ -n "$2" ]; then
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s","old_string":"x","new_string":"{\\"hooks\\":{\\"git_discipline\\":{\\"git_add_all\\":\\"off\\"}}}"},"permission_mode":"%s"}' "$1" "$2"
+  else
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s","old_string":"x","new_string":"{\\"hooks\\":{\\"git_discipline\\":{\\"git_add_all\\":\\"off\\"}}}"}}' "$1"
+  fi
+}
+# Tamper-arm builder where new_string sets config_hooks_tamper itself (self-
+# protection case). $1 = file_path, $2 = permission_mode.
+mkenv_edit_tamper_self() {
+  printf '{"tool_name":"Edit","tool_input":{"file_path":"%s","old_string":"x","new_string":"{\\"hooks\\":{\\"main_protection\\":{\\"config_hooks_tamper\\":\\"off\\"}}}"},"permission_mode":"%s"}' "$1" "$2"
+}
+# Edit of the config NOT touching a hooks key (should fall through to main_edit).
+mkenv_edit_nonhooks() {
+  if [ -n "$2" ]; then
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s","old_string":"x","new_string":"{\\"execution\\":{\\"landing\\":\\"pr\\"}}"},"permission_mode":"%s"}' "$1" "$2"
+  else
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"%s","old_string":"x","new_string":"{\\"execution\\":{\\"landing\\":\\"pr\\"}}"}}' "$1"
+  fi
+}
+
+# Assert allow-with-NO-output (the silent shipped default): exit 0 AND empty
+# stdout AND empty stderr (no warn-channel emission, no deny).
+assert_silent() {
+  local label="$1" exit_code="$2" stdout="$3" stderr="$4"
+  if [ "$exit_code" -eq 0 ] && [ -z "$stdout" ] && [ -z "$stderr" ]; then
+    pass "$label"
+  else
+    fail "$label" "exit=$exit_code stdout=$stdout stderr=$stderr"
+  fi
+}
+
+# Assert allow-with-warn (opt-in coaching): exit 0, the warn channel (W-A:
+# stdout systemMessage) carries the tag substring, and NO permissionDecision.
+assert_warn() {
+  local label="$1" exit_code="$2" stdout="$3" tag="$4"
+  local ok=1
+  [ "$exit_code" -eq 0 ] || ok=0
+  [[ "$stdout" == *"$tag"* ]] || ok=0
+  [[ "$stdout" == *'"systemMessage"'* ]] || ok=0
+  [[ "$stdout" == *'permissionDecision'* ]] && ok=0   # HARD INVARIANT: decision-less
+  if [ "$ok" -eq 1 ]; then
+    pass "$label"
+  else
+    fail "$label" "exit=$exit_code stdout=$stdout"
+  fi
+}
 
 assert_deny() {
   local label="$1" envelope="$2"
@@ -162,13 +231,18 @@ assert_allow() {
   fi
 }
 
-# ── C1: Edit on main, non-allowlisted ────────────────────────────────────
-run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/CLAUDE.md")"
-assert_deny "C1: Edit on main (CLAUDE.md) → DENY" "$HOOK_OUT"
+# ── C1: Edit on main, non-allowlisted, BYPASS → DENY (bypass parity) ──────
+# Re-spec (ENFORCEMENT_V2_PLAN Phase 2, Invariant 5): main_edit is now
+# DEMOTABLE, so an autonomous/unwatched deny must be proven under an explicit
+# permission_mode:"bypassPermissions". This is bypass-parity case 1/5 for the
+# phase. OLD: mkenv_edit (no permission_mode → enforce-autonomous via fail-safe,
+# also denied). NEW: explicit bypassPermissions, still DENY.
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" bypassPermissions)"
+assert_deny "C1: Edit on main (CLAUDE.md) bypass → DENY (bypass parity)" "$HOOK_OUT"
 
-# ── C2: Write on main, non-allowlisted ───────────────────────────────────
+# ── C2: Write on main, non-allowlisted, BYPASS → DENY ─────────────────────
 run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/CLAUDE.md")"
-assert_deny "C2: Write on main (CLAUDE.md) → DENY" "$HOOK_OUT"
+assert_deny "C2: Write on main (CLAUDE.md) absent-field → DENY (fail-safe)" "$HOOK_OUT"
 
 # ── C4: Edit in linked worktree (same relative file, different abs path) ─
 # CLAUDE_PROJECT_DIR points at the WORKTREE. The hook self-checks:
@@ -230,31 +304,39 @@ assert_allow "C13: Bash tool → ALLOW (defense-in-depth tool guard)" "$HOOK_EXI
 run_hook "$SANDBOX" "$(mkenv_edit_no_path)"
 assert_allow "C14: Edit with no file_path → ALLOW (defensive)" "$HOOK_EXIT" "$HOOK_OUT"
 
-# ── C15: skills/<name>/SKILL.md on main → DENY (canonical motivating case) ─
-run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/skills/foo/SKILL.md")"
-assert_deny "C15: Edit skills/foo/SKILL.md on main → DENY" "$HOOK_OUT"
+# ── C15: skills/<name>/SKILL.md on main, BYPASS → DENY (motivating case) ───
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/skills/foo/SKILL.md" bypassPermissions)"
+assert_deny "C15: Edit skills/foo/SKILL.md on main bypass → DENY" "$HOOK_OUT"
 
-# ── C16: hooks/*.sh on main → DENY ───────────────────────────────────────
-run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/hooks/x.sh")"
-assert_deny "C16: Edit hooks/x.sh on main → DENY" "$HOOK_OUT"
+# ── C16: hooks/*.sh on main, BYPASS → DENY ───────────────────────────────
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/hooks/x.sh" bypassPermissions)"
+assert_deny "C16: Edit hooks/x.sh on main bypass → DENY" "$HOOK_OUT"
 
-# ── C17: CLAUDE.md on main → DENY (already in C1, but assert deny envelope
-# contains a worktree alternative recommendation per the STOP message contract) ─
-run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/CLAUDE.md")"
+# ── C17: CLAUDE.md on main bypass → DENY, assert deny envelope contains a
+# worktree alternative recommendation per the STOP message contract ────────
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" bypassPermissions)"
 if [[ "$HOOK_OUT" == *'/do'* ]] && [[ "$HOOK_OUT" == *'worktree'* ]]; then
-  pass "C17: STOP message recommends worktree alternative"
+  pass "C17: STOP message recommends worktree alternative (bypass deny arm)"
 else
   fail "C17: STOP message recommends worktree alternative" "envelope=$HOOK_OUT"
 fi
 
 # ── C18: deny message must recommend /do pr (issue #398) ──
 # The deny message must recommend /do pr as the primary worktree-routed
-# alternative for an agent-dispatched edit.
-run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/CLAUDE.md")"
+# alternative for an agent-dispatched edit. (deny arm = bypass/autonomous.)
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" bypassPermissions)"
 if [[ "$HOOK_OUT" == *'/do pr'* ]]; then
   pass "C18a: STOP message recommends /do pr (issue #398)"
 else
   fail "C18a: STOP message recommends /do pr (issue #398)" "envelope=$HOOK_OUT"
+fi
+
+# ── C18b: deny envelope (bypass) message ends with its toggle tag ──────────
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" bypassPermissions)"
+if [[ "$HOOK_OUT" == *'[hooks.main_protection.main_edit'* ]]; then
+  pass "C18b: deny message names its toggle (main_edit tag present)"
+else
+  fail "C18b: deny message names its toggle (main_edit tag present)" "envelope=$HOOK_OUT"
 fi
 
 # ── Windows-native-path normalisation (MSYS / Git-Bash consumer) ──────────
@@ -293,6 +375,177 @@ assert_allow "C20: Write backslash .zskills\\run-dashboard-start.sh → ALLOW (i
 # main file (skills/foo/SKILL.md) normalises and is STILL denied.
 run_hook "$SANDBOX" "$(mkenv_edit "$SANDBOX/skills\\foo\\SKILL.md")"
 assert_deny "C21: Edit backslash skills\\foo\\SKILL.md on main → DENY (gate not weakened)" "$HOOK_OUT"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENFORCEMENT_V2_PLAN Phase 2 (#1159) — demotion + tamper arm + toggles.
+# main_protected is true in the sandbox (restored after C11 above).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# The C8/C9 allowlist cases seeded committed `.zskills-tracked` + `.landed`
+# root markers. The enforcement predicate's legacy dual-read arm treats a
+# `.zskills-tracked` marker as a LIVE pipeline (→ enforce, never watched), so
+# the WATCHED cases below must run without those markers present on disk. Remove
+# the working-tree copies (non-recursive, specific files — the C8/C9 cases that
+# needed them already ran). The pipeline-active case (ec2) re-creates a fresh
+# `.zskills/tracked` explicitly.
+rm -f "$SANDBOX/.zskills-tracked" "$SANDBOX/.landed"
+
+# ── ec0: ZERO-CONFIG QUIET HEADLINE — watched Edit on main → EMITS NOTHING ──
+# permission_mode:"default", no markers, no toggle, main_protected:true. The
+# shipped demotable default is SILENT: allow + no warn-channel output + no deny.
+# This is the owner-amendment headline (Settled decision 0 / AC "Zero-config
+# quiet (partial)").
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_silent "ec0: watched Edit on main_protected → SILENT (zero-config quiet headline)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
+# And the tag must NOT appear anywhere (no emission at all).
+if [[ "$HOOK_OUT" != *'[hooks.main_protection.main_edit'* ]]; then
+  pass "ec0b: watched silent default emits no main_edit tag"
+else
+  fail "ec0b: watched silent default emits no main_edit tag" "out=$HOOK_OUT"
+fi
+
+# ── ec1: toggle "warn" + watched → ALLOW + warn-channel carries the tag ─────
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"main_edit":"warn"}}}' > "$SANDBOX/.claude/zskills-config.json"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_warn "ec1: toggle warn + watched → ALLOW + warn (opt-in coaching)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.main_edit"
+
+# ── ec2: watched + .zskills/tracked present (pipeline-active) → DENY ────────
+# A live pipeline marker at MAIN root forces enforce even when watched.
+printf '{"execution":{"main_protected":true}}' > "$SANDBOX/.claude/zskills-config.json"
+mkdir -p "$SANDBOX/.zskills"
+: > "$SANDBOX/.zskills/tracked"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_deny "ec2: watched + .zskills/tracked (pipeline-active) → DENY" "$HOOK_OUT"
+rm -f "$SANDBOX/.zskills/tracked"
+
+# ── ec3: watched + stale .zskills/tracking/<id>/ subdir, NO tracked → SILENT (DA2) ──
+# A stale finished-pipeline subdir must NOT force enforce (bare tracking/ dir is
+# deliberately not a signal). No toggle → silent default.
+mkdir -p "$SANDBOX/.zskills/tracking/stale-pipe"
+: > "$SANDBOX/.zskills/tracking/stale-pipe/req.x"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_silent "ec3: watched + stale tracking/ subdir, no tracked → SILENT (DA2)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
+rm -rf "$SANDBOX/.zskills/tracking/stale-pipe"
+
+# ── ec4: toggle "off" + watched → SILENT allow ─────────────────────────────
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"main_edit":"off"}}}' > "$SANDBOX/.claude/zskills-config.json"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_silent "ec4: toggle off + watched → SILENT allow" "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
+
+# ── ec5: toggle "block" + watched → DENY (hard-deny-even-attended override) ─
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"main_edit":"block"}}}' > "$SANDBOX/.claude/zskills-config.json"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" default)"
+assert_deny "ec5: toggle block + watched → DENY (explicit override)" "$HOOK_OUT"
+
+# ── ec6: toggle "warn" + BYPASS → ALLOW + warn (explicit override honored in
+# BOTH arms — Settled decision 6, unchanged by the amendment) ──────────────
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"main_edit":"warn"}}}' > "$SANDBOX/.claude/zskills-config.json"
+run_hook "$SANDBOX" "$(mkenv_edit_pm "$SANDBOX/CLAUDE.md" bypassPermissions)"
+assert_warn "ec6: toggle warn + bypass → ALLOW + warn (explicit override both arms)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.main_edit"
+
+# Restore default config for the tamper-arm cases.
+printf '{"execution":{"main_protected":true}}' > "$SANDBOX/.claude/zskills-config.json"
+
+# ═══ config_hooks_tamper arm (registry row 49, Settled decision 13) ════════
+CFG="$SANDBOX/.claude/zskills-config.json"
+
+# ── tc1: tamper Edit (hooks in new_string) + BYPASS → DENY (bypass parity 2/5) ─
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+assert_deny "tc1: tamper Edit + bypass → DENY (bypass parity, config_hooks_tamper)" "$HOOK_OUT"
+if [[ "$HOOK_OUT" == *'[hooks.main_protection.config_hooks_tamper'* ]]; then
+  pass "tc1b: tamper deny names config_hooks_tamper toggle"
+else
+  fail "tc1b: tamper deny names config_hooks_tamper toggle" "out=$HOOK_OUT"
+fi
+
+# ── tc2: tamper Edit + WATCHED, no toggle → WARN allow (DA4 named exception) ─
+# The ONE demotable check that warns-when-watched by shipped default (NOT silent).
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" default)"
+assert_warn "tc2: tamper watched no-toggle → WARN (DA4 named-exception default, NOT silent)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.config_hooks_tamper"
+
+# ── tc3: tamper Edit + watched + explicit "warn" → WARN (identical to default) ─
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"config_hooks_tamper":"warn"}}}' > "$CFG"
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" default)"
+assert_warn "tc3: tamper watched explicit warn → WARN" \
+  "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.config_hooks_tamper"
+
+# ── tc4: tamper Edit + watched + explicit "off" → SILENT allow (reviewed override) ─
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"config_hooks_tamper":"off"}}}' > "$CFG"
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" default)"
+assert_silent "tc4: tamper watched explicit off → SILENT (named exception overridable)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
+
+# Restore default config.
+printf '{"execution":{"main_protected":true}}' > "$CFG"
+
+# ── tc5: Edit of config NOT touching a hooks key → falls through to main_edit ─
+# A non-hooks config Edit while WATCHED hits the main_edit silent default
+# (config file is still under main, but the tamper arm does not fire).
+run_hook "$SANDBOX" "$(mkenv_edit_nonhooks "$CFG" default)"
+assert_silent "tc5: non-hooks config Edit watched → SILENT (falls through to main_edit)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
+# And the same non-hooks config Edit under BYPASS → DENY via main_edit (not tamper).
+run_hook "$SANDBOX" "$(mkenv_edit_nonhooks "$CFG" bypassPermissions)"
+assert_deny "tc5b: non-hooks config Edit bypass → DENY via main_edit arm" "$HOOK_OUT"
+if [[ "$HOOK_OUT" == *'[hooks.main_protection.main_edit'* ]]; then
+  pass "tc5c: non-hooks config Edit deny names main_edit (not tamper)"
+else
+  fail "tc5c: non-hooks config Edit deny names main_edit (not tamper)" "out=$HOOK_OUT"
+fi
+
+# ── tc6: main_protected ABSENT → tamper arm STILL fires (placement headline, R2-6) ─
+printf '{"execution":{}}' > "$CFG"
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+assert_deny "tc6: tamper arm fires even with main_protected absent (placement above gate)" "$HOOK_OUT"
+printf '{"execution":{"main_protected":true}}' > "$CFG"
+
+# ── tc7: worktree session editing MAIN root's config by abs path → still gated (DA3) ─
+# CLAUDE_PROJECT_DIR points at the WORKTREE, but ENF_CONFIG_ROOT stays the MAIN
+# sandbox; the Edit targets the MAIN config by absolute path with hooks in
+# new_string. The tamper arm sits ABOVE the worktree-self early-exit, so it
+# STILL gates: warn when watched, deny when bypass.
+# The worktree checkout inherited the committed `.zskills-tracked` / `.landed`
+# markers from sandbox-trunk; remove them so the WATCHED expectation holds (a
+# worktree carrying a live tracked marker would correctly read enforce-pipeline,
+# which is a different scenario than the watched-DA3 case under test here).
+rm -f "$WORKTREE/.zskills-tracked" "$WORKTREE/.landed"
+run_hook "$WORKTREE" "$(mkenv_edit_hooks "$CFG" default)" "$SANDBOX"
+assert_warn "tc7: worktree-session Edit of MAIN config (watched) → WARN (above worktree-self, DA3)" \
+  "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.config_hooks_tamper"
+run_hook "$WORKTREE" "$(mkenv_edit_hooks "$CFG" bypassPermissions)" "$SANDBOX"
+assert_deny "tc7b: worktree-session Edit of MAIN config (bypass) → DENY (above worktree-self, DA3)" "$HOOK_OUT"
+
+# ── tc8: group ceiling main_protection.enabled:false + tamper edit → STILL gated ─
+# config_hooks_tamper is EXEMPT from its group's enabled ceiling.
+printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"enabled":false}}}' > "$CFG"
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+assert_deny "tc8: group ceiling enabled:false + tamper edit → STILL gated (ceiling exemption)" "$HOOK_OUT"
+printf '{"execution":{"main_protected":true}}' > "$CFG"
+
+# ── tc9: self-protection — config WITHOUT a config_hooks_tamper value, Edit
+# setting config_hooks_tamper:"off", BYPASS → DENY (gate evaluates pre-write) ─
+run_hook "$SANDBOX" "$(mkenv_edit_tamper_self "$CFG" bypassPermissions)"
+assert_deny "tc9: self-protection — Edit setting config_hooks_tamper:off bypass → DENY (pre-write eval)" "$HOOK_OUT"
+
+# ── tc10: warn AND deny text both carry the recovery line (Settled decision 13) ─
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+if [[ "$HOOK_OUT" == *'human-reviewed'* ]]; then
+  pass "tc10a: tamper DENY text contains the recovery line (human-reviewed)"
+else
+  fail "tc10a: tamper DENY text contains the recovery line (human-reviewed)" "out=$HOOK_OUT"
+fi
+run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" default)"
+if [[ "$HOOK_OUT" == *'human-reviewed'* ]]; then
+  pass "tc10b: tamper WARN text contains the recovery line (human-reviewed)"
+else
+  fail "tc10b: tamper WARN text contains the recovery line (human-reviewed)" "out=$HOOK_OUT"
+fi
+printf '{"execution":{"main_protected":true}}' > "$CFG"
 
 # ── Summary ──────────────────────────────────────────────────────────────
 echo ""

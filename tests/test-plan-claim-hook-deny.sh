@@ -219,6 +219,72 @@ else
   fail "negative control nonplan branch" "expected ALLOW (pass-through), got $d5"
 fi
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ENFORCEMENT_V2_PLAN Phase 2 (#1159) — plan_unclaimed demotion + bypass parity.
+# plan_unclaimed is DEMOTABLE: autonomous/unwatched → BLOCK; watched → SILENT
+# by shipped default; opt-in "warn".
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Build a payload carrying a top-level permission_mode field.
+make_payload_pm() {
+  local cmd="$1" pm="$2"
+  "$PYTHON" -c "
+import json, sys
+print(json.dumps({
+    'tool_name': 'Bash',
+    'tool_input': {'command': sys.argv[1]},
+    'permission_mode': sys.argv[2],
+}))
+" "$cmd" "$pm"
+}
+
+# Run hook and capture rc + stdout for the enforcement-mode assertions.
+run_hook_capture() {
+  local payload="$1" fixture_root="$2"
+  PLAN_STDOUT=$(cd "$fixture_root" && CLAUDE_PROJECT_DIR="$fixture_root" \
+    bash -c "echo '$payload' | bash '$HOOK'" 2>/dev/null)
+  PLAN_RC=$?
+}
+
+ENF_SLUG="enfplan"
+ENF_CMD="bash $REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh --prefix cp $ENF_SLUG"
+
+# ── EP1: bypass-parity — no-claim + bypassPermissions → DENY + names toggle ─
+ep1_fixture=$(setup_fixture "enf_p1" "$ENF_SLUG")
+ep1_payload=$(make_payload_pm "$ENF_CMD" "bypassPermissions")
+run_hook_capture "$ep1_payload" "$ep1_fixture"
+if echo "$PLAN_STDOUT" | grep -q '"permissionDecision":"deny"' \
+   && echo "$PLAN_STDOUT" | grep -q '\[hooks.tracking.plan_unclaimed'; then
+  pass "EP1: no-claim deny under bypassPermissions (bypass parity 5/5) + names toggle"
+else
+  fail "EP1: no-claim deny under bypass" "rc=$PLAN_RC stdout=$PLAN_STDOUT"
+fi
+
+# ── EP2: watched (default) + no toggle → SILENT allow ──────────────────────
+ep2_fixture=$(setup_fixture "enf_p2" "$ENF_SLUG")
+ep2_payload=$(make_payload_pm "$ENF_CMD" "default")
+run_hook_capture "$ep2_payload" "$ep2_fixture"
+if [ "$PLAN_RC" -eq 0 ] && [ -z "$PLAN_STDOUT" ]; then
+  pass "EP2: watched no-claim, no toggle → SILENT allow (demotable shipped default)"
+else
+  fail "EP2: watched no-toggle → SILENT" "rc=$PLAN_RC stdout=$PLAN_STDOUT"
+fi
+
+# ── EP3: toggle "warn" + watched → ALLOW + decision-less warn naming toggle ─
+ep3_fixture=$(setup_fixture "enf_p3" "$ENF_SLUG")
+# Re-write the fixture config to add the warn toggle (preserve plans_dir).
+printf '%s\n' '{"execution":{"branch_prefix":"feat/"},"output":{"plans_dir":"plans"},"hooks":{"tracking":{"plan_unclaimed":"warn"}}}' > "$ep3_fixture/.claude/zskills-config.json"
+ep3_payload=$(make_payload_pm "$ENF_CMD" "default")
+run_hook_capture "$ep3_payload" "$ep3_fixture"
+if [ "$PLAN_RC" -eq 0 ] \
+   && echo "$PLAN_STDOUT" | grep -q '"systemMessage"' \
+   && echo "$PLAN_STDOUT" | grep -q '\[hooks.tracking.plan_unclaimed' \
+   && ! echo "$PLAN_STDOUT" | grep -q 'permissionDecision'; then
+  pass "EP3: toggle warn + watched → ALLOW + decision-less warn naming the toggle"
+else
+  fail "EP3: toggle warn + watched → warn" "rc=$PLAN_RC stdout=$PLAN_STDOUT"
+fi
+
 # ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────

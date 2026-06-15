@@ -89,13 +89,12 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     [[ "$FN" == "is_gh_pr_subcommand" && "$HOOK" != *bypassed-land-pr* ]] && continue
     [[ "$FN" == "is_gh_pr_subcommand_in_chain" && "$HOOK" != *bypassed-land-pr* ]] && continue
     [[ "$FN" == "is_gh_pr_subcommand_in_wrappers" && "$HOOK" != *bypassed-land-pr* ]] && continue
-    # Worktree-root resolvers (#401): inlined ONLY in project and
-    # stale-skill-version hooks. Skip for generic and bypassed-land-pr
-    # (neither needs to act on the agent's worktree root).
+    # Worktree-root resolvers (#401): inlined in project, stale-skill-version,
+    # AND (ENFORCEMENT_V2_PLAN Phase 2, #1159) block-bypassed-land-pr, which now
+    # resolves ENF_LOCAL for the enforcement predicate. Skip only for the
+    # generic hook (it does not act on the agent's worktree root).
     [[ "$FN" == "extract_cd_target" && "$HOOK" == *unsafe-generic* ]] && continue
-    [[ "$FN" == "extract_cd_target" && "$HOOK" == *bypassed-land-pr* ]] && continue
     [[ "$FN" == "resolve_effective_worktree_root" && "$HOOK" == *unsafe-generic* ]] && continue
-    [[ "$FN" == "resolve_effective_worktree_root" && "$HOOK" == *bypassed-land-pr* ]] && continue
     SRC="$(fn_source "$FN")"
     if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
       fail "drift: $HOOK $FN source-of-truth file not found ($SRC)"
@@ -209,15 +208,20 @@ fi
 # relevant list(s) in the SAME commit as its inline; the gate only checks hooks
 # it iterates, so a forgotten list entry is silent drift — hence each phase
 # carries an explicit consumer-list work item.
+# Phase 2 (#1159): the six lib-tagging small hooks each inline ALL EIGHT
+# enforcement functions verbatim (one canonical block per hook). block-agents.sh
+# is NOT a consumer (no hooks.* key — Settled decision 10; static-literal tag).
+# The two big hooks (block-unsafe-{generic,project}) join these lists in Phase 3.
+ENF_HOOKS="hooks/block-main-edits.sh hooks/block-fix-issue-unclaimed.sh hooks/block-run-plan-unclaimed.sh hooks/block-bad-cron.sh hooks/block-bypassed-land-pr.sh hooks/block-stale-skill-version.sh"
 declare -A ENF_CONSUMERS
-ENF_CONSUMERS[zskills_enforcement_config_root]=""
-ENF_CONSUMERS[zskills_enforcement_predicate]=""
-ENF_CONSUMERS[zskills_enforcement_load_toggles]=""
-ENF_CONSUMERS[zskills_enforcement_mode]=""
-ENF_CONSUMERS[zskills_enforcement_tag]=""
-ENF_CONSUMERS[zskills_enforcement_json_escape]=""
-ENF_CONSUMERS[zskills_enforcement_warn]=""
-ENF_CONSUMERS[zskills_enforcement_flush_warnings]=""
+ENF_CONSUMERS[zskills_enforcement_config_root]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_predicate]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_load_toggles]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_mode]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_tag]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_json_escape]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_warn]="$ENF_HOOKS"
+ENF_CONSUMERS[zskills_enforcement_flush_warnings]="$ENF_HOOKS"
 for ENF_FN in "${!ENF_CONSUMERS[@]}"; do
   ENF_SRC="$(fn_source "$ENF_FN")"
   if [ -z "$ENF_SRC" ] || [ ! -f "$ENF_SRC" ]; then
@@ -241,6 +245,38 @@ for ENF_FN in "${!ENF_CONSUMERS[@]}"; do
       pass "drift: $CONSUMER $ENF_FN matches source-of-truth"
     else
       fail "drift: $CONSUMER $ENF_FN drifted from $ENF_SRC"
+    fi
+  done
+done
+
+# ── Worktree-root resolver drift in the claim hooks (ENFORCEMENT_V2_PLAN
+# Phase 2, #1159) ───────────────────────────────────────────────────────────
+# block-fix-issue-unclaimed.sh and block-run-plan-unclaimed.sh are Bash-matcher
+# hooks that now inline extract_cd_target + resolve_effective_worktree_root to
+# resolve ENF_LOCAL (the tracked-marker read root) for the enforcement
+# predicate. They are NOT in the top git-tokenwalk loop's HOOK list, so the
+# byte-equality of these two inlined resolvers is gated here.
+CLAIM_RESOLVER_CONSUMERS=(
+  hooks/block-fix-issue-unclaimed.sh
+  hooks/block-run-plan-unclaimed.sh
+)
+for FN in extract_cd_target resolve_effective_worktree_root; do
+  RSRC="$(fn_source "$FN")"
+  if [ -z "$RSRC" ] || [ ! -f "$RSRC" ]; then
+    fail "drift: $FN source-of-truth file not found ($RSRC)"
+    continue
+  fi
+  for CONSUMER in "${CLAIM_RESOLVER_CONSUMERS[@]}"; do
+    if [ ! -f "$CONSUMER" ]; then
+      fail "drift: $CONSUMER $FN consumer file not found"
+      continue
+    fi
+    if diff <(sed -n "/^$FN()/,/^}$/p" "$CONSUMER") \
+            <(sed -n "/^$FN()/,/^}$/p" "$RSRC") \
+            > /dev/null; then
+      pass "drift: $CONSUMER $FN matches source-of-truth"
+    else
+      fail "drift: $CONSUMER $FN drifted from $RSRC"
     fi
   done
 done

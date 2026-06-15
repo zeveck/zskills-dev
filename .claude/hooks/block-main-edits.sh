@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.2
+# zskills-hook-version: 2026.06.3
 # block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
@@ -80,6 +80,259 @@ zskills_normalize_tool_path() {
   return 0
 }
 
+# ── Enforcement library (ENFORCEMENT_V2_PLAN #1159) ───────────────────────
+# Inlined VERBATIM from hooks/_lib/zskills-enforcement.sh (source-of-truth).
+# The .claude/hooks/ legacy mirrors and plugin-served copies cannot reach
+# _lib/ at runtime, so the bodies are pasted in; tests/test-hook-helper-drift.sh
+# enforces byte-equality. Maintain in _lib only.
+zskills_enforcement_config_root() {
+  if [ -n "${ZSKILLS_ENF_CONFIG_ROOT:-}" ]; then
+    printf '%s\n' "${ZSKILLS_ENF_CONFIG_ROOT%/}"
+    return 0
+  fi
+  local gcd
+  gcd=$(git rev-parse --git-common-dir 2>/dev/null) || gcd=""
+  if [ -n "$gcd" ]; then
+    # git-common-dir is the MAIN .git dir even from a linked worktree; its
+    # parent is the main checkout root. May be relative — resolve it.
+    local parent
+    parent=$(cd "$gcd/.." 2>/dev/null && pwd) || parent=""
+    if [ -n "$parent" ]; then
+      printf '%s\n' "${parent%/}"
+      return 0
+    fi
+  fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s\n' "${CLAUDE_PROJECT_DIR%/}"
+    return 0
+  fi
+  printf '%s\n' "$(pwd)"
+}
+zskills_enforcement_predicate() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _json="$1" _main="${2%/}" _local="${3%/}"
+  local PERM=""
+  # SPOOF-PROOF BY CONSTRUCTION: in valid JSON, any quote inside a string
+  # value (tool_input.command, new_string, …) is escaped as \" — so a
+  # counterfeit "permission_mode" literal embedded in command content can
+  # only appear with a backslash before its opening quote, which (^|[^\\])
+  # rejects. Only the real top-level key (whose quote follows `{`, `,`, or
+  # whitespace) can match, regardless of field order. The value class
+  # [a-zA-Z]+ cannot span an escape. No tool_input stripping or field-order
+  # assumption needed.
+  if [[ "$_json" =~ (^|[^\\])\"permission_mode\"[[:space:]]*:[[:space:]]*\"([a-zA-Z]+)\" ]]; then
+    PERM="${BASH_REMATCH[2]}"
+  fi
+  # enforce-autonomous iff bypassPermissions OR not a recognized attended
+  # mode (absent/unrecognized — fail-safe TOWARD enforcement).
+  case "$PERM" in
+    default|acceptEdits|plan)
+      : # attended modes — fall through to the pipeline-live check
+      ;;
+    *)
+      printf '%s\n' "enforce-autonomous"
+      return 0
+      ;;
+  esac
+  # enforce-pipeline iff a zskills pipeline is LIVE. The LOCAL-root tracked
+  # arm is load-bearing: worktree pipeline agents inherit "default" mode, so
+  # only the worktree's own .zskills/tracked keeps them enforced (subagent
+  # permission_mode VALUE is unpinned by Probe B — it verified PRESENCE only).
+  if [ -f "$_local/.zskills/tracked" ] || [ -f "$_local/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Main-root OR-arm (CLAUDE.md Tracking Enforcement prose — orchestrator
+  # writes both roots; kept even though no skill implements the main-root
+  # write today). Legacy dual-read; drop the .zskills-tracked arm when #1146
+  # lands.
+  if [ -f "$_main/.zskills/tracked" ] || [ -f "$_main/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Inflight sentinel younger than the TTL (120 min = 7200 s, the
+  # check-inflight-batch.sh default). Supplementary signal — ages by file
+  # MTIME (check-inflight-batch ages by the started_at JSON field; congruent
+  # because sentinels are only ever written/rewritten whole). Only the
+  # cron-shaped workers write sentinels; runs >2h age out mid-run, falling
+  # back to the tracked-marker arm.
+  if [ -d "$_main/.zskills/inflight" ]; then
+    if [ -n "$(find "$_main/.zskills/inflight" -name '*.json' -mmin -120 2>/dev/null | head -1)" ]; then
+      printf '%s\n' "enforce-pipeline"; return 0
+    fi
+  fi
+  # NOTE: bare [ -d "$_main/.zskills/tracking" ] is deliberately NOT tested —
+  # finished pipelines leave subdirs there indefinitely (20+ stale dirs in
+  # the dogfood repo), which would make enforce permanent in every repo that
+  # ever ran a pipeline.
+  printf '%s\n' "watched"
+}
+zskills_enforcement_load_toggles() {
+  [ "${_ZSK_ENF_TOGGLES_LOADED:-0}" = "1" ] && return 0
+  _ZSK_ENF_TOGGLES=""
+  _ZSK_ENF_TOGGLES_LOADED=1
+  local _cfg="$1"
+  [ -n "$_cfg" ] && [ -f "$_cfg" ] || return 0
+  # Resolve a working Python 3 interpreter (probe-run; honors ZSKILLS_PYTHON).
+  local _py="" _cand
+  for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_cand" ] || continue
+    command -v "$_cand" >/dev/null 2>&1 || continue
+    if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      _py=$(command -v "$_cand"); break
+    fi
+  done
+  [ -n "$_py" ] || return 0   # Python unavailable → shipped defaults
+  local _dump
+  _dump=$("$_py" - "$_cfg" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(0)   # parse error → empty dump → shipped defaults
+hooks = data.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+out = []
+for group, body in hooks.items():
+    if not isinstance(body, dict):
+        continue
+    for key, val in body.items():
+        if key == "enabled":
+            if isinstance(val, bool):
+                out.append("%s.enabled=%s" % (group, "true" if val else "false"))
+        elif isinstance(val, str):
+            out.append("%s.%s=%s" % (group, key, val))
+print("\n".join(out))
+PYEOF
+)
+  # A non-zero exit or empty dump leaves _ZSK_ENF_TOGGLES="" (defaults).
+  [ -n "$_dump" ] && _ZSK_ENF_TOGGLES="$_dump"
+  return 0
+}
+zskills_enforcement_mode() {
+  local _group="$1" _check="$2" _class="$3" _pred="$4"
+  local _explicit="" _group_enabled="" _line
+  # Read the cached toggles. Linear scan — the list is tiny (<=37 lines).
+  if [ -n "${_ZSK_ENF_TOGGLES:-}" ]; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        "$_group.$_check="*) _explicit="${_line#*=}" ;;
+        "$_group.enabled="*) _group_enabled="${_line#*=}" ;;
+      esac
+    done <<EOF
+$_ZSK_ENF_TOGGLES
+EOF
+  fi
+
+  # Group ceiling: enabled:false turns the whole group off — EXCEPT
+  # config_hooks_tamper, which is ceiling-EXEMPT (Settled decision 13
+  # self-protection: a group ceiling write must not take the tamper gate down
+  # with it; only its own explicit per-check value can turn it off).
+  if [ "$_group_enabled" = "false" ] && [ "$_check" != "config_hooks_tamper" ]; then
+    _ZSK_ENF_SOURCE="group disabled in project config"
+    printf '%s\n' "off"; return 0
+  fi
+
+  # Explicit per-check value always wins (Settled decision 6) — for hard AND
+  # demotable checks alike. Only block|warn|off are honored values.
+  case "$_explicit" in
+    block|warn|off)
+      _ZSK_ENF_SOURCE="project config: $_explicit"
+      printf '%s\n' "$_explicit"; return 0
+      ;;
+  esac
+
+  # Unset → class-derived default.
+  if [ "$_class" = "hard" ]; then
+    # A hard check is never silent, even watched.
+    case "$_pred" in
+      enforce-autonomous) _ZSK_ENF_SOURCE="autonomous default" ;;
+      enforce-pipeline)   _ZSK_ENF_SOURCE="pipeline-active default" ;;
+      *)                  _ZSK_ENF_SOURCE="hard default" ;;
+    esac
+    printf '%s\n' "block"; return 0
+  fi
+
+  # Demotable, unset.
+  case "$_pred" in
+    enforce-autonomous)
+      _ZSK_ENF_SOURCE="autonomous default"
+      printf '%s\n' "block"; return 0
+      ;;
+    enforce-pipeline)
+      _ZSK_ENF_SOURCE="pipeline-active default"
+      printf '%s\n' "block"; return 0
+      ;;
+    *)
+      # watched + demotable + unset.
+      if [ "$_check" = "config_hooks_tamper" ]; then
+        # NAMED EXCEPTION (DA4): the tamper gate's effect is durable +
+        # cross-session, so a config-disarm must be VISIBLE at write time —
+        # warn, NOT silent.
+        _ZSK_ENF_SOURCE="attended default (warn — tamper exception)"
+        printf '%s\n' "warn"; return 0
+      fi
+      # OWNER-AMENDMENT zero-config quiet default (was "warn"): emit NOTHING.
+      _ZSK_ENF_SOURCE="attended default (silent)"
+      printf '%s\n' "silent"; return 0
+      ;;
+  esac
+}
+zskills_enforcement_tag() {
+  printf '[hooks.%s.%s — block|warn|off in .claude/zskills-config.json; currently: %s]' \
+    "$1" "$2" "${_ZSK_ENF_SOURCE:-unknown}"
+}
+zskills_enforcement_json_escape() {
+  local LC_ALL=C
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\b'/\\b}"
+  s="${s//$'\f'/\\f}"
+  s="${s//[[:cntrl:]]/}"
+  printf '%s' "$s"
+}
+zskills_enforcement_warn() {
+  local _w="WARNING (not blocked by this check): $1"
+  if [ -z "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _ZSK_ENF_WARNINGS="$_w"
+  else
+    _ZSK_ENF_WARNINGS="$_ZSK_ENF_WARNINGS
+$_w"
+  fi
+}
+zskills_enforcement_flush_warnings() {
+  [ -n "${_ZSK_ENF_WARNINGS:-}" ] || return 0
+  local _esc
+  _esc=$(zskills_enforcement_json_escape "$_ZSK_ENF_WARNINGS")
+  printf '{"systemMessage":"%s"}' "$_esc"
+}
+
+# ── Target-path normalization (hoisted, ENFORCEMENT_V2_PLAN Phase 2) ───────
+# Resolve a (possibly relative) Edit/Write target to an absolute, symlink-/
+# dotdot-resolved path. ONE code path used by BOTH the config_hooks_tamper arm
+# and the main_edit arm so the two arms normalize identically.
+#   $1 = the (already POSIX-normalized) file_path
+#   $2 = the base root a relative path is resolved against (MAIN_ROOT)
+# Echoes the resolved absolute path. The dirname is `cd … && pwd -P`-resolved
+# (the file itself may not exist yet for Write); the basename is re-attached.
+normalize_target_path() {
+  local _fp="$1" _base="$2" _abs _dir _bn _rdir
+  case "$_fp" in
+    /*) _abs="$_fp" ;;
+    *)  _abs="$_base/$_fp" ;;
+  esac
+  _dir=$(dirname "$_abs")
+  _bn=$(basename "$_abs")
+  _rdir=$(cd "$_dir" 2>/dev/null && pwd -P) || _rdir="$_dir"
+  printf '%s' "${_rdir%/}/$_bn"
+}
+
 INPUT=$(cat 2>/dev/null) || exit 0
 [ -z "$INPUT" ] && exit 0
 
@@ -131,6 +384,68 @@ fi
 RESOLVED_MAIN=$(cd "$MAIN_ROOT" 2>/dev/null && pwd -P) || RESOLVED_MAIN="$MAIN_ROOT"
 MAIN_ROOT="${RESOLVED_MAIN%/}"
 
+# ── config_hooks_tamper arm (registry row 49; Settled decision 13) ─────────
+# Placed ABOVE the worktree-self early-exit and ABOVE the main_protected gate
+# DELIBERATELY: this arm protects the MAIN ROOT's .claude/zskills-config.json
+# (where the toggle loader reads), so a worktree-rooted session editing that
+# file by absolute path must STILL be gated (DA3), and it must fire regardless
+# of main_protected's value (the protection-system surface, not main content).
+# The target is compared against config_root()'s config path — NOT MAIN_ROOT's
+# — because in a worktree session MAIN_ROOT is the worktree while the protected
+# file is the main root's (the divergence is load-bearing here).
+ENF_ROOT=$(zskills_enforcement_config_root)
+TAMPER_TARGET=$(normalize_target_path "$FILE_PATH" "$MAIN_ROOT")
+if [ "$TAMPER_TARGET" = "$ENF_ROOT/.claude/zskills-config.json" ]; then
+  # Trigger only when the edited region intersects the hooks block. For Edit
+  # that is new_string OR old_string containing the `hooks` token; for Write
+  # the content field. The envelope's only non-content keys (tool_name,
+  # tool_input, file_path, permission_mode, transcript_path, cwd, session_id)
+  # never contain `hooks`, and file_path here is the config path (…-config.json,
+  # no `hooks`), so a whole-envelope substring test is an accurate proxy for
+  # "the write touches a hooks-containing region" — a full-file Write of a
+  # config carrying a hooks block is IN scope by design (anti-casual threat
+  # model, Settled decision 13).
+  if [[ "$INPUT" == *hooks* ]]; then
+    PRED=$(zskills_enforcement_predicate "$INPUT" "$ENF_ROOT" "$MAIN_ROOT")
+    zskills_enforcement_load_toggles "$ENF_ROOT/.claude/zskills-config.json"
+    TAMPER_MODE=$(zskills_enforcement_mode main_protection config_hooks_tamper demotable "$PRED")
+    if [ "$TAMPER_MODE" != "silent" ] && [ "$TAMPER_MODE" != "off" ]; then
+      # Re-run WITHOUT command substitution so _ZSK_ENF_SOURCE is set in THIS
+      # shell for the tag formatter (the $()-captured call above loses it).
+      zskills_enforcement_mode main_protection config_hooks_tamper demotable "$PRED" >/dev/null
+      TAMPER_MSG=$(cat <<EOF
+STOP: Edit/Write to the project's hooks-enforcement config is gated (config_hooks_tamper).
+
+Target: $ORIG_FILE_PATH
+
+This write touches the \\\`hooks\\\` block of the main root's
+\\\`.claude/zskills-config.json\\\` — the surface that arms/disarms the
+enforcement system itself. A config-disarm is durable and cross-session, so it
+must never happen invisibly.
+
+Recovery: config changes to the \\\`hooks\\\` block need a human-reviewed edit
+or a committed project review — re-enable a check by deleting its key or
+setting \\\`"block"\\\` in \\\`.claude/zskills-config.json\\\` via a
+human-reviewed change.
+
+$(zskills_enforcement_tag main_protection config_hooks_tamper)
+EOF
+)
+      if [ "$TAMPER_MODE" = "warn" ]; then
+        zskills_enforcement_warn "$TAMPER_MSG"
+        zskills_enforcement_flush_warnings
+        exit 0
+      fi
+      # block
+      ESC="${TAMPER_MSG//\\/\\\\}"
+      ESC="${ESC//\"/\\\"}"
+      ESC="${ESC//$'\n'/\\n}"
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$ESC"
+      exit 0
+    fi
+  fi
+fi
+
 # ── Worktree-self check ──────────────────────────────────────────────────
 # If $MAIN_ROOT itself is a linked worktree (session started in a worktree),
 # this hook is a no-op — we only protect main, not whichever checkout we
@@ -165,20 +480,11 @@ fi
 [ "$MAIN_PROTECTED" -eq 1 ] || exit 0
 
 # ── Resolve target path & check containment ──────────────────────────────
-# Normalize the target. If it's relative, treat it as relative to $MAIN_ROOT
-# (matches what `Edit` accepts, although Edit/Write require absolute paths
-# per Claude Code conventions — we still defend).
-case "$FILE_PATH" in
-  /*) ABS_FILE_PATH="$FILE_PATH" ;;
-  *)  ABS_FILE_PATH="$MAIN_ROOT/$FILE_PATH" ;;
-esac
-
-# Resolve the dirname (file may not exist yet for Write) and re-attach the
-# basename. This handles `..` segments and symlinks in the dirname.
-TARGET_DIR=$(dirname "$ABS_FILE_PATH")
-TARGET_BASE=$(basename "$ABS_FILE_PATH")
-RESOLVED_DIR=$(cd "$TARGET_DIR" 2>/dev/null && pwd -P) || RESOLVED_DIR="$TARGET_DIR"
-RESOLVED_FILE="${RESOLVED_DIR%/}/$TARGET_BASE"
+# Normalize the target via the hoisted normalize_target_path (the SAME code
+# path the config_hooks_tamper arm uses). If it's relative, treat it as
+# relative to $MAIN_ROOT (matches what `Edit` accepts, although Edit/Write
+# require absolute paths per Claude Code conventions — we still defend).
+RESOLVED_FILE=$(normalize_target_path "$FILE_PATH" "$MAIN_ROOT")
 
 # Containment check: is the resolved file under $MAIN_ROOT?
 case "$RESOLVED_FILE" in
@@ -205,7 +511,47 @@ case "$REL" in
   .worktreepurpose)  exit 0 ;;  # legacy worktree purpose marker (transition window)
 esac
 
-# ── Deny ─────────────────────────────────────────────────────────────────
+# ── main_edit mode resolution (registry row 36; #1165 headline) ────────────
+# main_edit is now DEMOTABLE (Settled decision 7, REVISED): autonomous/
+# unwatched Edit/Write to main → BLOCK; WATCHED → SILENT by shipped default
+# (the zero-config quiet headline — do NOT reintroduce a watched warning), or
+# opt-in `"warn"`. An explicit `"block"` toggle restores hard-deny-even-watched.
+# ENF_ROOT (config_root) was computed in the tamper arm above; MAIN_ROOT
+# doubles as ENF_LOCAL for this Edit/Write hook (no cd-target in the input).
+PRED=$(zskills_enforcement_predicate "$INPUT" "$ENF_ROOT" "$MAIN_ROOT")
+zskills_enforcement_load_toggles "$ENF_ROOT/.claude/zskills-config.json"
+MODE=$(zskills_enforcement_mode main_protection main_edit demotable "$PRED")
+case "$MODE" in
+  silent|off) exit 0 ;;  # zero-config watched default (silent) / explicit off
+esac
+# Re-run WITHOUT command substitution so _ZSK_ENF_SOURCE is set in THIS shell
+# (the tag formatter reads it; a $()-captured call would lose the side effect).
+zskills_enforcement_mode main_protection main_edit demotable "$PRED" >/dev/null
+
+# ── Deny / Warn ───────────────────────────────────────────────────────────
+# ONE tag call line for main_edit (Settled decision 14 — one tag-emission form
+# per check); the resolved tag is reused in both the warn and block arms. The
+# agent-directed worktree-routing advice (the /do pr · /run-plan ·
+# /create-worktree recommendations) stays DENY-arm-only (Settled decision 2 —
+# the warn audience is the watching human, not the model). The warn arm softens
+# "is blocked" → "is normally blocked".
+MAIN_EDIT_TAG=$(zskills_enforcement_tag main_protection main_edit)
+
+if [ "$MODE" = "warn" ]; then
+  STOP_MSG=$(cat <<EOF
+STOP: Edit/Write to main is normally blocked (main_protected: true in .claude/zskills-config.json).
+
+Target: $ORIG_FILE_PATH ($REL)
+
+$MAIN_EDIT_TAG
+EOF
+)
+  zskills_enforcement_warn "$STOP_MSG"
+  zskills_enforcement_flush_warnings
+  exit 0
+fi
+
+# block — the factual body + the agent-directed worktree-routing advice.
 STOP_MSG=$(cat <<EOF
 STOP: Edit/Write to main is blocked (main_protected: true in .claude/zskills-config.json).
 
@@ -226,6 +572,8 @@ plus the legacy gitignored root markers \\\`.zskills-tracked\\\`,
 
 To disable this gate project-wide, set \\\`execution.main_protected: false\\\`
 in \\\`.claude/zskills-config.json\\\`.
+
+$MAIN_EDIT_TAG
 EOF
 )
 

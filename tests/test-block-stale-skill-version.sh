@@ -117,11 +117,15 @@ load_hook_funcs() {
   # Instead: extract the function bodies into a tmp file and source that.
   local tmp
   tmp=$(mktemp)
+  # ENFORCEMENT_V2_PLAN Phase 2 (#1159): the hook's local `json_escape` twin was
+  # RETARGETED to the lib's `zskills_enforcement_json_escape` (byte-identical
+  # contract — the lib function was specced FROM this twin; drift-gated). The
+  # JSON-escape unit cases below are re-pointed at the lib function name.
   awk '
     /^is_git_subcommand\(\) \{$/,/^\}$/ {print}
     /^is_git_subcommand_in_chain\(\) \{$/,/^\}$/ {print}
     /^is_git_subcommand_in_wrappers\(\) \{$/,/^\}$/ {print}
-    /^json_escape\(\) \{$/,/^\}$/ {print}
+    /^zskills_enforcement_json_escape\(\) \{$/,/^\}$/ {print}
   ' "$HOOK" > "$tmp"
   # shellcheck disable=SC1090
   . "$tmp"
@@ -383,7 +387,7 @@ rm -f $TEST_OUT/c12a.err
 # deny envelope parses as JSON.
 if command -v python3 >/dev/null; then
   C13_INPUT=$'STOP: trouble.\nLine with "double quotes" and \\ backslash and a tab\there.\nAnother line.'
-  C13_REASON=$(json_escape "$C13_INPUT")
+  C13_REASON=$(zskills_enforcement_json_escape "$C13_INPUT")
   C13_ENVELOPE=$(printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$C13_REASON")
   if python3 -c 'import json,sys; json.loads(sys.stdin.read())' <<< "$C13_ENVELOPE" 2>/dev/null; then
     pass "C13: multi-line reason w/ \" and \\ → valid JSON envelope"
@@ -397,7 +401,7 @@ fi
 # ─────────────────── C14: UTF-8 round-trip ───────────────────
 if command -v python3 >/dev/null; then
   C14_INPUT=$'tëst skipped — résumé naïve'
-  C14_REASON=$(json_escape "$C14_INPUT")
+  C14_REASON=$(zskills_enforcement_json_escape "$C14_INPUT")
   C14_ENVELOPE=$(printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$C14_REASON")
   C14_DECODED=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["hookSpecificOutput"]["permissionDecisionReason"], end="")' <<< "$C14_ENVELOPE" 2>/dev/null)
   if [ "$C14_DECODED" = "$C14_INPUT" ]; then
@@ -412,7 +416,7 @@ fi
 # ─────────────────── C15: Control-byte strip ─────────────────
 if command -v python3 >/dev/null; then
   C15_INPUT=$'a\x01\x02\x07\x0bb'
-  C15_REASON=$(json_escape "$C15_INPUT")
+  C15_REASON=$(zskills_enforcement_json_escape "$C15_INPUT")
   C15_ENVELOPE=$(printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$C15_REASON")
   C15_DECODED=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["hookSpecificOutput"]["permissionDecisionReason"], end="")' <<< "$C15_ENVELOPE" 2>/dev/null)
   if [ "$C15_DECODED" = "ab" ]; then

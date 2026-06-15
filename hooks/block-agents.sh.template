@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # Block Agent (subagent) dispatches that use a model below agents.min_model.
 # Registered under the Agent PreToolUse matcher in .claude/settings.json.
 #
@@ -165,7 +165,7 @@ fi
 KNOWN_HAIKU_PINNED_SUBAGENTS=" Explore "
 if [ -z "$DISPATCH_MODEL" ]; then
   if [ -n "$SUBAGENT_TYPE" ] && [[ "$KNOWN_HAIKU_PINNED_SUBAGENTS" == *" $SUBAGENT_TYPE "* ]]; then
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"subagent_type %s is pinned to Haiku in the host environment but has no .claude/agents/%s.md override resolving it to a higher model. Either pass an explicit model: argument (e.g., model: \"opus\") or add an agent definition file. See CLAUDE.md `## Subagent Dispatch`."}}\n' \
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"subagent_type %s is pinned to Haiku in the host environment but has no .claude/agents/%s.md override resolving it to a higher model. Either pass an explicit model: argument (e.g., model: \"opus\") or add an agent definition file. See CLAUDE.md `## Subagent Dispatch`. [agents.min_model — set in .claude/zskills-config.json; raise-only across config tiers]"}}\n' \
       "$SUBAGENT_TYPE" "$SUBAGENT_TYPE"
     exit 0
   fi
@@ -181,7 +181,7 @@ fi
 
 # Block if dispatch model is below the configured minimum
 if [ "$DISPATCH_ORDINAL" -lt "$MIN_ORDINAL" ]; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"agents.min_model requires %s or higher (ordinal %d); got %s (ordinal %d). Update your Agent dispatch to use a higher model."}}\n' \
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"agents.min_model requires %s or higher (ordinal %d); got %s (ordinal %d). Update your Agent dispatch to use a higher model. [agents.min_model — set in .claude/zskills-config.json; raise-only across config tiers]"}}\n' \
     "$MIN_MODEL" "$MIN_ORDINAL" "$DISPATCH_MODEL" "$DISPATCH_ORDINAL"
   exit 0
 fi
