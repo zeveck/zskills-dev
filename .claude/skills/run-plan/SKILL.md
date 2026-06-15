@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.15+0efeca"
+  version: "2026.06.15+df5632"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -111,16 +111,20 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
 elif [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
   LANDING_MODE="direct"
 else
-  # Read config default
-  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
-  if [ -f "$CONFIG_FILE" ]; then
-    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
-    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-      CFG_LANDING="${BASH_REMATCH[1]}"
-      if [ -n "$CFG_LANDING" ]; then
-        LANDING_MODE="$CFG_LANDING"
-      fi
-    fi
+  # Read config default. CASCADE v2 (ENFORCEMENT_V2 Phase 4): source the
+  # canonical lane-portable resolver and read the resolved $ZSKILLS_CFG_LANDING
+  # (project > user > empty) instead of an inline BASH_REMATCH read. NO behavior
+  # change intended — arg flags above still take precedence, and
+  # $ZSKILLS_CFG_LANDING is EMPTY when neither tier sets execution.landing so
+  # this fence keeps its own `cherry-pick` unset-default (user-tier fill is the
+  # only added effect, per #1159 scope).
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  if [ -n "$ZSKILLS_CFG_LANDING" ]; then
+    LANDING_MODE="$ZSKILLS_CFG_LANDING"
   fi
 fi
 ```

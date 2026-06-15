@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.12+a14fcd"
+  version: "2026.06.15+284560"
 ---
 
 # Update Z Skills Infrastructure
@@ -446,6 +446,17 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
    ```bash
    CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
+   # CASCADE v2 (ENFORCEMENT_V2 Phase 4): execution.landing and
+   # execution.branch_prefix are plain-cascade workflow keys — source the
+   # canonical lane-portable resolver and read $ZSKILLS_CFG_LANDING /
+   # $ZSKILLS_CFG_BRANCH_PREFIX (project > user > empty) instead of the inline
+   # BASH_REMATCH reads (below). The remaining keys keep the documented
+   # scoped-extraction form (this fence demonstrates that canonical form).
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # Top-level string (no parent — direct extraction is safe):
    if [[ "$CONFIG_CONTENT" =~ \"project_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      PROJECT_NAME="${BASH_REMATCH[1]}"
@@ -487,14 +498,14 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      MAIN_PROTECTED="${BASH_REMATCH[1]}"
    fi
-   # parent: execution  (landing mode)
-   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-     LANDING_MODE="${BASH_REMATCH[1]}"
-   fi
-   # parent: execution  (branch prefix)
-   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-     BRANCH_PREFIX="${BASH_REMATCH[1]}"
-   fi
+   # parent: execution  (landing mode) — CASCADE v2 (Phase 4): read the
+   # resolved cascade value ($ZSKILLS_CFG_LANDING, project > user > empty)
+   # instead of an inline BASH_REMATCH read.
+   LANDING_MODE="$ZSKILLS_CFG_LANDING"
+   # parent: execution  (branch prefix) — CASCADE v2 (Phase 4): read the
+   # resolved cascade value ($ZSKILLS_CFG_BRANCH_PREFIX, project > user >
+   # empty) instead of an inline BASH_REMATCH read.
+   BRANCH_PREFIX="$ZSKILLS_CFG_BRANCH_PREFIX"
    # parent: ci  (boolean)
    if [[ "$CONFIG_CONTENT" =~ \"ci\"[[:space:]]*:[[:space:]]*\{[^}]*\"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      CI_AUTO_FIX="${BASH_REMATCH[1]}"

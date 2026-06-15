@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.1
+# zskills-hook-version: 2026.06.2
 # block-run-plan-unclaimed.sh — PreToolUse hook on Bash.
 #
 # Backstops the /run-plan claim-acquire prose discipline (Phase 2 of
@@ -588,16 +588,31 @@ fi
 
 # ── Read branch_prefix from config (D7 R2.1 option (b)) ──────────────────
 # Default "feat/" matches the canonical preset. Inline Python json keeps
-# the hook's "no jq" discipline.
+# the hook's "no jq" discipline. CASCADE v2 (ENFORCEMENT_V2 Phase 4):
+# branch_prefix is a plain-cascade workflow key — resolve project > user >
+# "feat/". (This hook cannot source the bash resolver; its Python does the
+# two-tier read directly.) Per-tier fail-closed: a malformed user file is
+# swallowed by try/except and contributes nothing.
 CONFIG_FILE="${CLAUDE_PROJECT_DIR:-$MAIN_ROOT}/.claude/zskills-config.json"
-BRANCH_PREFIX=$("$PYTHON" - <<PY "$CONFIG_FILE"
+USER_CONFIG_FILE="${HOME:-}/.claude/zskills-config.json"
+BRANCH_PREFIX=$("$PYTHON" - <<PY "$CONFIG_FILE" "$USER_CONFIG_FILE"
 import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        d = json.load(f).get("execution", {})
-    bp = d.get("branch_prefix")
-    print(bp if bp else "feat/")
-except Exception:
+
+def _bp(path):
+    try:
+        with open(path) as f:
+            return (json.load(f).get("execution", {}) or {}).get("branch_prefix")
+    except Exception:
+        return None
+
+project_bp = _bp(sys.argv[1])
+user_bp = _bp(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
+# Plain cascade: project wins when present (non-empty), else user, else feat/.
+if project_bp:
+    print(project_bp)
+elif user_bp:
+    print(user_bp)
+else:
     print("feat/")
 PY
 )

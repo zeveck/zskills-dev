@@ -434,7 +434,11 @@ check       commit "read-only reviewer"       'You are read-only|you are read-on
 # A config of `cherry-pick` is rejected as misuse (the `land` subcommand
 # is the cherry-pick flow, not a default-mode selector).
 check_fixed commit "default-mode: landing config read"   'execution.landing'
-check_fixed commit "default-mode: bash-regex landing"    '\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"'
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4) RE-SPEC: the inline BASH_REMATCH landing
+# read was replaced by a cascaded $ZSKILLS_CFG_LANDING read (see the
+# landing-reader migration tripwire below). The default-mode dispatch now
+# reads the resolver-resolved value.
+check_fixed commit "default-mode: cascaded landing read"  'CFG_LANDING="$ZSKILLS_CFG_LANDING"'
 check_fixed commit "default-mode: explicit-mode guard"   'HAS_EXPLICIT_MODE'
 check_fixed commit "default-mode: push|land anywhere"    '(push|land)'
 check_fixed commit "default-mode: pr → PR mode"          'DEFAULT_MODE="pr"'
@@ -2636,6 +2640,52 @@ else
   printf '%s\n' "$CASCADE_CONGRUENCE_HITS" | while IFS= read -r h; do
     [ -n "$h" ] && printf '    %s\n' "$h" >&2
   done
+fi
+
+echo ""
+echo "=== Landing-reader migration: cascaded \$ZSKILLS_CFG_LANDING (CASCADE v2, ENFORCEMENT_V2 Phase 4) ==="
+# CASCADE v2 (#1159) migrated the landing-mode RESOLUTION fences off inline
+# BASH_REMATCH reads onto the canonical resolver's $ZSKILLS_CFG_LANDING export.
+# Each migrated file must (a) source zskills-resolve-config.sh and (b)
+# reference $ZSKILLS_CFG_LANDING. Anti-vacuous pinned file count = 6 (5 skill
+# surfaces + ensure-worktree.sh). apply-preset.sh is DELIBERATELY excluded
+# (R5: it probes the PROJECT FILE to decide whether to rewrite it) — its
+# exclusion is pinned, not assumed.
+LANDING_MIGRATED_FILES=(
+  "skills/do/SKILL.md"
+  "skills/fix-issues/SKILL.md"
+  "skills/run-plan/SKILL.md"
+  "skills/commit/SKILL.md"
+  "skills/update-zskills/SKILL.md"
+  "skills/create-worktree/scripts/ensure-worktree.sh"
+)
+LANDING_MIGRATED_COUNT=0
+for _lmf in "${LANDING_MIGRATED_FILES[@]}"; do
+  _lmf_path="$REPO_ROOT/$_lmf"
+  if [ ! -f "$_lmf_path" ]; then
+    fail "[landing-migration] $_lmf exists" "$_lmf missing"
+    continue
+  fi
+  if grep -q 'zskills-resolve-config\.sh' "$_lmf_path" \
+     && grep -q 'ZSKILLS_CFG_LANDING' "$_lmf_path"; then
+    pass "[landing-migration] $_lmf sources resolver + references \$ZSKILLS_CFG_LANDING"
+    LANDING_MIGRATED_COUNT=$((LANDING_MIGRATED_COUNT + 1))
+  else
+    fail "[landing-migration] $_lmf sources resolver + references \$ZSKILLS_CFG_LANDING" \
+      "missing source-of-resolver or \$ZSKILLS_CFG_LANDING reference"
+  fi
+done
+if [ "$LANDING_MIGRATED_COUNT" -eq 6 ]; then
+  pass "[landing-migration] exactly 6 migrated files reference \$ZSKILLS_CFG_LANDING (anti-vacuous count)"
+else
+  fail "[landing-migration] migrated-file count" "expected 6, found $LANDING_MIGRATED_COUNT"
+fi
+# R5 exclusion pin: apply-preset.sh must NOT reference $ZSKILLS_CFG_LANDING.
+if grep -q 'ZSKILLS_CFG_LANDING' "$REPO_ROOT/skills/update-zskills/scripts/apply-preset.sh" 2>/dev/null; then
+  fail "[landing-migration] apply-preset.sh R5 exclusion" \
+    "apply-preset.sh references \$ZSKILLS_CFG_LANDING — must read the PROJECT FILE directly (R5)"
+else
+  pass "[landing-migration] apply-preset.sh does NOT reference \$ZSKILLS_CFG_LANDING (R5 exclusion pinned)"
 fi
 
 echo ""

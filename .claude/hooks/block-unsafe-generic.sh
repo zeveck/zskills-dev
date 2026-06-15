@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.6
+# zskills-hook-version: 2026.06.7
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -30,13 +30,16 @@
 # we DEFAULT TO BLOCKING (BLOCK_MAIN_PUSH=1) — preserving the prior
 # "zskills-shipped configs fail closed (safer)" posture.
 #
-# CONFIG-CASCADE CARVE-OUT (INSTALL_REDESIGN Phase 5, deliberate): this
-# hook reads execution.main_protected from the PROJECT config ONLY — it
-# does NOT participate in the project > user > built-ins cascade. This is
-# a SAFETY setting: letting a user-level ~/.claude/zskills-config.json
-# silently weaken a project's main_protected would invert the trust
-# direction (a per-user file overriding a per-repo discipline). The
-# fail-closed default above is unchanged.
+# CONFIG-CASCADE RAISE-ONLY FLOOR (CASCADE v2, ENFORCEMENT_V2 Phase 4 —
+# supersedes the INSTALL_REDESIGN Phase 5 PROJECT-ONLY carve-out): the push
+# gate now reads execution.main_protected from BOTH tiers and merges
+# RAISE-ONLY. A user-tier `true` OVERRIDES a project `false` (the user tier
+# can RAISE protection); a user tier can NEVER lower a project's protection.
+# This preserves the original trust-direction guarantee — the rejected
+# inversion was a per-user file WEAKENING a per-repo discipline; a per-user
+# file STRENGTHENING it is safe. The fail-closed default above is unchanged
+# (absent everywhere → block push); a malformed user file contributes no
+# floor (per-tier fail-closed).
 # D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
 # lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
 # plugin lane it defers to a settings.json-registered copy of this hook to
@@ -1629,14 +1632,32 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
     PUSH_CONFIG_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   fi
   PUSH_CONFIG_FILE="$PUSH_CONFIG_ROOT/.claude/zskills-config.json"
+  PUSH_USER_CONFIG_FILE="${HOME:-}/.claude/zskills-config.json"
+  # CASCADE v2 (ENFORCEMENT_V2 Phase 4): RAISE-ONLY two-tier read. Enforce iff
+  # NOT (project says `"main_protected": false` AND user does NOT say true) —
+  # i.e. a user-tier `true` OVERRIDES a project `false` (raise-only); a user
+  # tier can never LOWER a project's protection. The fail-CLOSED direction is
+  # preserved: absent everywhere → block push. Per-tier fail-closed: a
+  # malformed user file matches nothing, so it cannot disarm the floor.
   BLOCK_MAIN_PUSH=1
+  PUSH_PROJECT_SAYS_FALSE=0
   if [ -f "$PUSH_CONFIG_FILE" ]; then
     PUSH_CFG_CONTENT=$(cat "$PUSH_CONFIG_FILE" 2>/dev/null) || PUSH_CFG_CONTENT=""
-    # Explicit `false` → allow. Anything else (including missing key, true,
-    # or unparseable garbage) → stay blocked (fail closed).
     if [[ "$PUSH_CFG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*false ]]; then
-      BLOCK_MAIN_PUSH=0
+      PUSH_PROJECT_SAYS_FALSE=1
     fi
+  fi
+  PUSH_USER_SAYS_TRUE=0
+  if [ -n "${HOME:-}" ] && [ -f "$PUSH_USER_CONFIG_FILE" ]; then
+    PUSH_USER_CFG_CONTENT=$(cat "$PUSH_USER_CONFIG_FILE" 2>/dev/null) || PUSH_USER_CFG_CONTENT=""
+    if [[ "$PUSH_USER_CFG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+      PUSH_USER_SAYS_TRUE=1
+    fi
+  fi
+  # Allow push (BLOCK=0) ONLY when project explicitly says false AND the user
+  # tier does not RAISE it back to true.
+  if [ "$PUSH_PROJECT_SAYS_FALSE" -eq 1 ] && [ "$PUSH_USER_SAYS_TRUE" -eq 0 ]; then
+    BLOCK_MAIN_PUSH=0
   fi
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then

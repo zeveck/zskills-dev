@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.3
+# zskills-hook-version: 2026.06.4
 # block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
@@ -468,12 +468,26 @@ fi
 
 # ── main_protected gate ──────────────────────────────────────────────────
 # Load-bearing config check (issue #308 §1). Defaults to OFF — only blocks
-# when the literal `"main_protected": true` is present in the config.
+# when the literal `"main_protected": true` is present.
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4): RAISE-ONLY two-tier read — protected
+# iff the project literal is true OR the user ~/.claude/zskills-config.json
+# literal is true (OR-merge). The user tier can RAISE protection but never
+# lower it; the fail-OPEN direction is preserved (both absent → allow).
+# Read-root pin (R2-7): the project tier keeps its existing $MAIN_ROOT read;
+# the user tier is the additive arm. Per-tier fail-closed: a malformed user
+# file matches nothing and contributes no floor.
 CONFIG_FILE="$MAIN_ROOT/.claude/zskills-config.json"
+USER_CONFIG_FILE="${HOME:-}/.claude/zskills-config.json"
 MAIN_PROTECTED=0
 if [ -f "$CONFIG_FILE" ]; then
   CFG_CONTENT=$(cat "$CONFIG_FILE" 2>/dev/null) || CFG_CONTENT=""
   if [[ "$CFG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+    MAIN_PROTECTED=1
+  fi
+fi
+if [ "$MAIN_PROTECTED" -ne 1 ] && [ -n "${HOME:-}" ] && [ -f "$USER_CONFIG_FILE" ]; then
+  USER_CFG_CONTENT=$(cat "$USER_CONFIG_FILE" 2>/dev/null) || USER_CFG_CONTENT=""
+  if [[ "$USER_CFG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
     MAIN_PROTECTED=1
   fi
 fi

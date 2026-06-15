@@ -147,11 +147,20 @@ run_parser() {
 JSON
   fi
   RUN_ERR="$box/.stderr"
+  # CASCADE v2 (ENFORCEMENT_V2 Phase 4) — the config-default fence MIGRATED off
+  # an inline CWD-relative BASH_REMATCH read onto the canonical resolver, which
+  # reads $CLAUDE_PROJECT_DIR/.claude/zskills-config.json. Point the fence at
+  # the real resolver via CLAUDE_PLUGIN_ROOT (its lane-portable plugin branch
+  # resolves $REPO_ROOT/skills/update-zskills/scripts/) and at the sandbox
+  # config via CLAUDE_PROJECT_DIR="$box". (Pre-migration the fence read CWD's
+  # .claude/zskills-config.json; the box config now flows through the resolver.)
   RUN_OUT=$(
     cd "$box" || exit 99
     set +e
     set -u
     export ARGUMENTS="$args"
+    export CLAUDE_PLUGIN_ROOT="$REPO_ROOT"
+    export CLAUDE_PROJECT_DIR="$box"
     bash "$DRIVER" 2>"$RUN_ERR"
   )
   RUN_RC=$?

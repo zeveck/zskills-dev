@@ -333,6 +333,75 @@ def _read_json_dict(path: pathlib.Path) -> Dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _merge_execution_cascade_v2(merged, user, project):
+    """CASCADE v2 (ENFORCEMENT_V2 Phase 4, #1159 scope-trim).
+
+    The user tier's `execution` block contributes EXACTLY five keys; every
+    other execution.* key (and the whole block by default) stays
+    project-tier-only. Mutates `merged["execution"]` in place.
+
+      Plain cascade (project > user > built-ins) for THREE workflow keys:
+        landing, branch_prefix, max_concurrent_worktrees.
+      Raise-only floors for TWO safety keys:
+        main_protected (OR-merge: True wins over False — a user tier RAISES
+          protection, never lowers it),
+        min_model (DISPLAY-ONLY higher-ordinal merge; tie→project literal).
+        NOTE: block-agents.sh is the enforcement authority and resolves
+        auto/inherit DYNAMICALLY — this static lattice (auto/inherit≈2) is
+        APPROXIMATE and informational only.
+
+    Per-tier fail-closed: a malformed user file means `user` is `{}` (its
+    `_read_json_dict` swallowed the parse error), so this contributes
+    nothing — a floor can only fail to RAISE, never lower.
+    """
+    uex = user.get("execution") if isinstance(user.get("execution"), dict) else {}
+    pex = project.get("execution") if isinstance(project.get("execution"), dict) else {}
+    mex = dict(merged.get("execution")) if isinstance(merged.get("execution"), dict) else {}
+
+    # (a) plain cascade — project > user > whatever defaults already seeded mex
+    for key in ("landing", "branch_prefix", "max_concurrent_worktrees"):
+        if key in uex:
+            mex[key] = uex[key]
+        if key in pex:
+            mex[key] = pex[key]
+
+    # (b) raise-only floors
+    # main_protected — OR-merge (True wins). Start from the merged baseline
+    # (defaults/project already applied below), then raise if the user says True.
+    if uex.get("main_protected") is True:
+        mex["main_protected"] = True
+    if pex.get("main_protected") is True:
+        mex["main_protected"] = True
+
+    merged["execution"] = mex
+
+    # min_model lives under agents.* — DISPLAY-ONLY higher-ordinal merge.
+    def _ord(m):
+        if not isinstance(m, str):
+            return 0
+        ml = m.lower()
+        if "haiku" in ml:
+            return 1
+        if "sonnet" in ml:
+            return 2
+        if "opus" in ml:
+            return 3
+        if ml in ("auto", "inherit"):
+            return 2
+        return 0
+    uag = user.get("agents") if isinstance(user.get("agents"), dict) else {}
+    pag = project.get("agents") if isinstance(project.get("agents"), dict) else {}
+    mag = dict(merged.get("agents")) if isinstance(merged.get("agents"), dict) else {}
+    u_mm, p_mm = uag.get("min_model"), pag.get("min_model")
+    # project wins on tie; user only when strictly higher.
+    if p_mm is not None:
+        mag["min_model"] = p_mm
+    if u_mm is not None and _ord(u_mm) > _ord(mag.get("min_model")):
+        mag["min_model"] = u_mm
+    merged["agents"] = mag
+    return merged
+
+
 def _load_zskills_config(main_root: pathlib.Path) -> Dict[str, Any]:
     """Config cascade (INSTALL_REDESIGN Phase 5): project > user > built-ins.
 
@@ -340,15 +409,18 @@ def _load_zskills_config(main_root: pathlib.Path) -> Dict[str, Any]:
     the canonical skills/update-zskills/scripts/zskills-defaults.json
     (always LOADED, never a copied dict), overlaid by the user tier
     (~/.claude/zskills-config.json), overlaid by the project tier
-    (<main_root>/.claude/zskills-config.json). `execution.*` is
-    PROJECT-TIER-ONLY across the whole cascade (safety carve-out — a
-    user-level file must not weaken a project's repo discipline), so the
-    user tier's `execution` key is dropped before merging. Missing or
-    malformed tiers contribute nothing (fail-open).
+    (<main_root>/.claude/zskills-config.json). CASCADE v2 (ENFORCEMENT_V2
+    Phase 4): the user tier's `execution` block is dropped from the blanket
+    merge, then SELECTIVELY re-merged for exactly the five #1159-scoped keys
+    (3 plain-cascade workflow keys + 2 raise-only safety floors) via
+    `_merge_execution_cascade_v2`. Every other execution.* key (and
+    agents.* apart from the min_model floor) stays project-tier-only.
+    Missing or malformed tiers contribute nothing (fail-open / per-tier
+    fail-closed for the floors).
 
     SYNC NOTE: intentionally duplicated as briefing.py:load_zskills_config
     and server.py:_load_zskills_config (separate processes, no shared
-    module) — keep the three in sync.
+    module) — keep the three in sync, INCLUDING _merge_execution_cascade_v2.
     """
     defaults_path = (
         pathlib.Path(__file__).resolve().parents[3]
@@ -358,10 +430,15 @@ def _load_zskills_config(main_root: pathlib.Path) -> Dict[str, Any]:
               if k != "_comment"}
     user = _read_json_dict(
         pathlib.Path.home() / ".claude" / "zskills-config.json")
+    project = _read_json_dict(
+        main_root / ".claude" / "zskills-config.json")
     user.pop("execution", None)
     merged.update(user)
-    merged.update(_read_json_dict(
-        main_root / ".claude" / "zskills-config.json"))
+    merged.update(project)
+    # Re-merge the five #1159-scoped execution/agents keys from the user tier
+    # (the blanket merge above dropped the user's execution block entirely).
+    _merge_execution_cascade_v2(merged, _read_json_dict(
+        pathlib.Path.home() / ".claude" / "zskills-config.json"), project)
     return merged
 
 

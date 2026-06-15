@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.4
+# zskills-hook-version: 2026.06.5
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -845,13 +845,29 @@ resolve_effective_worktree_root() {
 # Reads config at runtime (not baked in during /update-zskills).
 # Changing the config takes effect immediately.
 is_main_protected() {
+  # CASCADE v2 (ENFORCEMENT_V2 Phase 4): RAISE-ONLY two-tier read — protected
+  # iff the project literal is true OR the user ~/.claude/zskills-config.json
+  # literal is true. The user tier can RAISE protection but never lower it;
+  # the fail-OPEN direction is preserved (both absent → return 1 / allow).
+  # Read-root pin (R2-7): the project tier keeps its existing LOCAL-toplevel
+  # $REPO_ROOT read (a worktree reads its own branch-current copy — existing
+  # documented behavior); only the user tier is the additive arm. Per-tier
+  # fail-closed: a malformed user file matches nothing.
   local config_file
   local repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   config_file="$repo_root/.claude/zskills-config.json"
   if [ -f "$config_file" ]; then
     local content
-    content=$(cat "$config_file" 2>/dev/null) || return 1
+    content=$(cat "$config_file" 2>/dev/null) || content=""
     if [[ "$content" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+      return 0
+    fi
+  fi
+  local user_config_file="${HOME:-}/.claude/zskills-config.json"
+  if [ -n "${HOME:-}" ] && [ -f "$user_config_file" ]; then
+    local user_content
+    user_content=$(cat "$user_config_file" 2>/dev/null) || user_content=""
+    if [[ "$user_content" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
       return 0
     fi
   fi

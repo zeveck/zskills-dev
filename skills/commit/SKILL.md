@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.06.10+2773b8"
+  version: "2026.06.15+17bc3f"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -79,50 +79,56 @@ elif [[ "$ARGUMENTS" =~ (^|[[:space:]])(push|land)($|[[:space:]]) ]]; then
 fi
 
 if [ "$HAS_EXPLICIT_MODE" -eq 0 ]; then
-  # No explicit mode — consult execution.landing from config.
-  CONFIG_FILE=".claude/zskills-config.json"
-  if [ -f "$CONFIG_FILE" ]; then
-    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
-    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-      CFG_LANDING="${BASH_REMATCH[1]}"
-      case "$CFG_LANDING" in
-        pr)
-          # Treat as `/commit pr` — drop into PR subcommand mode below.
-          # SCOPE_HINT keeps any scope words from $ARGUMENTS (no `pr` prefix
-          # to strip, since the user didn't type it). Strip the positional
-          # `auto` token (AUTO_FLAG was already set above) so it does not
-          # leak into the PR title / downstream scope-hint usage.
-          SCOPE_HINT=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
-          DEFAULT_MODE="pr"
-          ;;
-        direct|"")
-          # Commit-only default — current behavior preserved.
-          DEFAULT_MODE="commit"
-          ;;
-        cherry-pick)
-          # `/commit land` is the cherry-pick subcommand for landing
-          # worktree commits onto main, NOT a default-mode selector. A
-          # config of `cherry-pick` here is almost certainly a misconfig
-          # (the user probably wanted `pr` or `direct`). Surface loudly
-          # rather than silently picking a behavior.
-          echo "ERROR: execution.landing=\"cherry-pick\" is not a valid default for /commit." >&2
-          echo "  /commit land is the cherry-pick subcommand for landing worktree" >&2
-          echo "  commits onto main; it is NOT a default-mode selector. Set" >&2
-          echo "  execution.landing to \"pr\" or \"direct\" in" >&2
-          echo "  .claude/zskills-config.json, or invoke /commit land explicitly." >&2
-          exit 1
-          ;;
-        *)
-          # Unknown value — fall back to commit-only.
-          DEFAULT_MODE="commit"
-          ;;
-      esac
-    else
-      DEFAULT_MODE="commit"
-    fi
+  # No explicit mode — consult execution.landing from config. CASCADE v2
+  # (ENFORCEMENT_V2 Phase 4): source the canonical lane-portable resolver and
+  # read the resolved $ZSKILLS_CFG_LANDING (project > user > empty) instead of
+  # an inline BASH_REMATCH read. NO behavior change intended — the enum
+  # dispatch below maps the resolved value into DEFAULT_MODE exactly as before;
+  # $ZSKILLS_CFG_LANDING is EMPTY when neither tier sets execution.landing, in
+  # which case the empty-string arm preserves the commit-only default. The
+  # user-tier fill is the only added effect (per #1159 scope).
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
   else
-    DEFAULT_MODE="commit"
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
+  # $ZSKILLS_CFG_LANDING is empty when neither tier sets execution.landing —
+  # the `direct|""` arm below maps that (and an explicit `direct`) to the
+  # commit-only default, byte-equivalent to the old "no config / unmatched
+  # regex → commit" path.
+  CFG_LANDING="$ZSKILLS_CFG_LANDING"
+  case "$CFG_LANDING" in
+    pr)
+      # Treat as `/commit pr` — drop into PR subcommand mode below.
+      # SCOPE_HINT keeps any scope words from $ARGUMENTS (no `pr` prefix
+      # to strip, since the user didn't type it). Strip the positional
+      # `auto` token (AUTO_FLAG was already set above) so it does not
+      # leak into the PR title / downstream scope-hint usage.
+      SCOPE_HINT=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
+      DEFAULT_MODE="pr"
+      ;;
+    direct|"")
+      # Commit-only default — current behavior preserved.
+      DEFAULT_MODE="commit"
+      ;;
+    cherry-pick)
+      # `/commit land` is the cherry-pick subcommand for landing
+      # worktree commits onto main, NOT a default-mode selector. A
+      # config of `cherry-pick` here is almost certainly a misconfig
+      # (the user probably wanted `pr` or `direct`). Surface loudly
+      # rather than silently picking a behavior.
+      echo "ERROR: execution.landing=\"cherry-pick\" is not a valid default for /commit." >&2
+      echo "  /commit land is the cherry-pick subcommand for landing worktree" >&2
+      echo "  commits onto main; it is NOT a default-mode selector. Set" >&2
+      echo "  execution.landing to \"pr\" or \"direct\" in" >&2
+      echo "  .claude/zskills-config.json, or invoke /commit land explicitly." >&2
+      exit 1
+      ;;
+    *)
+      # Unknown value — fall back to commit-only.
+      DEFAULT_MODE="commit"
+      ;;
+  esac
 
   # If config says `pr`, behave exactly as `/commit pr` from here on:
   # skip Phases 1–5 and run modes/pr.md end-to-end.

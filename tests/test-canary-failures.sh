@@ -12,6 +12,12 @@ set -u
 # find the committed fixture files under tests/fixtures/canary/).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# DA9 (CASCADE v2, ENFORCEMENT_V2 Phase 4): sandbox HOME so a dev machine's
+# personal ~/.claude/zskills-config.json (which Phase 6 promotes creating)
+# cannot flip the block-agents min_model reproducers (now a two-tier
+# RAISE-ONLY read).
+TMP_HOME="$(mktemp -d /tmp/zskills-canary-home-XXXXXX)"; export HOME="$TMP_HOME"
+printf '[user]\n\tname = zskills-test\n\temail = zskills-test@example.com\n[safe]\n\tdirectory = *\n' > "$TMP_HOME/.gitconfig"
 FIXTURES="$REPO_ROOT/tests/fixtures/canary"
 PASS_COUNT=0
 FAIL_COUNT=0

@@ -17,10 +17,30 @@
 #     presence test for the bash-regex family). A present-but-EMPTY project
 #     value ("key": "") therefore wins over a non-empty user value (and then
 #     falls through to the built-in default, when the key has one).
+#   - CASCADE v2 (ENFORCEMENT_V2 Phase 4, #1159 scope-trim): the user tier
+#     gains LIMITED, scoped powers over exactly five execution.* keys —
+#       (a) PLAIN cascade (project > user > built-ins) for THREE workflow
+#           keys: execution.landing, execution.branch_prefix,
+#           execution.max_concurrent_worktrees. These fill where the project
+#           is silent (project value wins when present). landing/branch_prefix
+#           carry NO resolver built-in default (exported EMPTY when unset in
+#           both tiers) so each consumer fence keeps its OWN unset-default;
+#           max_concurrent_worktrees keeps its resolver default of 3.
+#       (b) RAISE-ONLY floors for TWO safety keys: execution.main_protected
+#           (true wins over false — a user tier can RAISE protection, never
+#           lower it) and agents.min_model (stricter tier wins; the bash
+#           ZSKILLS_MIN_MODEL export is DISPLAY-ONLY — block-agents.sh is the
+#           enforcement authority and resolves auto/inherit dynamically).
+#     PER-TIER FAIL-CLOSED for the cascade: a malformed/unparseable user file
+#     is IGNORED entirely. For the bash reader this is structural — the
+#     user-tier pass is the same literal-extraction over the user body, so a
+#     garbage file simply matches nothing. For the raise-only floors this is
+#     inherently safe: an OR/max merge can only fail to RAISE, never lower a
+#     project's protection. A malformed user file never disarms a floor and
+#     never errors this resolver.
 #   - PROJECT-TIER-ONLY keys (never read from the user tier):
-#       * execution.* — repo discipline, not a user preference (the Phase 5
-#         family-5 rule: execution.* does not cascade from the user tier
-#         ANYWHERE in the cascade).
+#       * execution.dashboard_completed_days / dashboard_completed_limit —
+#         dashboard payload sizing, repo discipline (not a user preference).
 #       * zskills_version — the per-project install stamp; falls back to the
 #         `version:` line of .zskills/init-done, never to the user tier.
 #   - Built-in defaults (filled after both passes, for still-empty keys):
@@ -150,7 +170,27 @@ COMMIT_CO_AUTHOR=""
 ZSKILLS_VERSION=""
 # Default the live-worktree-cap to 3 (preserves status quo behavior pre-#295
 # for consumers who never set this field). Re-evaluated below if config sets it.
+# CASCADE v2 (Phase 4): now a plain-cascade workflow key — user tier fills
+# when the project is silent; project wins when present; default 3.
 ZSKILLS_MAX_CONCURRENT_WORKTREES=3
+# CASCADE v2 (Phase 4) plain-cascade workflow keys with NO resolver default —
+# exported EMPTY when unset in both tiers so every consumer fence keeps its own
+# unset-default (fix-issues/run-plan→cherry-pick, /do→direct for landing). The
+# names are PINNED and distinct from the fence-local LANDING_MODE/CFG_LANDING/
+# BRANCH_PREFIX vars consumer fences already use, so sourcing clobbers nothing.
+ZSKILLS_CFG_LANDING=""
+ZSKILLS_CFG_BRANCH_PREFIX=""
+# CASCADE v2 (Phase 4) raise-only safety floors.
+# ZSKILLS_MAIN_PROTECTED: "true" iff EITHER tier carries the literal
+# `"main_protected": true` inside its execution block (OR-merge = raise-only;
+# a user tier can RAISE protection but never lower it). Empty otherwise.
+ZSKILLS_MAIN_PROTECTED=""
+# ZSKILLS_MIN_MODEL: DISPLAY-ONLY merged floor. block-agents.sh is the
+# enforcement authority (it resolves auto/inherit DYNAMICALLY against the
+# session model). This bash export uses a STATIC approximation of the lattice
+# (haiku=1, sonnet=2, opus=3; auto/inherit≈2; unknown=0; higher ordinal wins;
+# tie→project literal) — APPROXIMATE, never read by enforcement.
+ZSKILLS_MIN_MODEL=""
 # Dashboard Completed-window config (W1.6 of completed-backlog-sections).
 # Days = recency window; Limit = max closed-issue payload size.
 ZSKILLS_DASHBOARD_COMPLETED_DAYS=14
@@ -203,22 +243,107 @@ _zsk_extract_cascade_keys() {
   if [[ "$_zsk_body" =~ \"commit\"[[:space:]]*:[[:space:]]*[{][^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     COMMIT_CO_AUTHOR="${BASH_REMATCH[1]}"
   fi
+  # CASCADE v2 (Phase 4): execution.landing / execution.branch_prefix —
+  # plain-cascade workflow keys. Scope via the enclosing "execution" object
+  # (the ensure-worktree.sh ≈L180 idiom — match inside the execution block,
+  # never a top-level "landing"/"branch_prefix"). Calling on the user body
+  # first then the project body implements "project wins; user fills
+  # project-absent keys". No resolver built-in default — empty when unset.
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    ZSKILLS_CFG_LANDING="${BASH_REMATCH[1]}"
+  fi
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    ZSKILLS_CFG_BRANCH_PREFIX="${BASH_REMATCH[1]}"
+  fi
+  # CASCADE v2 (Phase 4): execution.max_concurrent_worktrees — plain-cascade
+  # workflow key (moved here from the project-only pass). Integer (unquoted in
+  # JSON); accept any positive integer, else keep the prior value (default 3).
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"max_concurrent_worktrees\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    local _zsk_mcw="${BASH_REMATCH[1]}"
+    if [ "$_zsk_mcw" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_MAX_CONCURRENT_WORKTREES="$_zsk_mcw"
+    fi
+  fi
+}
+
+# CASCADE v2 (Phase 4): raise-only safety-floor extraction. Called for BOTH
+# tiers (user then project), MERGING raise-only — a malformed file can only
+# fail to RAISE, never lower. Carries the same zsh-portability guard as its
+# sibling extractors (#1154): the LOCAL_OPTIONS-scoped KSH_ARRAYS/BASH_REMATCH
+# flip only reverts at function scope.
+#
+#   main_protected: OR-merge — set "true" the moment EITHER tier carries the
+#     literal `"main_protected": true` inside its execution block. A user
+#     tier RAISES protection; it can never lower a project's `true` to false.
+#   min_model: DISPLAY-ONLY higher-ordinal merge (static lattice — auto/
+#     inherit≈2, tie→project literal). block-agents.sh is the real authority
+#     (dynamic auto/inherit resolution); this export is informational only.
+_zsk_extract_floor_keys() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _zsk_body="$1"
+  local _zsk_tier="$2"  # "user" | "project" — for tie→project resolution
+  # main_protected raise-only OR-merge (scope under execution; accept bare or
+  # quoted boolean for robustness, matching ensure-worktree.sh).
+  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"main_protected\"[[:space:]]*:[[:space:]]*\"?true\"? ]]; then
+    ZSKILLS_MAIN_PROTECTED="true"
+  fi
+  # min_model DISPLAY-ONLY merge (static approximation).
+  local _zsk_mm=""
+  if [[ "$_zsk_body" =~ \"min_model\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    _zsk_mm="${BASH_REMATCH[1]}"
+  fi
+  if [ -n "$_zsk_mm" ]; then
+    local _zsk_new_ord _zsk_cur_ord
+    _zsk_new_ord=$(_zsk_model_ordinal "$_zsk_mm")
+    _zsk_cur_ord=$(_zsk_model_ordinal "$ZSKILLS_MIN_MODEL")
+    if [ "$_zsk_new_ord" -gt "$_zsk_cur_ord" ]; then
+      ZSKILLS_MIN_MODEL="$_zsk_mm"
+    elif [ "$_zsk_new_ord" -eq "$_zsk_cur_ord" ] && [ "$_zsk_tier" = "project" ]; then
+      # TIE → project literal wins (its message names the project switch).
+      ZSKILLS_MIN_MODEL="$_zsk_mm"
+    fi
+  fi
+}
+
+# DISPLAY-ONLY static ordinal for the min_model floor merge. APPROXIMATE — the
+# block-agents.sh enforcement authority resolves auto/inherit dynamically;
+# here auto/inherit rank as sonnet (2). haiku=1, sonnet=2, opus=3; empty/
+# unknown=0 (no constraint). Never read by enforcement.
+_zsk_model_ordinal() {
+  case "$1" in
+    *[hH]aiku*) echo 1 ;;
+    *[sS]onnet*) echo 2 ;;
+    *[oO]pus*) echo 3 ;;
+    auto|inherit) echo 2 ;;
+    *) echo 0 ;;
+  esac
 }
 
 # ── Pass 1: USER tier ($HOME/.claude/zskills-config.json) ──────────────────
-# Cascadable string keys only. execution.* and zskills_version are
-# PROJECT-TIER-ONLY (see contract above) and are never read here.
+# Cascadable string keys + CASCADE v2 (Phase 4) workflow keys (landing /
+# branch_prefix / max_concurrent_worktrees) and raise-only floors
+# (main_protected / min_model). dashboard_completed_* and zskills_version stay
+# PROJECT-TIER-ONLY (see contract above) and are never read here. Per-tier
+# fail-closed: a malformed user file simply matches nothing here (structural).
 if [ -n "${HOME:-}" ] && [ -f "$_ZSK_USER_CFG" ]; then
   _ZSK_USER_BODY=$(cat "$_ZSK_USER_CFG" 2>/dev/null) || _ZSK_USER_BODY=""
   _zsk_extract_cascade_keys "$_ZSK_USER_BODY"
+  _zsk_extract_floor_keys "$_ZSK_USER_BODY" user
   unset _ZSK_USER_BODY
 fi
 
-# Project-tier-only key extraction (zskills_version + execution.*). Wrapped
-# in a function for the SAME zsh-portability reason as _zsk_extract_cascade_keys
-# (#1154): the LOCAL_OPTIONS-scoped KSH_ARRAYS/BASH_REMATCH guard only reverts
-# at function scope, so these matches must run inside a function (not at the
-# sourced top level, where the option flip would leak into the caller's shell).
+# Project-tier-only key extraction (zskills_version + dashboard_completed_*).
+# CASCADE v2 (Phase 4): max_concurrent_worktrees MOVED OUT of here into the
+# cascade-keys extractor (it is now a plain-cascade workflow key); landing,
+# branch_prefix, main_protected, and min_model are handled by the cascade /
+# floor extractors. Only zskills_version + the two dashboard_completed_* keys
+# remain project-tier-only. Wrapped in a function for the SAME zsh-portability
+# reason as _zsk_extract_cascade_keys (#1154): the LOCAL_OPTIONS-scoped
+# KSH_ARRAYS/BASH_REMATCH guard only reverts at function scope, so these
+# matches must run inside a function (not at the sourced top level, where the
+# option flip would leak into the caller's shell).
 _zsk_extract_project_only_keys() {
   if [ -n "${ZSH_VERSION:-}" ]; then
     setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
@@ -229,16 +354,6 @@ _zsk_extract_project_only_keys() {
   # install stamp); falls back to .zskills/init-done below when absent.
   if [[ "$_zsk_body" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     ZSKILLS_VERSION="${BASH_REMATCH[1]}"
-  fi
-  # execution.max_concurrent_worktrees: integer (unquoted in JSON). Used by
-  # /fix-issues to bound sprint-wide aggregate live worktrees (issue #295).
-  # We accept any positive integer; if the value is malformed (non-integer
-  # or <=0), keep the default of 3 from the initializer above.
-  if [[ "$_zsk_body" =~ \"execution\"[[:space:]]*:[[:space:]]*[{][^}]*\"max_concurrent_worktrees\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
-    local _zsk_mcw="${BASH_REMATCH[1]}"
-    if [ "$_zsk_mcw" -ge 1 ] 2>/dev/null; then
-      ZSKILLS_MAX_CONCURRENT_WORKTREES="$_zsk_mcw"
-    fi
   fi
   # execution.dashboard_completed_days: integer, default 14, min 1. Used
   # by collect.py / Python via stdlib json (this resolver mirrors for
@@ -264,10 +379,13 @@ _zsk_extract_project_only_keys() {
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
   _zsk_extract_cascade_keys "$_ZSK_CFG_BODY"
+  _zsk_extract_floor_keys "$_ZSK_CFG_BODY" project
   _zsk_extract_project_only_keys "$_ZSK_CFG_BODY"
   unset _ZSK_CFG_BODY
 fi
 unset -f _zsk_extract_cascade_keys
+unset -f _zsk_extract_floor_keys
+unset -f _zsk_model_ordinal
 unset -f _zsk_extract_project_only_keys
 
 # ── ZSKILLS_VERSION fallback: the init-done marker's `version:` line ───────

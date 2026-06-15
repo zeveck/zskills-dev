@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.15+2e2c75"
+  version: "2026.06.15+1685dc"
 ---
 
 # /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -132,11 +132,14 @@ fi
 3. Fallback: `cherry-pick`
 
 ```bash
-# Detect landing mode (same logic as /run-plan)
-# Resolve repo root before any config read. $PROJECT_ROOT is never exported
-# into a SKILL.md fence (it is only set inside post-run-invariants.sh, a
-# separate process), so anchor it on $CLAUDE_PROJECT_DIR -- the established
-# peer pattern used elsewhere in this skill family (#791).
+# Detect landing mode (same logic as /run-plan).
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4): the config-default arm now reads the
+# resolved $ZSKILLS_CFG_LANDING (project > user > empty) from the canonical
+# lane-portable resolver instead of an inline BASH_REMATCH read. NO behavior
+# change intended — the arg flags still take precedence, and $ZSKILLS_CFG_LANDING
+# is EMPTY when neither tier sets execution.landing so this fence keeps its own
+# `cherry-pick` unset-default (equivalence: old inline read matched the same
+# project key; user-tier fill is the only added effect, per #1159 scope).
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 LANDING_MODE="cherry-pick"
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
@@ -144,14 +147,12 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
 elif [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
   LANDING_MODE="direct"
 else
-  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
-  if [ -f "$CONFIG_FILE" ]; then
-    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
-    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-      CFG_LANDING="${BASH_REMATCH[1]}"
-      [ -n "$CFG_LANDING" ] && LANDING_MODE="$CFG_LANDING"
-    fi
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
+  [ -n "$ZSKILLS_CFG_LANDING" ] && LANDING_MODE="$ZSKILLS_CFG_LANDING"
 fi
 
 # Validation: direct + main_protected -> error
