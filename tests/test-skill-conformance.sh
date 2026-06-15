@@ -4352,6 +4352,101 @@ PYEOF
   fi
 fi
 
+# ── Tripwire 2b — registry-sync DA16 extension: docs key list + TSV rows ──────
+# ENFORCEMENT_V2_PLAN Phase 7 (#1159) — now that the docs guide enumerates the
+# 37 hooks.<group>.<check> keys and the config-key-versions.tsv carries one row
+# per hooks.<group> + the cascade-v2 keys, extend the lib↔X equality to two more
+# copies. (a) docs key list: extract every hooks.<group>.<check> mention from
+# docs/guides/zskills-config.md and assert set-equality with _ZSK_ENF_KNOWN_CHECKS.
+# (b) TSV: assert presence of one row per hooks.<group> (7) + the 5 cascade-v2
+# keys. Anti-vacuous floors on both extractions. The TSV's introduced-version
+# COLUMN is unverifiable by construction (a freely-chosen YYYY.MM.N string) — we
+# assert ROW PRESENCE only, recorded here as accepted rather than pretending a
+# version-accuracy check exists.
+_ENF_DOCS="$REPO_ROOT/docs/guides/zskills-config.md"
+_ENF_TSV="$REPO_ROOT/skills/update-zskills/references/config-key-versions.tsv"
+if [ -z "$_ENF_PY" ]; then
+  fail "[enforcement] registry-sync DA16: no Python 3 interpreter" "python3"
+elif [ ! -f "$_ENF_LIB" ] || [ ! -f "$_ENF_DOCS" ] || [ ! -f "$_ENF_TSV" ]; then
+  fail "[enforcement] registry-sync DA16: lib/docs/TSV file missing" "$_ENF_LIB / $_ENF_DOCS / $_ENF_TSV"
+else
+  # (a) docs key list ↔ lib KNOWN_CHECKS set-equality.
+  _ENF_DOCSOUT=$(ENF_LIB="$_ENF_LIB" ENF_DOCS="$_ENF_DOCS" "$_ENF_PY" - <<'PYEOF'
+import os, re, sys
+GROUPS = ("git_destructive","fs_destructive","process_kill","git_discipline",
+          "main_protection","pr_discipline","tracking")
+lib = open(os.environ["ENF_LIB"]).read()
+m = re.search(r"_ZSK_ENF_KNOWN_CHECKS='(.*?)'", lib, re.S)
+lib_keys = set()
+if m:
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        gk = line.split(":", 1)[0]
+        if "." in gk:
+            lib_keys.add(gk)
+docs = open(os.environ["ENF_DOCS"]).read()
+# Match `<group>.<check>` mentions; only count those whose group is a known
+# enforcement group, so e.g. execution.* / testing.* mentions are excluded.
+docs_keys = set()
+for grp, chk in re.findall(r"\b([a-z_]+)\.([a-z0-9_]+)\b", docs):
+    if grp in GROUPS and chk != "enabled":  # `enabled` is the group ceiling, not a check
+        docs_keys.add("%s.%s" % (grp, chk))
+if len(lib_keys) < 30:
+    print("VACUOUS lib %d" % len(lib_keys)); sys.exit(2)
+if len(docs_keys) < 30:
+    print("VACUOUS docs %d" % len(docs_keys)); sys.exit(2)
+if lib_keys == docs_keys:
+    print("EQUAL %d" % len(lib_keys)); sys.exit(0)
+print("MISMATCH lib-only=%s docs-only=%s" % (sorted(lib_keys - docs_keys), sorted(docs_keys - lib_keys)))
+sys.exit(1)
+PYEOF
+)
+  _ENF_DOCSRC=$?
+  if [ "$_ENF_DOCSRC" -eq 0 ]; then
+    pass "[enforcement] registry-sync DA16: docs key list == lib KNOWN_CHECKS ($_ENF_DOCSOUT)"
+  else
+    fail "[enforcement] registry-sync DA16: docs key list != lib KNOWN_CHECKS ($_ENF_DOCSOUT)" "docs 37-key set-equality"
+  fi
+  # (b) TSV row presence: 7 hooks.<group> rows + the 5 cascade-v2 keys.
+  _ENF_TSVOUT=$(ENF_TSV="$_ENF_TSV" "$_ENF_PY" - <<'PYEOF'
+import os, sys
+GROUPS = ("git_destructive","fs_destructive","process_kill","git_discipline",
+          "main_protection","pr_discipline","tracking")
+CASCADE = ("execution.landing","execution.branch_prefix",
+           "execution.max_concurrent_worktrees","execution.main_protected",
+           "agents.min_model")
+rows = set()
+for line in open(os.environ["ENF_TSV"]):
+    line = line.rstrip("\n")
+    if not line or line.lstrip().startswith("#"):
+        continue
+    key = line.split("\t", 1)[0].strip()
+    if key:
+        rows.add(key)
+if len(rows) < 20:
+    print("VACUOUS tsv %d" % len(rows)); sys.exit(2)
+missing = []
+for g in GROUPS:
+    if ("hooks.%s" % g) not in rows:
+        missing.append("hooks.%s" % g)
+for k in CASCADE:
+    if k not in rows:
+        missing.append(k)
+if missing:
+    print("MISSING %s" % sorted(missing)); sys.exit(1)
+print("PRESENT 7-groups + 5-cascade (rows=%d)" % len(rows)); sys.exit(0)
+PYEOF
+)
+  _ENF_TSVRC=$?
+  if [ "$_ENF_TSVRC" -eq 0 ]; then
+    pass "[enforcement] registry-sync DA16: TSV has 7 hooks.<group> rows + 5 cascade-v2 keys ($_ENF_TSVOUT)"
+  else
+    fail "[enforcement] registry-sync DA16: TSV missing required rows ($_ENF_TSVOUT)" "7 group rows + 5 cascade keys"
+  fi
+fi
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

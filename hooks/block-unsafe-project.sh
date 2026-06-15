@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.5
+# zskills-hook-version: 2026.06.6
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -602,7 +602,7 @@ is_git_subcommand_in_wrappers() {
 # ─── Tracking enforcement helpers ───
 # Shared between the commit / cherry-pick / push reader blocks. Each helper
 # takes a marker path + the action-verb context ("committing", "landing",
-# "pushing") and calls block_with_reason on violation. TRACKING_DIR is read
+# "pushing") and calls gate_with_reason on violation. TRACKING_DIR is read
 # from the caller's scope (the calling block already sets it).
 #
 # Usage:

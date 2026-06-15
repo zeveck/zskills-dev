@@ -425,14 +425,46 @@ After a PR merges on GitHub, run `/cleanup-merged` to catch your local clone up 
       }
     }
 
-When `main_protected: true`, agents cannot commit, cherry-pick, or push
-to main. Use PR mode or feature branches.
+**`main_protected:true` = block AUTONOMOUS/unwatched direct-to-main (force
+agents through the worktree/PR flow); attended/watched humans are
+UNRESTRICTED and SILENT, regardless of `main_protected`'s value.** An
+autonomous/unwatched session is blocked from editing, committing,
+cherry-picking, or pushing directly to main — use PR mode or a feature
+branch. An attended human running the same operations sees no warning and
+no block even under `main_protected:true` (git plus Claude Code's
+permission prompt cover attended safety; `main_protected`'s real job is
+gating agents). When dirty main work needs to move off main, the sanctioned
+escape is the move-to-worktree helper (it carries the dirt into a worktree
+without `git stash`, which stays hard-denied). A project that wants
+hard-deny-even-attended sets the matching `hooks.main_protection.*` toggle
+to `"block"`.
+
+**Enforcement model — stay quiet when watched; block when autonomous;
+coaching is opt-in; per-check overrides in `hooks.*`.** The safety hooks
+follow one rule: a *demotable* check is SILENT by shipped default when a
+human is watching (no nagging — no warning AND no block on a routine git
+workflow) and BLOCKS when the session is autonomous/unwatched
+(`bypassPermissions` mode, an absent/unrecognized permission mode, or a
+live zskills pipeline). On a fresh install with NO config of any kind, an
+attended human is nagged about nothing, while every autonomous/unwatched
+safety guarantee is preserved unchanged. Coaching is opt-in per check via
+the project-only `hooks.*` block in `.claude/zskills-config.json`: set a
+check to `"warn"` for warn-when-watched, `"block"` for strict
+deny-even-watched, or `"off"` to silence it. *Hard* checks (destructive
+git/filesystem/process-kill, `--no-verify`, etc.) block always. (One named
+exception: the config-tamper gate `hooks.main_protection.config_hooks_tamper`
+warns — visibly, non-blocking — when watched, because disarming the
+protection system itself must never happen invisibly; autonomous still
+blocks.) The seven toggle groups are `git_destructive`, `fs_destructive`,
+`process_kill`, `git_discipline`, `main_protection`, `pr_discipline`, and
+`tracking`; each warn/deny message names its own switch path so you can see
+which key to set.
 
 **Agent model minimum:** When dispatching an Agent (subagent), always use Sonnet or higher. Never dispatch Haiku — even for "simple" tasks. The minimum model is configured at `agents.min_model` in `.claude/zskills-config.json` and enforced by the `block-agents.sh` hook at dispatch time.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via the `.zskills/tracked` marker file -- hooks also read the legacy root `.zskills-tracked` for worktrees created before the path consolidation -- or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills/tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `update-zskills` skill's `scripts/clear-tracking.sh` (under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror) lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via the `.zskills/tracked` marker file -- hooks also read the legacy root `.zskills-tracked` for worktrees created before the path consolidation -- or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills/tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. Per the enforcement model, the tracking gates are demotable: in a watched non-pipeline session they are SILENT by default (warn only if opted into `"warn"` via `hooks.tracking.*`), and they block when the session is autonomous/unwatched or a pipeline is live. The `update-zskills` skill's `scripts/clear-tracking.sh` (under `${CLAUDE_PLUGIN_ROOT}/skills/` on the plugin lane, `.claude/skills/` on the legacy mirror) lets the user manually clear stale tracking state -- agents are blocked from running it directly.
 
 ## Claiming work items
 
