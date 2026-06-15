@@ -2,7 +2,7 @@
 issue: 1166
 title: Suite-result provenance — stamp, validate, and de-duplicate test runs without ever skipping verification
 created: 2026-06-15
-status: "active"
+status: "complete"
 ---
 
 # Plan: Suite-result provenance — stamp, validate, and de-duplicate test runs without ever skipping verification
@@ -612,10 +612,10 @@ that would trip the deny-list.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — STAMP (run-all.sh header) + VALIDATE helper + triplet unit suite | ⬚ | | |
-| 2 — VERIFIER PROTOCOL: verifier.md twin + 4 dispatch templates + version bumps + mirrors | ⬚ | | |
-| 3 — ORCHESTRATOR baseline reuse + DOCS-ONLY classifier refinement | ⬚ | | |
-| 4 — POLICY PROSE: CLAUDE_TEMPLATE Tests subsection + managed.md re-render + conformance pins | ⬚ | | |
+| 1 — STAMP (run-all.sh header) + VALIDATE helper + triplet unit suite | ✅ Done | 4fa87b9 | Suite 7776/7776; unit suite 13/13; fingerprint flip verified |
+| 2 — VERIFIER PROTOCOL: verifier.md twin + 4 dispatch templates + version bumps + mirrors | ✅ Done | 3e1e9fb | Suite 7776/7776; parity/mirror/conformance/version/managed all green |
+| 3 — ORCHESTRATOR baseline reuse + DOCS-ONLY classifier refinement | ✅ Done | ec7c841 | Verified PASS; classifier excludes skills/**/*.md; gates green |
+| 4 — POLICY PROSE: CLAUDE_TEMPLATE Tests subsection + managed.md re-render + conformance pins | ✅ Done | 0701e97 | Suite 7788/7788; 12 conformance pins; managed re-render lockstep green |
 
 ---
 

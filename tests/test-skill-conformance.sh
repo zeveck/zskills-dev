@@ -872,6 +872,60 @@ else
 fi
 
 echo ""
+echo "=== Suite-result provenance (#1166) ==="
+# Phase 4 of SUITE_PROVENANCE_PLAN — pin the new result-provenance de-dup
+# protocol prose across every surface it lands in, plus the validator helper
+# and its registered self-test. The protocol is de-dup-WITH-provenance, never
+# "skip verification": each de-dup surface references the validator helper by
+# name (`suite-result-valid.sh`), and the central surfaces (agents/verifier.md
+# + CLAUDE_TEMPLATE.md) ALSO carry a safety-floor token so a floor-eroding edit
+# that keeps the anchor but drops the floor is caught (R1-4 backstop).
+#
+# A single `grep -qF` per file is SUFFICIENT for the verifier.md de-dup token:
+# tests/test-agents-parity.sh guarantees the agents/verifier.md ↔
+# .claude/agents/verifier.md de-dup prose is byte-identical transitively, so
+# the token does NOT also need appending to the _pin loop above (avoid the
+# double-pin).
+for _prov_surface in \
+  "agents/verifier.md" \
+  ".claude/agents/verifier.md" \
+  "skills/run-plan/modes/execute-phase.md" \
+  "skills/verify-changes/SKILL.md" \
+  "skills/do/SKILL.md" \
+  "skills/fix-issues/SKILL.md" \
+  "CLAUDE_TEMPLATE.md" \
+  ".claude/rules/zskills/managed.md"; do
+  if grep -qF 'suite-result-valid.sh' "$REPO_ROOT/$_prov_surface" 2>/dev/null; then
+    pass "[$_prov_surface] provenance de-dup anchor: suite-result-valid.sh"
+  else
+    fail "[$_prov_surface] provenance de-dup anchor: suite-result-valid.sh" "de-dup protocol prose missing (Phase 4 #1166)"
+  fi
+done
+# Safety-floor backstop — the always-on cross-cutting concern suites must be
+# named in the central verifier surface and the policy template so a de-dup
+# edit cannot quietly erode the floor (de-dup changes WHAT runs, never WHO,
+# and the cross-cutting gates ALWAYS run).
+for _floor_surface in "agents/verifier.md" "CLAUDE_TEMPLATE.md"; do
+  if grep -qF 'cross-cutting' "$REPO_ROOT/$_floor_surface" 2>/dev/null; then
+    pass "[$_floor_surface] provenance safety-floor token: cross-cutting"
+  else
+    fail "[$_floor_surface] provenance safety-floor token: cross-cutting" "safety-floor (always-on cross-cutting suites) prose missing (Phase 4 #1166)"
+  fi
+done
+# Validator helper + its registered self-test exist (tests/lib/ is repo-only,
+# never mirrored — Settled decision 10, so no mirror-parity pin).
+if [ -f "$REPO_ROOT/tests/lib/suite-result-valid.sh" ]; then
+  pass "[tests/lib/suite-result-valid.sh] validator helper exists"
+else
+  fail "[tests/lib/suite-result-valid.sh] validator helper exists" "provenance validator lib missing (Phase 1 #1166)"
+fi
+if [ -f "$REPO_ROOT/tests/test-suite-result-valid.sh" ]; then
+  pass "[tests/test-suite-result-valid.sh] registered self-test exists"
+else
+  fail "[tests/test-suite-result-valid.sh] registered self-test exists" "provenance validator self-test missing (Phase 1 #1166)"
+fi
+
+echo ""
 echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
 # Drift-prevention assertions catching any future re-introduction of inline
 # PR-landing primitives outside /land-pr. Each historical drift bug below

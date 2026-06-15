@@ -17,6 +17,44 @@ TOTAL_FAIL=0
 OVERALL_EXIT=0
 
 # ──────────────────────────────────────────────────────────────────────────
+# SUITE_PROVENANCE Phase 1 (#1166) — provenance header. Emitted ONCE by the
+# MAIN process to stdout, BEFORE any suite output, in BOTH parallel (default)
+# and serial (ZSKILLS_PARALLEL=0) modes. The caller's `> file` redirect
+# captures it as the result file's header; the sourced validator
+# tests/lib/suite-result-valid.sh later answers "is this result still TRUE for
+# the current tree?". run-all.sh does NOT `cd` (REPO_ROOT is exported above but
+# there is zero `cd`), so EVERY git call MUST pass `-C "$REPO_ROOT"` — a bare
+# `git rev-parse` would read the caller's cwd. The bottom `Overall:` tally is
+# UNTOUCHED. On git-absent each field is emitted EMPTY (fail-safe); the
+# validator treats an empty tree/fingerprint/epoch as malformed → full re-run.
+PROV_TREE="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+# CONTENT-sensitive fingerprint: committed HEAD + ALL tracked changes
+# (git diff HEAD covers staged+unstaged CONTENT) + the CONTENT of every
+# untracked-not-ignored file (--exclude-standard honors .gitignore). This
+# hashes file CONTENT, not just changed PATHS, so it FLIPS on a content-only
+# edit to an already-modified file (which a porcelain formula would miss).
+PROV_FINGERPRINT="$(
+  {
+    git -C "$REPO_ROOT" rev-parse HEAD
+    git -C "$REPO_ROOT" diff HEAD
+    git -C "$REPO_ROOT" ls-files --others --exclude-standard -z \
+      | while IFS= read -r -d '' f; do
+          printf '%s\0' "$f"
+          git -C "$REPO_ROOT" hash-object "$REPO_ROOT/$f"
+        done
+  } 2>/dev/null | git -C "$REPO_ROOT" hash-object --stdin 2>/dev/null || true
+)"
+PROV_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+PROV_EPOCH="$(date -u +%s)"
+PROV_COMMAND="tests/run-all.sh"
+echo "zskills-suite-provenance: v1"
+echo "tree=$PROV_TREE"
+echo "fingerprint=$PROV_FINGERPRINT"
+echo "timestamp=$PROV_TIMESTAMP"
+echo "epoch=$PROV_EPOCH"
+echo "command=$PROV_COMMAND"
+
+# ──────────────────────────────────────────────────────────────────────────
 # TEST_SUITE_PARALLELIZATION Phase 4 — bounded-worker PARALLEL fan-out is the
 # DEFAULT; ZSKILLS_PARALLEL=0 is the opt-OUT to the byte-identical serial
 # reference path. DESIGN CHOICE: the fan-out lives IN run-all.sh (NOT a separate
@@ -233,6 +271,10 @@ run_suite "test-extract-fence-lib.sh" "tests/test-extract-fence-lib.sh"
 # are intentionally NOT registered; these two ARE the registered self-tests.
 run_suite "test-parse-results.sh" "tests/test-parse-results.sh"
 run_suite "test-suite-registry.sh" "tests/test-suite-registry.sh"
+# SUITE_PROVENANCE Phase 1 (#1166) — self-test for the sourceable validator
+# lib tests/lib/suite-result-valid.sh (which is NOT registered as a run_suite,
+# same as parse-results.sh / suite-registry.sh above).
+run_suite "test-suite-result-valid.sh" "tests/test-suite-result-valid.sh"
 run_suite "test-land-pr-tracking-copy.sh" "tests/test-land-pr-tracking-copy.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-landed-status-vocabulary.sh" "tests/test-landed-status-vocabulary.sh"

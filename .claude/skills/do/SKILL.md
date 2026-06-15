@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.11+0ebe97"
+  version: "2026.06.15+0a8beb"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -880,9 +880,15 @@ Before touching anything:
 
 3. **Classify the change type** — this determines verification intensity
    in Phase 3:
-   - **Content only** — markdown, images, presentations, documentation.
-     No tests needed.
-   - **Code** — JavaScript, CSS, HTML, model files. Tests needed.
+   - **Content only** — a diff CONFINED to `docs/`, `README*`, `CHANGELOG*`,
+     `PRESENTATION*`, and non-skill images/presentations. Runs ONLY the
+     prose-pinning subset locally (`test-skill-conformance.sh`,
+     `test-doc-viewer-catalog.sh`, `test-managed-md-up-to-date.sh`); CI still
+     runs the full suite. **EXCLUDES `skills/**/*.md` — skill bodies are
+     behavior, not docs, so any `skills/**/*.md` edit is "Code" and runs the
+     full local suite + full CI.**
+   - **Code** — JavaScript, CSS, HTML, model files, AND any `skills/**/*.md`
+     (skill bodies are behavior). Tests needed (full local suite + full CI).
    - **Mixed** — both content and code. Tests needed for code portion.
 
 4. **Plan the work** — no formal document, just mental clarity on what
@@ -1015,16 +1021,30 @@ would fail usage-error exit 2.
 
 Verification intensity matches the change type (from Phase 1):
 
-### Content-only changes (md, jpg, png, presentations)
+### Content-only changes (`docs/`, `README*`, `CHANGELOG*`, `PRESENTATION*`, non-skill images/presentations)
+
+**This class EXCLUDES `skills/**/*.md`.** Skill bodies are behavior, not
+docs — a diff touching ANY `skills/**/*.md` is NOT content-only. It routes to
+the "Code" path and runs the full local suite + full CI. Only a diff CONFINED
+to `docs/`, `README*`, `CHANGELOG*`, `PRESENTATION*`, and non-skill
+images/presentations qualifies here.
 
 - **Spot-check:** formatting, links, file organization, image references
-- **Do NOT run tests** — running 4,000+ tests for a markdown edit is
-  wasteful, and pre-existing failures would block the task unnecessarily
+- **Run ONLY the prose-pinning subset locally** — `test-skill-conformance.sh`,
+  `test-doc-viewer-catalog.sh`, and `test-managed-md-up-to-date.sh` (the
+  catalog/`docs/DocsRegistry.js` drift gate is regenerated from doc/skill
+  catalog content, so it belongs here). Do NOT run the full local suite for a
+  docs-confined edit — running 4,000+ tests for a markdown edit is wasteful,
+  and pre-existing failures would block the task unnecessarily. CI still runs
+  the full suite regardless.
 - **Dispatch a separate verification agent (worktree/direct mode).** Tell
-  the agent explicitly: "These are content-only changes (no code). Review
-  the diff for correctness and completeness — do NOT run `npm test` or
-  `npm run test:all`. Your job is: do these changes make sense? Are the
-  right files included? Anything accidentally staged? Formatting correct?"
+  the agent explicitly: "These are content-only changes (`docs/`/`README*`/
+  `CHANGELOG*`/`PRESENTATION*`, NOT any `skills/**/*.md`). Review the diff for
+  correctness and completeness — run only the prose-pinning subset
+  (`test-skill-conformance.sh`, `test-doc-viewer-catalog.sh`,
+  `test-managed-md-up-to-date.sh`), not `npm test` or `npm run test:all`. Your
+  job is: do these changes make sense? Are the right files included? Anything
+  accidentally staged? Formatting correct?"
   Do NOT invoke `/verify-changes` for content-only changes — it will run
   the full test suite regardless. Instead, dispatch a plain review agent.
 
@@ -1070,6 +1090,21 @@ Verification intensity matches the change type (from Phase 1):
   wait for the monitor." Past failure: 6+ subagent crashes with that
   phrase across 2026-04-29 and 2026-04-30. Always foreground-Bash with
   explicit long timeout; capture to file; read the file on return.
+- **Result-provenance de-duplication (de-dup, NOT skip).** If a results file
+  already exists for the CURRENT working tree (e.g. captured moments earlier
+  on the same uncommitted tree), run `tests/lib/suite-result-valid.sh` on it
+  before re-running the full suite. On **exit 0** (the provenance header
+  validates for the current tree, < 30 min), de-duplicate — verify the tally,
+  ALWAYS run the cross-cutting concern suites (`test-skill-conformance.sh`,
+  `test-skills-mirror-parity.sh`, `test-skill-version-enforcement.sh`,
+  `test-doc-viewer-catalog.sh`, `test-managed-md-up-to-date.sh`,
+  `test-agents-parity.sh`), and re-run only the targeted suites for the
+  changed area. On **exit 1** (invalid/stale), when the targeted set is empty
+  or uncertain, or when the diff touches shared infra (`tests/`, `hooks/`,
+  `scripts/_lib/`, shared skill scripts, the runner) or any `skills/**/*.md` /
+  `agents/*.md` / `.claude/agents/*.md` / `CLAUDE_TEMPLATE.md`, run the full
+  suite. A suite is elided ONLY when provably unrelated; an empty or uncertain
+  target means a FULL re-run.
 - **If tests fail: fix them.** Do not check if failures are pre-existing.
   Do not stash, checkout old commits, or create comparison worktrees.
   If you touched code and tests fail, they're yours to fix. (See

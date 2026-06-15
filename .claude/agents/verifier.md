@@ -61,6 +61,64 @@ against THAT harness's summary — what matters is asserting the suite
 ran to completion AND the final aggregated tally matches expectations,
 not just absence of visible FAILs.
 
+## Result-provenance de-duplication
+
+A `tests/run-all.sh` run now carries a **provenance** header recording the
+tree it measured (`tree`, a CONTENT-sensitive `fingerprint`, `timestamp` +
+`epoch`). When you are handed (or can locate) the implementer's captured
+results file, FIRST run `bash tests/lib/suite-result-valid.sh <file>` on it.
+
+**Reusing a provenance-validated result for the SAME tree is
+de-duplication, NOT skipping verification.** A suite is elided ONLY when you
+can affirmatively prove it unrelated to the change; an empty or uncertain
+targeted set means a FULL re-run, never "ran nothing." De-dup changes WHAT
+you execute, never that a fresh verifier independently audits the diff.
+
+- **Exit 0 (VALID — same tree, < 30 min)** → you MAY de-duplicate:
+  1. **Verify the tally on that file** — the existing
+     `Overall: N/M passed, F failed` check above (present, `N == M`,
+     `F == 0`, `N >= baseline_N`). A VALID-but-FAILING result is still a
+     verification FAIL — do not reuse a failing run.
+  2. **ALWAYS run the cross-cutting CONCERN suites**, regardless of the
+     changed area (they gate by concern, not area, so the prefix heuristic
+     below MISSES them — they are the floor):
+     `tests/test-skill-conformance.sh`, `tests/test-skills-mirror-parity.sh`,
+     `tests/test-skill-version-enforcement.sh`,
+     `tests/test-doc-viewer-catalog.sh`,
+     `tests/test-managed-md-up-to-date.sh`, `tests/test-agents-parity.sh`.
+  3. **Derive the changed-area suites on TOP of the floor.** Run
+     `git diff $(git merge-base origin/main HEAD)..HEAD --name-only`. If
+     `merge-base` fails or the changed-path set is empty while HEAD is
+     provably ahead of main → FULL re-run. Otherwise group the changed paths
+     into area families by JUDGMENT over the suite NAMING CONVENTION (e.g. a
+     `hooks/` change → `test-hooks-*` / `test-*-hook-*`; `skills/do/` →
+     `test-do-*`; `skills/fix-issues/` → `test-fix-issues-*`), enumerating
+     candidates via `list_registered_suites()` from
+     `tests/lib/suite-registry.sh` (a flat enumerator with NO area tags — this
+     is judgment, not a maintained path→suite map). **If the targeted set is
+     EMPTY or you are not confident it covers the change → run the FULL
+     suite.** Run each selected suite as `bash tests/test-<name>.sh` and
+     check its `Results: N passed, F failed` line; all (floor + targeted)
+     must pass.
+- **Exit 1 (invalid/stale/missing/empty field/git absent)** → run the FULL
+  `$FULL_TEST_CMD` as today and apply the tally check above.
+
+**FULL re-run is MANDATORY (overrides the de-dup path) when ANY of:** the
+result is invalid/stale; the diff touches `tests/`, `hooks/`,
+`scripts/_lib/`, shared skill scripts (`skills/*/scripts/`), the runner
+(`tests/run-all.sh`), ANY `skills/**/*.md` (skill bodies are behavior),
+`agents/*.md`, `.claude/agents/*.md` (the verifier.md twin lives there),
+`CLAUDE_TEMPLATE.md`, or `managed.md`; the targeted candidate set is
+EMPTY/uncertain or `merge-base` fails; or you judge the change risky.
+
+**Threat model:** a fabricated or stale results file fails at three
+independent layers — the validator (`suite-result-valid.sh`: the
+content-sensitive tree fingerprint mismatches a tree it did not measure,
+and it fails closed on empty fields / absent git), the targeted re-run plus
+the always-on concern suites (the changed area must actually pass on the
+live tree), and CI (a fresh full run on a clean clone). Provenance reuse
+NEVER accepts a result for a tree whose CONTENT was not measured.
+
 ## Scope-creep AC checks
 
 When checking AC-style "no scope creep" criteria, prefer one of:
