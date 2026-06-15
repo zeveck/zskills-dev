@@ -443,7 +443,12 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 
-# Orchestrator captures baseline BEFORE impl agent starts
+# Orchestrator captures baseline BEFORE impl agent starts.
+# The baseline file ALSO carries the provenance header emitted by the runner,
+# so it is a provenance-stamped result for the tree at capture time — the
+# verifier may REUSE it (via tests/lib/suite-result-valid.sh) instead of
+# re-running to refresh the baseline, killing the baseline-refresh re-run and
+# the baseline-clobber class.
 cd "$WORKTREE_PATH"
 if [ -n "$FULL_TEST_CMD" ]; then
   TEST_OUT="/tmp/zskills-tests/$(basename "$WORKTREE_PATH")"
@@ -672,7 +677,17 @@ Include this VERBATIM in the verifier dispatch prompt:
    - The **work items checklist** — verify each item was actually implemented,
      not stubbed or skipped
    - The **`"$TEST_OUT/.test-baseline.txt"` file** captured before implementation
-     started (if `FULL_TEST_CMD` is configured). The verification agent should:
+     started (if `FULL_TEST_CMD` is configured). This file ALSO carries the
+     provenance header, so it is a provenance-stamped result for the tree at
+     capture time — the verifier may treat **ANY** validating result at the
+     current tree (the baseline OR a fresh capture) as reusable: run
+     `tests/lib/suite-result-valid.sh` on the candidate; on **exit 0** reuse it
+     (verify the tally + run the cross-cutting concern suites + targeted rerun,
+     per the de-dup bullet below) instead of re-running everything to refresh
+     the baseline; on **exit 1** (e.g. the tree advanced between baseline
+     capture and verification, or > 30 min elapsed) re-run. This kills the
+     baseline-refresh re-run and the baseline-clobber class. The verification
+     agent should:
      - Read `"$TEST_OUT/.test-baseline.txt"` (baseline captured before implementation)
      - Compare against `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` (results after running tests now)
      - **New failures** (in results but not in baseline) → regressions, must
