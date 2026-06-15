@@ -698,7 +698,7 @@ Drafter classification notes (bind the implementer):
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Enforcement library: predicate, toggles, warn-channel probe (GATING), schema | ✅ Done | 4433ee8 | Lib green; suite 7860/7860; 70/70 unit; drift 47/47; warn-probe→NEEDS-ATTENDED (Phase 7) |
-| 2 — Small-hook retarget (7 hooks) + bypass parity ×5 | ⬚ | | |
+| 2 — Small-hook retarget (7 hooks) + bypass parity ×5 | ✅ Done | 9986a14 | Verified PASS; suite 7941/7941; drift 101; bypass-parity ×5; autonomous protection byte-identical |
 | 3 — Big-hook retarget (generic + project) + tag tripwire + bypass parity ×18 | ⬚ | | |
 | 4 — Cascade v2: workflow keys + raise-only floors | ⬚ | | |
 | 5 — move-to-worktree helper (stash-free dirty-main carry) | ⬚ | | |
