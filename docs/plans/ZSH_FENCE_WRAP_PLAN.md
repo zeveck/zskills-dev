@@ -813,7 +813,7 @@ missing; only LOCAL zsh-less runs skip, with a WARN.
 | 2 — Track R rewrites + normalization + guards: fix-issues, work-on-plans, cleanup-merged | ✅ Done | 980d0b9 | Verified PASS; suite 8169/8169 (behavior-identical); all R-constructs=0; Branch-B normalized; pending 28->20; per-skill suites green |
 | 3 — Caller-loop family + guard v2 upgrade: land-pr, run-plan, do, commit, draft-tests | ✅ Done | e3d451c | Verified PASS; suite 8169/8169; caller-loop Branch-B normalized (byte-identical, real loop executes green); guard v2 ×4; pending 20->7; PR-landing unchanged |
 | 4 — Remaining skills: draft-plan, refine-plan, update-zskills, zskills-dashboard, verify-changes, research-and-go, research-and-plan | ✅ Done | 8e7a8c2 | Verified PASS; suite 8169/8169; scanner 0 violations repo-wide (65 check-b guarded); pending list EMPTY + genuinely clean; per-skill suites green |
-| 5 — Unscoped tripwire + floors + docs + #1155 close-out | ⬚ | | |
+| 5 — Unscoped tripwire + floors + docs + #1155 close-out | ✅ Done | bd8a67b | Verified PASS; suite 8171/8171; tripwire STRICT/unscoped (fixture removed, pending-branch deleted, retired→FAIL); repo-wide 0 violations (523 exec, 65 check-b guarded); floors re-pinned ii=48 (75%×65) iii=50 (75%×67 base) wrapped 0==0; n1-n5 green; docs verified-absent (no CLAUDE_TEMPLATE/managed edit); Closes #1155 |
 
 ---
 
