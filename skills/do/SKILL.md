@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.15+9435c4"
+  version: "2026.06.15+0cc69f"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -289,7 +289,7 @@ fi
 # (#1155 validated rc=124). KSH_ARRAYS + BASH_REMATCH restore bash
 # semantics; the `[ -n "${BASH_REMATCH[0]-}" ] || break` guards below are a
 # belt-and-braces no-op under bash. No-op under bash (ZSH_VERSION unset).
-if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 ISSUE_NUMS=()
 _DO_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
 _DO_ISSUE_FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
@@ -796,6 +796,7 @@ If `$ARGUMENTS` contains `every <schedule>`:
    corrupting the user-prose `--force` substring inside the quotes.
 
    ```bash
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    if [[ "$ARGUMENTS" =~ ^([[:space:]]*\"[^\"]*\")[[:space:]]*(.*)$ ]]; then
      QUOTED_HEAD="${BASH_REMATCH[1]}"
      REST="${BASH_REMATCH[2]}"
@@ -906,6 +907,7 @@ Before any research or execution, parse flags from `$ARGUMENTS`.
 `direct` → `direct`) → fallback `direct`.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 REMAINING="$ARGUMENTS"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 CONFIG_FILE="$MAIN_ROOT/.claude/zskills-config.json"
@@ -998,6 +1000,7 @@ re-affirming here.
 # Regex is numeric-only — symmetric with WI 2a.0. Non-numeric trailing
 # tokens after `--rounds` are user prose (greedy-fallthrough) and DO NOT
 # raise exit 2 — that would re-introduce the closed greedy bug.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 FORCE=${FORCE:-0}
 if [[ "$REMAINING" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
   FORCE=1

@@ -55,6 +55,7 @@ phase's mechanics.
 - **No external JSON/YAML tooling.** Parse YAML and JSON (including
   `.claude/zskills-config.json` in later phases) via bash regex with
   `BASH_REMATCH`. Idiom:
+  <!-- allow-zsh-unwrapped: BASH_REMATCH reason: display-only idiom illustration, never executed -->
   ```bash
   if [[ "$CONTENT" =~ \"key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     VALUE="${BASH_REMATCH[1]}"

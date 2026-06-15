@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.06.11+d793c8"
+  version: "2026.06.15+980d58"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -89,6 +89,7 @@ descriptions compose the same way as single-line ones: distill the
 intent, don't splice lines.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -286,6 +287,7 @@ punctuation `.!?` since this is prose-like goal text):
 # is the broad goal text — orchestrators typically pass it as $ARGUMENTS
 # or as $DESCRIPTION. Prefer existing $GOAL, then $DESCRIPTION, then
 # $ARGUMENTS, so the regex below operates on a populated value.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 GOAL="${GOAL:-${DESCRIPTION:-$ARGUMENTS}}"
 LANDING_ARG=""
 if [[ "$GOAL" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then

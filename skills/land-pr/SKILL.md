@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.12+fc7540"
+  version: "2026.06.15+e1f067"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -66,7 +66,7 @@ the other 3 callers do not, preserving their no-fulfillment behavior).
 # 0-based `${ARGS[$i]}` indexing below mis-parses every arg. KSH_ARRAYS
 # makes zsh arrays 0-based, matching bash. No-op under bash (ZSH_VERSION
 # unset). `|| true` so a future zsh without these options can't abort.
-if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 ARGS=( "$@" )
 BRANCH=""
 TITLE=""
@@ -153,6 +153,7 @@ Before writing each `KEY=VALUE` line, validate the value with this
 helper:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 validate_result_value() {
   local key="$1" value="$2"
   if [[ "$value" =~ [$'\n\r$`&?#'] ]]; then
@@ -259,6 +260,7 @@ the branch is pushed; now the caller wants to monitor (or re-monitor)
 without re-running rebase/push/create.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -n "$PR_RESUME" ]; then
   PR_NUMBER="$PR_RESUME"
   PR_EXISTING=true
@@ -479,6 +481,7 @@ All rebase/push/fetch stderr is captured to a single sidecar
 `REBASE_STDERR_FILE` in the result file when the loop fails.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -730,6 +733,7 @@ sub-path itself is bounded by the same `AUTO_REBASE_MAX=3` cap Step 6b
 uses, so the total work is finite.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
   export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"

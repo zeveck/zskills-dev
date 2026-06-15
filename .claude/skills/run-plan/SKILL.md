@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.15+df5632"
+  version: "2026.06.15+2e2498"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -98,7 +98,7 @@ through multi-phase plans autonomously.
 # unless KSH_ARRAYS is set — so the `${BASH_REMATCH[1]}` capture below
 # silently empties and LANDING_MODE wrongly falls to cherry-pick. No-op
 # under bash (ZSH_VERSION unset).
-if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 # Detect landing mode
 # Resolve repo root before any config read. $PROJECT_ROOT is never exported
 # into a SKILL.md fence (it is only set inside post-run-invariants.sh, a
@@ -138,6 +138,7 @@ must match against these three states.
 
 ```bash
 # Detect finish mode (canonical values: "finish", "finish-auto", "")
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 FINISH_MODE=""
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][iI][nN][iI][sS][hH]($|[[:space:]]) ]]; then
   if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
@@ -175,6 +176,7 @@ fi
 
 ```bash
 # direct + main_protected -> error
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 if [[ "$LANDING_MODE" == "direct" ]]; then
   CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
@@ -192,6 +194,7 @@ fi
 
 ```bash
 # Read branch prefix from config (default: feat/)
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 BRANCH_PREFIX="feat/"
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
@@ -213,7 +216,7 @@ decision tree (same contract as `/verify-changes`):
 # zsh portability (#1155): same $BASH_REMATCH gap as the LANDING_MODE
 # fence above — without these options the `${BASH_REMATCH[1]}` capture is
 # silently empty under zsh and FULL_TEST_CMD is lost. No-op under bash.
-if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH 2>/dev/null || true; fi
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 FULL_TEST_CMD=""
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
@@ -500,6 +503,7 @@ Before parsing, check for stale state from a previous failed run:
    anything else. The counter is held — this is recovery, not normal flow.
 
    ```bash
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -510,7 +514,10 @@ Before parsing, check for stale state from a previous failed run:
    # in this section (line ~393); reuse it here.
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-   if compgen -G "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed.*" >/dev/null 2>&1; then
+   # zsh portability (#1155): compgen is a bash builtin absent in zsh — use a
+   # quoted `find -name` glob-existence test (shell-neutral; the pattern is a
+   # find argument, not shell-expanded, so zsh's NOMATCH abort never engages).
+   if [ -n "$(find "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID" -maxdepth 1 -name 'cron-recovery-needed.*' -print -quit 2>/dev/null)" ]; then
      # CronList → check if a "Run /run-plan <plan-file> finish auto" cron
      # already exists (a stale fire from before the failed Delete may have
      # raced ahead of us). The literal `finish auto` composite alias is
@@ -1167,6 +1174,7 @@ sentinel set; do NOT add the clear there.
    derive from the plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
+   if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
      . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"

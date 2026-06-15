@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.06.15+17bc3f"
+  version: "2026.06.15+cf08df"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -33,6 +33,7 @@ When no explicit mode token is supplied, the skill consults
 (see the config-driven default-mode block below).
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
 # Positional `auto` token (case-insensitive). Recognized ONLY in PR mode
 # (`/commit pr auto` or — via the config-default-to-pr branch below —
@@ -71,6 +72,7 @@ co-author read in Phase 5.
 # (to avoid false-triggering on scope hints); `push` and `land` are
 # recognized anywhere (matching their parsing throughout the rest of this
 # skill, e.g., `/commit skill updates push`).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 HAS_EXPLICIT_MODE=0
 if [[ "$FIRST_TOKEN" == "pr" ]]; then
   HAS_EXPLICIT_MODE=1

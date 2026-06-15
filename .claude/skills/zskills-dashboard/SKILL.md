@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.15+704d78"
+  version: "2026.06.15+afdb14"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -175,6 +175,7 @@ platform affords before a targeted kill. Identity is verified BEFORE any
 ```bash
 # Returns 0 if PID is alive AND identity matches; 1 otherwise.
 # Stdout is the matched command name (for diagnostics on mismatch).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 verify_monitor_identity() {
   local pid="$1"
   local cmd cwd_proc cwd_lsof matched_cwd
@@ -340,6 +341,7 @@ esac
    nothing running).
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$SUB" = "start" ]; then
   # Resolve $PYTHON (Windows MS-Store-stub guard, #1083) for the launch below.
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -512,6 +514,7 @@ fi
    `port_has_listener`). Remove the PID file. Exit 0.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$SUB" = "stop" ]; then
   if [ ! -f "$PID_FILE" ]; then
     echo "No running dashboard (no PID file)."
@@ -668,6 +671,7 @@ fi
    arithmetic; print URL, PID, uptime, log path. Exit 0.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$SUB" = "status" ]; then
   if [ ! -f "$PID_FILE" ]; then
     echo "Dashboard not running."

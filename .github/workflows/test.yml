@@ -30,6 +30,16 @@ jobs:
           git config --global user.name "CI Test Runner"
           git config --global init.defaultBranch main
 
+      - name: Install zsh (zsh-fence semantics suite)
+        # ZSH_FENCE_WRAP_PLAN WI 1.6 (#1155). The zsh-fence semantics probe
+        # suite (tests/test-zsh-fence-semantics.sh) hard-FAILs under ${CI} when
+        # zsh is absent; ubuntu-latest is not guaranteed to ship zsh. Installing
+        # it here makes the suite RUN in CI (its registry-counted line in the
+        # job log proves non-vacuity) and re-validates every cross-shell idiom
+        # the plan ships on every push. Side effect: the pre-existing
+        # tests/test-zsh-fence-resolution.sh (#1149) zsh arms flip ON too.
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
       - name: Run full test suite
         # TEST_SUITE_PARALLELIZATION Phase 4 — parallel fan-out. The runner
         # caps workers at min(configured, nproc); ubuntu-latest is ~4 cores, so
