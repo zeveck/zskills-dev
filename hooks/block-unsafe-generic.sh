@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.5
+# zskills-hook-version: 2026.06.6
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -247,6 +247,472 @@ COMMAND=$(printf '%s' "$COMMAND" | sed -E \
 # Block patterns — each with a reason
 block_with_reason() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$1"
+  exit 0
+}
+
+# ── Worktree-root resolvers (inlined from
+# hooks/_lib/resolve-effective-worktree-root.sh, #401). Drift gate:
+# tests/test-hook-helper-drift.sh. ENFORCEMENT_V2_PLAN Phase 3 (#1159): the
+# generic hook now resolves ENF_LOCAL (the tracked-marker read root) for the
+# enforcement predicate, so it inlines these two resolvers (new consumer in the
+# drift-gate list, same commit). extract_cd_target reads the global $INPUT.
+extract_cd_target() {
+  local cmd
+  # JSON wire format escapes embedded newlines as the two-character
+  # sequence `\n`. The regex below uses [[:space:]] as a stop-class —
+  # without decoding `\n` to a real newline, multi-line bash commands
+  # like `cd /tmp/wt\ngit commit` would capture `/tmp/wt\ngit` (literal
+  # backslash-n) into the path and fail the [ -d ] check, causing
+  # is_on_main to fall back to the ambient cwd. Decode `\n` here in the
+  # same spirit as the existing `\"` decoding. `\n` is the only escape
+  # we currently see in practice from Claude Code's wire format.
+  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
+  # Wrapper unwrap (#427): if the command's first non-env-prefix token is
+  # a shell wrapper (bash/sh/dash/ash/ksh/zsh -c '<inner>') or `eval
+  # '<inner>'`, peel one layer and re-inspect the inner string. Mirrors
+  # is_git_subcommand_in_wrappers's recursion: PR #417 made the classify
+  # check wrapper-aware but left this resolver one-level, so wrapped
+  # commits like `bash -c 'cd /tmp/wt && git commit'` fired the hook on
+  # the OUTER command (starts with `bash`, not `cd`) → empty extraction
+  # → fallback to $CLAUDE_PROJECT_DIR (main repo) → stage-check and
+  # tracking-marker enforcement silently passed against MAIN's empty
+  # index. Bounded depth (3) matches the wrapper-helper convention.
+  local depth=3
+  while [ "$depth" -gt 0 ]; do
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$cmd"
+    local i=0 n=${#TOKENS[@]}
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    local first="${TOKENS[$i]:-}"
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+    local inner=""
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+        fi
+        ;;
+      eval)
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        ;;
+    esac
+    if [ -n "$inner" ]; then
+      cmd="$inner"
+      ((depth--))
+      continue
+    fi
+    break
+  done
+  # Segment-walk: split $cmd on statement separators (`;`, `&&`, `||`, `|`,
+  # newline) and look for the first `cd <target>` whose preamble in the
+  # segment is purely env-mutating / inert shell statements. Issue #924:
+  # the previous `^cd[[:space:]]+` regex against the whole command missed
+  # `set -e; cd /tmp/wt && …`, `export X=Y; cd …`, `. resolver.sh && cd …`,
+  # `VAR=val cd …`, all common in orchestrator-side worktree bookkeeping.
+  # Segment separators we split on are exactly those that terminate the
+  # previous statement in bash; they cannot appear inside `cd`'s target
+  # token (it's stop-classed on the same chars).
+  local SEG_IFS=$'\n'
+  # Replace each `&&`, `||`, `|`, `;` with a newline so we can read -a.
+  local segs="${cmd//&&/$'\n'}"
+  segs="${segs//||/$'\n'}"
+  segs="${segs//|/$'\n'}"
+  segs="${segs//;/$'\n'}"
+  local IFS_OLD="$IFS"
+  IFS="$SEG_IFS"
+  local -a SEGMENTS
+  # shellcheck disable=SC2206
+  SEGMENTS=( $segs )
+  IFS="$IFS_OLD"
+  local seg
+  for seg in "${SEGMENTS[@]}"; do
+    # Trim leading/trailing whitespace.
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -z "$seg" ] && continue
+    local -a STOKENS
+    # shellcheck disable=SC2206
+    read -ra STOKENS <<< "$seg"
+    local si=0 sn=${#STOKENS[@]}
+    # Skip env-var assignment prefixes (KEY=val ...).
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    # Skip `env` wrapper (and its KEY=val args).
+    [[ $si -lt $sn && "${STOKENS[$si]}" == "env" ]] && ((si++))
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    local stok="${STOKENS[$si]:-}"
+    case "$stok" in
+      */*) stok="${stok##*/}" ;;
+    esac
+    case "$stok" in
+      set|export|unset|source|.|:|true|false|alias|unalias|shopt|declare|local|readonly|typeset)
+        # Inert / env-mutating preamble statement — skip this segment.
+        continue
+        ;;
+      cd)
+        local stgt="${STOKENS[$((si+1))]:-}"
+        [ -z "$stgt" ] && continue
+        # Strip surrounding quotes if present.
+        stgt="${stgt%\"}"; stgt="${stgt#\"}"
+        stgt="${stgt%\'}"; stgt="${stgt#\'}"
+        if [ -d "$stgt" ]; then
+          echo "$stgt"
+          return 0
+        fi
+        # cd target didn't resolve — stop walking; downstream segments
+        # operate on a different cwd we can't reason about.
+        return 0
+        ;;
+      *)
+        # First "real" statement is not a cd — no preamble-cd in this
+        # command. Stop walking; per design, only a leading preamble of
+        # env-mutating statements is allowed before the cd.
+        return 0
+        ;;
+    esac
+  done
+}
+resolve_effective_worktree_root() {
+  local env_override="$1"
+  local cd_target="$2"
+  local fallback="$3"
+  if [ -n "$env_override" ]; then
+    printf '%s\n' "$env_override"
+  elif [ -n "$cd_target" ]; then
+    printf '%s\n' "$cd_target"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+# ── Enforcement library (ENFORCEMENT_V2_PLAN #1159) ───────────────────────
+# Inlined VERBATIM from hooks/_lib/zskills-enforcement.sh (source-of-truth).
+# The .claude/hooks/ legacy mirrors and plugin-served copies cannot reach
+# _lib/ at runtime, so the bodies are pasted in; tests/test-hook-helper-drift.sh
+# enforces byte-equality. Maintain in _lib only.
+zskills_enforcement_config_root() {
+  if [ -n "${ZSKILLS_ENF_CONFIG_ROOT:-}" ]; then
+    printf '%s\n' "${ZSKILLS_ENF_CONFIG_ROOT%/}"
+    return 0
+  fi
+  local gcd
+  gcd=$(git rev-parse --git-common-dir 2>/dev/null) || gcd=""
+  if [ -n "$gcd" ]; then
+    # git-common-dir is the MAIN .git dir even from a linked worktree; its
+    # parent is the main checkout root. May be relative — resolve it.
+    local parent
+    parent=$(cd "$gcd/.." 2>/dev/null && pwd) || parent=""
+    if [ -n "$parent" ]; then
+      printf '%s\n' "${parent%/}"
+      return 0
+    fi
+  fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s\n' "${CLAUDE_PROJECT_DIR%/}"
+    return 0
+  fi
+  printf '%s\n' "$(pwd)"
+}
+zskills_enforcement_predicate() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _json="$1" _main="${2%/}" _local="${3%/}"
+  local PERM=""
+  # SPOOF-PROOF BY CONSTRUCTION: in valid JSON, any quote inside a string
+  # value (tool_input.command, new_string, …) is escaped as \" — so a
+  # counterfeit "permission_mode" literal embedded in command content can
+  # only appear with a backslash before its opening quote, which (^|[^\\])
+  # rejects. Only the real top-level key (whose quote follows `{`, `,`, or
+  # whitespace) can match, regardless of field order. The value class
+  # [a-zA-Z]+ cannot span an escape. No tool_input stripping or field-order
+  # assumption needed.
+  if [[ "$_json" =~ (^|[^\\])\"permission_mode\"[[:space:]]*:[[:space:]]*\"([a-zA-Z]+)\" ]]; then
+    PERM="${BASH_REMATCH[2]}"
+  fi
+  # enforce-autonomous iff bypassPermissions OR not a recognized attended
+  # mode (absent/unrecognized — fail-safe TOWARD enforcement).
+  case "$PERM" in
+    default|acceptEdits|plan)
+      : # attended modes — fall through to the pipeline-live check
+      ;;
+    *)
+      printf '%s\n' "enforce-autonomous"
+      return 0
+      ;;
+  esac
+  # enforce-pipeline iff a zskills pipeline is LIVE. The LOCAL-root tracked
+  # arm is load-bearing: worktree pipeline agents inherit "default" mode, so
+  # only the worktree's own .zskills/tracked keeps them enforced (subagent
+  # permission_mode VALUE is unpinned by Probe B — it verified PRESENCE only).
+  if [ -f "$_local/.zskills/tracked" ] || [ -f "$_local/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Main-root OR-arm (CLAUDE.md Tracking Enforcement prose — orchestrator
+  # writes both roots; kept even though no skill implements the main-root
+  # write today). Legacy dual-read; drop the .zskills-tracked arm when #1146
+  # lands.
+  if [ -f "$_main/.zskills/tracked" ] || [ -f "$_main/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Inflight sentinel younger than the TTL (120 min = 7200 s, the
+  # check-inflight-batch.sh default). Supplementary signal — ages by file
+  # MTIME (check-inflight-batch ages by the started_at JSON field; congruent
+  # because sentinels are only ever written/rewritten whole). Only the
+  # cron-shaped workers write sentinels; runs >2h age out mid-run, falling
+  # back to the tracked-marker arm.
+  if [ -d "$_main/.zskills/inflight" ]; then
+    if [ -n "$(find "$_main/.zskills/inflight" -name '*.json' -mmin -120 2>/dev/null | head -1)" ]; then
+      printf '%s\n' "enforce-pipeline"; return 0
+    fi
+  fi
+  # NOTE: bare [ -d "$_main/.zskills/tracking" ] is deliberately NOT tested —
+  # finished pipelines leave subdirs there indefinitely (20+ stale dirs in
+  # the dogfood repo), which would make enforce permanent in every repo that
+  # ever ran a pipeline.
+  printf '%s\n' "watched"
+}
+zskills_enforcement_load_toggles() {
+  [ "${_ZSK_ENF_TOGGLES_LOADED:-0}" = "1" ] && return 0
+  _ZSK_ENF_TOGGLES=""
+  _ZSK_ENF_TOGGLES_LOADED=1
+  local _cfg="$1"
+  [ -n "$_cfg" ] && [ -f "$_cfg" ] || return 0
+  # Resolve a working Python 3 interpreter (probe-run; honors ZSKILLS_PYTHON).
+  local _py="" _cand
+  for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_cand" ] || continue
+    command -v "$_cand" >/dev/null 2>&1 || continue
+    if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      _py=$(command -v "$_cand"); break
+    fi
+  done
+  [ -n "$_py" ] || return 0   # Python unavailable → shipped defaults
+  local _dump
+  _dump=$("$_py" - "$_cfg" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(0)   # parse error → empty dump → shipped defaults
+hooks = data.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+out = []
+for group, body in hooks.items():
+    if not isinstance(body, dict):
+        continue
+    for key, val in body.items():
+        if key == "enabled":
+            if isinstance(val, bool):
+                out.append("%s.enabled=%s" % (group, "true" if val else "false"))
+        elif isinstance(val, str):
+            out.append("%s.%s=%s" % (group, key, val))
+print("\n".join(out))
+PYEOF
+)
+  # A non-zero exit or empty dump leaves _ZSK_ENF_TOGGLES="" (defaults).
+  [ -n "$_dump" ] && _ZSK_ENF_TOGGLES="$_dump"
+  return 0
+}
+zskills_enforcement_mode() {
+  local _group="$1" _check="$2" _class="$3" _pred="$4"
+  local _explicit="" _group_enabled="" _line
+  # Read the cached toggles. Linear scan — the list is tiny (<=37 lines).
+  if [ -n "${_ZSK_ENF_TOGGLES:-}" ]; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        "$_group.$_check="*) _explicit="${_line#*=}" ;;
+        "$_group.enabled="*) _group_enabled="${_line#*=}" ;;
+      esac
+    done <<EOF
+$_ZSK_ENF_TOGGLES
+EOF
+  fi
+
+  # Group ceiling: enabled:false turns the whole group off — EXCEPT
+  # config_hooks_tamper, which is ceiling-EXEMPT (Settled decision 13
+  # self-protection: a group ceiling write must not take the tamper gate down
+  # with it; only its own explicit per-check value can turn it off).
+  if [ "$_group_enabled" = "false" ] && [ "$_check" != "config_hooks_tamper" ]; then
+    _ZSK_ENF_SOURCE="group disabled in project config"
+    printf '%s\n' "off"; return 0
+  fi
+
+  # Explicit per-check value always wins (Settled decision 6) — for hard AND
+  # demotable checks alike. Only block|warn|off are honored values.
+  case "$_explicit" in
+    block|warn|off)
+      _ZSK_ENF_SOURCE="project config: $_explicit"
+      printf '%s\n' "$_explicit"; return 0
+      ;;
+  esac
+
+  # Unset → class-derived default.
+  if [ "$_class" = "hard" ]; then
+    # A hard check is never silent, even watched.
+    case "$_pred" in
+      enforce-autonomous) _ZSK_ENF_SOURCE="autonomous default" ;;
+      enforce-pipeline)   _ZSK_ENF_SOURCE="pipeline-active default" ;;
+      *)                  _ZSK_ENF_SOURCE="hard default" ;;
+    esac
+    printf '%s\n' "block"; return 0
+  fi
+
+  # Demotable, unset.
+  case "$_pred" in
+    enforce-autonomous)
+      _ZSK_ENF_SOURCE="autonomous default"
+      printf '%s\n' "block"; return 0
+      ;;
+    enforce-pipeline)
+      _ZSK_ENF_SOURCE="pipeline-active default"
+      printf '%s\n' "block"; return 0
+      ;;
+    *)
+      # watched + demotable + unset.
+      if [ "$_check" = "config_hooks_tamper" ]; then
+        # NAMED EXCEPTION (DA4): the tamper gate's effect is durable +
+        # cross-session, so a config-disarm must be VISIBLE at write time —
+        # warn, NOT silent.
+        _ZSK_ENF_SOURCE="attended default (warn — tamper exception)"
+        printf '%s\n' "warn"; return 0
+      fi
+      # OWNER-AMENDMENT zero-config quiet default (was "warn"): emit NOTHING.
+      _ZSK_ENF_SOURCE="attended default (silent)"
+      printf '%s\n' "silent"; return 0
+      ;;
+  esac
+}
+zskills_enforcement_tag() {
+  printf '[hooks.%s.%s — block|warn|off in .claude/zskills-config.json; currently: %s]' \
+    "$1" "$2" "${_ZSK_ENF_SOURCE:-unknown}"
+}
+zskills_enforcement_json_escape() {
+  local LC_ALL=C
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\b'/\\b}"
+  s="${s//$'\f'/\\f}"
+  s="${s//[[:cntrl:]]/}"
+  printf '%s' "$s"
+}
+zskills_enforcement_warn() {
+  local _w="WARNING (not blocked by this check): $1"
+  if [ -z "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _ZSK_ENF_WARNINGS="$_w"
+  else
+    _ZSK_ENF_WARNINGS="$_ZSK_ENF_WARNINGS
+$_w"
+  fi
+}
+zskills_enforcement_flush_warnings() {
+  [ -n "${_ZSK_ENF_WARNINGS:-}" ] || return 0
+  local _esc
+  _esc=$(zskills_enforcement_json_escape "$_ZSK_ENF_WARNINGS")
+  printf '{"systemMessage":"%s"}' "$_esc"
+}
+
+# ── gate_with_reason (ENFORCEMENT_V2_PLAN Phase 3, #1159) ──────────────────
+# Sibling of block_with_reason that routes a deny site through the enforcement
+# predicate + per-check toggle. Sites pass BARE group/check/class args; the
+# switch-naming tag (Settled decision 14) is appended HERE in exactly one place.
+#   $1=group  $2=check  $3=class(hard|demotable)  $4=message
+# Resolution → action:
+#   silent | off  → return 0 (continue scanning; accumulate nothing). silent is
+#                   the zero-config WATCHED default for demotable sites (owner
+#                   amendment) — emits nothing, exactly like off.
+#   warn          → accumulate the tagged message via zskills_enforcement_warn
+#                   and return 0 (the opt-in coaching value). Must NOT exit the
+#                   scan loop, or a single warned check would mask a later hard
+#                   check in the same command; the hook's final allow path calls
+#                   zskills_enforcement_flush_warnings.
+#   block         → emit the deny envelope and exit 0, APPENDING any
+#                   already-accumulated warnings to the deny's
+#                   permissionDecisionReason (lib deny-path rule — nothing
+#                   silently dropped). Uses the same inline 3-step JSON escape
+#                   block_with_reason's callers rely on (backslash, quote,
+#                   newline) so the tag + warnings serialize safely.
+# ENF_ROOT (config_root, the toggle + predicate main-root) and ENF_LOCAL
+# (effective local root, the predicate tracked-marker root) are computed once
+# before the first deny site and consumed by all 19 sites.
+gate_with_reason() {
+  local _g="$1" _c="$2" _cl="$3" _msg="$4"
+  local _pred _mode
+  _pred=$(zskills_enforcement_predicate "$INPUT" "$ENF_ROOT" "$ENF_LOCAL")
+  zskills_enforcement_load_toggles "$ENF_ROOT/.claude/zskills-config.json"
+  _mode=$(zskills_enforcement_mode "$_g" "$_c" "$_cl" "$_pred")
+  case "$_mode" in
+    silent|off) return 0 ;;
+  esac
+  # Re-run WITHOUT command substitution so _ZSK_ENF_SOURCE is set in THIS shell
+  # for the tag formatter (the $()-captured call above loses the side effect).
+  zskills_enforcement_mode "$_g" "$_c" "$_cl" "$_pred" >/dev/null
+  local _tagged="$_msg
+
+$(zskills_enforcement_tag "$_g" "$_c")"
+  if [ "$_mode" = "warn" ]; then
+    zskills_enforcement_warn "$_tagged"
+    return 0
+  fi
+  # block — append any already-accumulated warnings, then deny + exit.
+  if [ -n "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _tagged="$_tagged
+
+$_ZSK_ENF_WARNINGS"
+  fi
+  local _esc="${_tagged//\\/\\\\}"
+  _esc="${_esc//\"/\\\"}"
+  _esc="${_esc//$'\n'/\\n}"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$_esc"
   exit 0
 }
 
@@ -711,6 +1177,50 @@ is_destruct_command_in_wrappers() {
   return 1
 }
 
+# ── Enforcement roots (ENFORCEMENT_V2_PLAN Phase 3, #1159) ─────────────────
+# Compute the two predicate/toggle roots ONCE, above the first deny site, so
+# all 19 gate_with_reason sites consume the same values:
+#   ENF_ROOT  = config_root() — the MAIN root (git-common-dir parent →
+#               CLAUDE_PROJECT_DIR → pwd), used for the toggle-file path and the
+#               predicate's main-root marker/sentinel arm. Worktree-local config
+#               copies are NEVER consulted for toggles (Settled decision 13).
+#   ENF_LOCAL = effective local root (env override → cd-target → git toplevel/
+#               pwd) — the predicate's tracked-marker arm reads here, so a live
+#               pipeline's worktree agents (tracked marker at their local root,
+#               or reachable via cd-target extraction) stay enforced.
+ENF_ROOT=$(zskills_enforcement_config_root)
+ENF_LOCAL=$(resolve_effective_worktree_root "${REPO_ROOT:-}" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+
+# ── config_hooks_tamper (registry row 50; Settled decision 13 / DA4) ────────
+# DESTINATION-ANCHORED, narrowed: fires when $COMMAND contains a WRITE whose
+# TARGET is the MAIN root's .claude/zskills-config.json — a `>` / `>>`
+# redirection, `tee`/`tee -a`, `sed -i`, or `mv`/`cp` whose DESTINATION token
+# ends in `zskills-config.json`. The bare presence of the filename plus an
+# unrelated indicator does NOT fire: reads like `grep landing
+# .claude/zskills-config.json > out.txt` (redirect target is NOT the config)
+# and inspection/backup `cp` FROM the config are out of scope by construction.
+# Demotable: autonomous → BLOCK; watched → WARN by shipped default (the ONE
+# named exception — a config-disarm's effect is durable + cross-session and must
+# never happen invisibly); explicit "off"/"block" override. Sanctioned zskills
+# config writers use VARIABLE destinations (tmp+mv), so the literal-destination
+# trigger never fires on them (Phase 6 keeps that shape). Residual
+# variable-destination non-coverage is accepted (Settled decision 13 threat
+# model: anti-casual, transcript-visible).
+_CFG_RE_REDIR='>>?[[:space:]]*"?[^[:space:]";&|]*zskills-config\.json'
+_CFG_RE_TEE='(^|[[:space:]|;&(`])tee([[:space:]]+-a)?[[:space:]]+"?[^[:space:]";&|]*zskills-config\.json'
+_CFG_RE_SEDI='sed[[:space:]]+(-[a-zA-Z]*[[:space:]]+)*-i([[:space:]]+[^[:space:]";&|]+)*[[:space:]]+"?[^[:space:]";&|]*zskills-config\.json'
+_CFG_RE_MVCP='(^|[[:space:]|;&(`])(mv|cp)([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^;&|]*[[:space:]]"?[^[:space:]";&|]*zskills-config\.json("|[[:space:]]|;|&|\||$)'
+if [[ "$COMMAND" =~ $_CFG_RE_REDIR ]] || [[ "$COMMAND" =~ $_CFG_RE_TEE ]] || \
+   [[ "$COMMAND" =~ $_CFG_RE_SEDI ]] || [[ "$COMMAND" =~ $_CFG_RE_MVCP ]]; then
+  gate_with_reason main_protection config_hooks_tamper demotable "STOP: direct shell write whose destination is .claude/zskills-config.json is gated (config_hooks_tamper).
+
+Command: $COMMAND
+
+This writes the project's hooks-enforcement config — the surface that arms/disarms the enforcement system itself. A config-disarm is durable and cross-session, so it must never happen invisibly.
+
+Recovery: config changes to the hooks block need a human-reviewed edit or a committed project review — re-enable a check by deleting its key or setting 'block' in .claude/zskills-config.json via a human-reviewed change."
+fi
+
 # git stash — wrapper-aware gate via is_git_subcommand_in_wrappers (#426,
 # completes #399). The prior regex-based STASH_BOUNDARY anchored
 # `git[[:space:]]+stash` to `^`, `;`, `&`, `&&`, `||`, `|`, backtick, or
@@ -745,7 +1255,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" stash; then
   _stash_sub="${_stash_sub%\"}"; _stash_sub="${_stash_sub#\"}"
   case "$_stash_sub" in
     drop|clear)
-      block_with_reason "BLOCKED: git stash drop/clear destroys stashed work permanently (including untracked files saved with -u). If you need to drop a stash, ask the user to do it manually."
+      gate_with_reason git_destructive stash_drop hard "BLOCKED: git stash drop/clear destroys stashed work permanently (including untracked files saved with -u). If you need to drop a stash, ask the user to do it manually."
       ;;
     apply|list|show|pop|create|store|branch)
       : # allowed read/recovery subcommands — no action
@@ -754,7 +1264,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" stash; then
       # Includes: bare `git stash`, `git stash push`, `git stash save`,
       # `git stash -u`, and any unknown form. All are create-stash or
       # unrecognized — block.
-      block_with_reason "BLOCKED: git-stash write subcommand forbidden (modifies working tree). Allowed read/recovery: apply, list, show, pop. For cherry-pick protection, let git refuse on overlap."
+      gate_with_reason git_destructive stash_write hard "BLOCKED: git-stash write subcommand forbidden (modifies working tree). Allowed read/recovery: apply, list, show, pop. For cherry-pick protection, let git refuse on overlap."
       ;;
   esac
   unset _stash_sub
@@ -772,13 +1282,13 @@ fi
 # (whether via the chain or the recursive unwrap path) so the flag-regex
 # check below still functions.
 if is_git_subcommand_in_wrappers "$COMMAND" checkout && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(.*[[:space:]])?--([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
+  gate_with_reason git_destructive checkout_discard hard "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git restore (any file or blanket) — modern equivalent of checkout --
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
 if is_git_subcommand_in_wrappers "$COMMAND" restore; then
-  block_with_reason "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
+  gate_with_reason git_destructive restore_discard hard "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git switch with destructive flags — modern analog of `git checkout --`.
@@ -791,19 +1301,19 @@ fi
 # `-X theirs` rescue patterns CLAUDE.md teaches. Wrapper-recursion via
 # is_git_subcommand_in_wrappers (#478, completes #426).
 if is_git_subcommand_in_wrappers "$COMMAND" switch && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(--discard-changes|--force|-f)([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git switch --discard-changes / -f / --force discards uncommitted changes permanently (modern analog of git checkout --). If you need to switch branches with dirty state, commit or stash first; if you genuinely want to discard, ask the user."
+  gate_with_reason git_destructive switch_discard hard "BLOCKED: git switch --discard-changes / -f / --force discards uncommitted changes permanently (modern analog of git checkout --). If you need to switch branches with dirty state, commit or stash first; if you genuinely want to discard, ask the user."
 fi
 
 # git clean -f (permanent file deletion)
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
 if is_git_subcommand_in_wrappers "$COMMAND" clean && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git clean -f permanently deletes untracked files. These cannot be recovered from git."
+  gate_with_reason git_destructive clean_force hard "BLOCKED: git clean -f permanently deletes untracked files. These cannot be recovered from git."
 fi
 
 # git reset --hard (discards everything)
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
 if is_git_subcommand_in_wrappers "$COMMAND" reset && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--hard([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git reset --hard discards all uncommitted changes and staged work. Use git reset (soft) or ask the user."
+  gate_with_reason git_destructive reset_hard hard "BLOCKED: git reset --hard discards all uncommitted changes and staged work. Use git reset (soft) or ask the user."
 fi
 
 # kill -9 / kill -KILL / kill -SIGKILL / kill -s 9 / kill -s KILL / kill -s SIGKILL / killall / pkill
@@ -819,13 +1329,13 @@ if is_destruct_command_in_wrappers "$COMMAND" kill '^-(9|KILL|SIGKILL)$' \
    || is_destruct_command_in_wrappers "$COMMAND" kill '^-s$:next:^(9|KILL|SIGKILL)$' \
    || is_destruct_command_in_wrappers "$COMMAND" killall '' \
    || is_destruct_command_in_wrappers "$COMMAND" pkill ''; then
-  block_with_reason "BLOCKED: kill -9/killall/pkill can kill container-critical processes. Ask the user to stop the process manually."
+  gate_with_reason process_kill kill_9 hard "BLOCKED: kill -9/killall/pkill can kill container-critical processes. Ask the user to stop the process manually."
 fi
 
 # fuser -k (kills whatever process holds a port — disrupts other sessions' dev servers and E2E tests)
 # Catch -k alone, bundled flags (-km, -mk), and --kill
 if [[ "$COMMAND" =~ fuser[[:space:]]+(.*-[a-z]*k[a-z]*|--kill) ]]; then
-  block_with_reason "BLOCKED: fuser -k kills whatever process holds a port. Other sessions may need that dev server for E2E tests. Ask the user to stop the process manually."
+  gate_with_reason process_kill fuser_k hard "BLOCKED: fuser -k kills whatever process holds a port. Other sessions may need that dev server for E2E tests. Ask the user to stop the process manually."
 fi
 
 # xargs ... kill — the "identify PIDs by port/name, then kill them" pipeline.
@@ -837,7 +1347,7 @@ fi
 # helper `bash scripts/stop-dev.sh`, and `kill $(cat pidfile)` (below).
 XARGS_KILL='xargs[[:space:]]+([^;&|]*[[:space:]]+)?kill([[:space:]]|[;&|]|$)'
 if [[ "$COMMAND" =~ $XARGS_KILL ]]; then
-  block_with_reason "BLOCKED: 'xargs … kill' identifies PIDs from stdin (usually lsof/pgrep/pidof output) and kills whatever matches — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
+  gate_with_reason process_kill xargs_kill hard "BLOCKED: 'xargs … kill' identifies PIDs from stdin (usually lsof/pgrep/pidof output) and kills whatever matches — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
 fi
 
 # kill $(lsof|pgrep|pidof|netstat …) / backtick equivalents — command-substitution variant
@@ -855,7 +1365,7 @@ fi
 # deny). The affirmative helper `bash scripts/stop-dev.sh` is the sanctioned path.
 KILL_SUBST='kill[[:space:]]+([^[:space:];&|]+[[:space:]]+)*(\$\([^)]*|`[^`]*)(lsof|pgrep|pidof|netstat)([[:space:]]|[;&|]|\)|`|$)'
 if [[ "$COMMAND" =~ $KILL_SUBST ]]; then
-  block_with_reason "BLOCKED: 'kill \$(lsof…)' / 'kill \`pgrep…\`' / kill with pidof|netstat-substitution identifies PIDs by port/name and kills them — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
+  gate_with_reason process_kill kill_substitution hard "BLOCKED: 'kill \$(lsof…)' / 'kill \`pgrep…\`' / kill with pidof|netstat-substitution identifies PIDs by port/name and kills them — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
 fi
 
 # ──────────────────────────────────────────────────────────────
@@ -928,21 +1438,21 @@ if [[ "$COMMAND" =~ $RM_RECURSIVE ]]; then
   # #1148) — not the whole compound, whose other segments may carry
   # unrelated $VAR expansions (heredocs, marker writes).
   if ! is_safe_destruct "$(destruct_segment "$COMMAND" "$RM_RECURSIVE")"; then
-    block_with_reason "BLOCKED: recursive rm requires a literal /tmp/<name> path. Variables (empty-expansion = rm -rf \\\"\\\"), wildcards, or paths outside /tmp/ are unsafe. Delete specific files by name, use a literal /tmp/ path, or ask the user."
+    gate_with_reason fs_destructive rm_recursive hard "BLOCKED: recursive rm requires a literal /tmp/<name> path. Variables (empty-expansion = rm -rf \\\"\\\"), wildcards, or paths outside /tmp/ are unsafe. Delete specific files by name, use a literal /tmp/ path, or ask the user."
   fi
 fi
 
 # find ... -delete
 if [[ "$COMMAND" =~ find[[:space:]]+.*-delete ]]; then
   if ! is_safe_destruct "$COMMAND"; then
-    block_with_reason "BLOCKED: find ... -delete requires a literal /tmp/<name> path. Variables or paths outside /tmp/ can sweep unintended files."
+    gate_with_reason fs_destructive find_delete hard "BLOCKED: find ... -delete requires a literal /tmp/<name> path. Variables or paths outside /tmp/ can sweep unintended files."
   fi
 fi
 
 # rsync ... --delete (mirror-sync that removes extras)
 if [[ "$COMMAND" =~ rsync[[:space:]]+.*--delete ]]; then
   if ! is_safe_destruct "$COMMAND"; then
-    block_with_reason "BLOCKED: rsync --delete requires a literal /tmp/<name> destination. Outside /tmp/ or with variables, an unintended expansion can clobber real work."
+    gate_with_reason fs_destructive rsync_delete hard "BLOCKED: rsync --delete requires a literal /tmp/<name> destination. Outside /tmp/ or with variables, an unintended expansion can clobber real work."
   fi
 fi
 
@@ -994,7 +1504,7 @@ xargs_target_destructive() {
 if [[ "$COMMAND" =~ xargs ]]; then
   XARGS_SEG="$(destruct_segment "$COMMAND" 'xargs')"
   if xargs_target_destructive "$XARGS_SEG" && ! is_safe_destruct "$XARGS_SEG"; then
-    block_with_reason "BLOCKED: xargs into a destructive command (rm / mv / chmod / find -delete / …) requires a literal /tmp/<name> path. Read-only xargs targets (grep, cat, ls, …) are allowed."
+    gate_with_reason fs_destructive xargs_destructive hard "BLOCKED: xargs into a destructive command (rm / mv / chmod / find -delete / …) requires a literal /tmp/<name> path. Read-only xargs targets (grep, cat, ls, …) are allowed."
   fi
 fi
 
@@ -1005,14 +1515,14 @@ fi
 # (whether via the chain or the recursive unwrap path) so the flag-regex
 # check below still functions.
 if is_git_subcommand_in_wrappers "$COMMAND" add && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(-A|--all|\.)([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git add . / git add -A sweeps in ALL changes, including other sessions' work. Stage files by name: git add file1 file2."
+  gate_with_reason git_discipline git_add_all demotable "BLOCKED: git add . / git add -A sweeps in ALL changes, including other sessions' work. Stage files by name: git add file1 file2."
 fi
 
 # git commit --no-verify (skips pre-commit hooks). Wrapper-recursion via
 # is_git_subcommand_in_wrappers (#399) catches `bash -c "git commit
 # --no-verify"` / `eval 'git commit --no-verify'`.
 if is_git_subcommand_in_wrappers "$COMMAND" commit && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--no-verify([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
+  gate_with_reason git_discipline no_verify hard "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
 fi
 
 # ─── git push: block main/master, allow feature branches ───────────
@@ -1130,9 +1640,12 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   fi
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
-    block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
+    gate_with_reason main_protection push_to_main demotable "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
   fi
 fi
 
-# No match — allow
+# No match — allow. Flush any accumulated opt-in "warn" coaching messages on
+# the decision-less warn channel (Settled decision 2 — never a permissionDecision)
+# before allowing. Empty accumulator → emits nothing (the zero-config silent path).
+zskills_enforcement_flush_warnings
 exit 0

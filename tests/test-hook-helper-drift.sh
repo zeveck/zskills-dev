@@ -90,11 +90,11 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     [[ "$FN" == "is_gh_pr_subcommand_in_chain" && "$HOOK" != *bypassed-land-pr* ]] && continue
     [[ "$FN" == "is_gh_pr_subcommand_in_wrappers" && "$HOOK" != *bypassed-land-pr* ]] && continue
     # Worktree-root resolvers (#401): inlined in project, stale-skill-version,
-    # AND (ENFORCEMENT_V2_PLAN Phase 2, #1159) block-bypassed-land-pr, which now
-    # resolves ENF_LOCAL for the enforcement predicate. Skip only for the
-    # generic hook (it does not act on the agent's worktree root).
-    [[ "$FN" == "extract_cd_target" && "$HOOK" == *unsafe-generic* ]] && continue
-    [[ "$FN" == "resolve_effective_worktree_root" && "$HOOK" == *unsafe-generic* ]] && continue
+    # block-bypassed-land-pr (ENFORCEMENT_V2_PLAN Phase 2, #1159) AND now the
+    # generic hook (ENFORCEMENT_V2_PLAN Phase 3, #1159 — it resolves ENF_LOCAL
+    # for the enforcement predicate via extract_cd_target +
+    # resolve_effective_worktree_root). No remaining skip — every hook in this
+    # loop inlines both resolvers.
     SRC="$(fn_source "$FN")"
     if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
       fail "drift: $HOOK $FN source-of-truth file not found ($SRC)"
@@ -211,8 +211,13 @@ fi
 # Phase 2 (#1159): the six lib-tagging small hooks each inline ALL EIGHT
 # enforcement functions verbatim (one canonical block per hook). block-agents.sh
 # is NOT a consumer (no hooks.* key — Settled decision 10; static-literal tag).
-# The two big hooks (block-unsafe-{generic,project}) join these lists in Phase 3.
-ENF_HOOKS="hooks/block-main-edits.sh hooks/block-fix-issue-unclaimed.sh hooks/block-run-plan-unclaimed.sh hooks/block-bad-cron.sh hooks/block-bypassed-land-pr.sh hooks/block-stale-skill-version.sh"
+# Phase 3 (#1159): the two big hooks (block-unsafe-generic.sh,
+# block-unsafe-project.sh) JOIN these lists — they route every deny site through
+# the gate_with_reason wrapper, which inlines all eight enforcement functions
+# verbatim. block-unsafe-project.sh is byte-equal to its .sh.template sibling
+# (gated separately by test-hook-template-sibling.sh), so gating the .sh covers
+# both.
+ENF_HOOKS="hooks/block-main-edits.sh hooks/block-fix-issue-unclaimed.sh hooks/block-run-plan-unclaimed.sh hooks/block-bad-cron.sh hooks/block-bypassed-land-pr.sh hooks/block-stale-skill-version.sh hooks/block-unsafe-generic.sh hooks/block-unsafe-project.sh"
 declare -A ENF_CONSUMERS
 ENF_CONSUMERS[zskills_enforcement_config_root]="$ENF_HOOKS"
 ENF_CONSUMERS[zskills_enforcement_predicate]="$ENF_HOOKS"

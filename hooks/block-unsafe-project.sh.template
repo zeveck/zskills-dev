@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.3
+# zskills-hook-version: 2026.06.4
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -68,6 +68,295 @@ COMMAND=$(printf '%s' "$COMMAND" | sed -E \
 # Block patterns -- each with a reason
 block_with_reason() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$1"
+  exit 0
+}
+
+# ── Enforcement library (ENFORCEMENT_V2_PLAN #1159) ───────────────────────
+# Inlined VERBATIM from hooks/_lib/zskills-enforcement.sh (source-of-truth).
+# The .claude/hooks/ legacy mirrors and plugin-served copies cannot reach
+# _lib/ at runtime, so the bodies are pasted in; tests/test-hook-helper-drift.sh
+# enforces byte-equality. Maintain in _lib only.
+zskills_enforcement_config_root() {
+  if [ -n "${ZSKILLS_ENF_CONFIG_ROOT:-}" ]; then
+    printf '%s\n' "${ZSKILLS_ENF_CONFIG_ROOT%/}"
+    return 0
+  fi
+  local gcd
+  gcd=$(git rev-parse --git-common-dir 2>/dev/null) || gcd=""
+  if [ -n "$gcd" ]; then
+    # git-common-dir is the MAIN .git dir even from a linked worktree; its
+    # parent is the main checkout root. May be relative — resolve it.
+    local parent
+    parent=$(cd "$gcd/.." 2>/dev/null && pwd) || parent=""
+    if [ -n "$parent" ]; then
+      printf '%s\n' "${parent%/}"
+      return 0
+    fi
+  fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s\n' "${CLAUDE_PROJECT_DIR%/}"
+    return 0
+  fi
+  printf '%s\n' "$(pwd)"
+}
+zskills_enforcement_predicate() {
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    setopt LOCAL_OPTIONS KSH_ARRAYS BASH_REMATCH 2>/dev/null
+  fi
+  local _json="$1" _main="${2%/}" _local="${3%/}"
+  local PERM=""
+  # SPOOF-PROOF BY CONSTRUCTION: in valid JSON, any quote inside a string
+  # value (tool_input.command, new_string, …) is escaped as \" — so a
+  # counterfeit "permission_mode" literal embedded in command content can
+  # only appear with a backslash before its opening quote, which (^|[^\\])
+  # rejects. Only the real top-level key (whose quote follows `{`, `,`, or
+  # whitespace) can match, regardless of field order. The value class
+  # [a-zA-Z]+ cannot span an escape. No tool_input stripping or field-order
+  # assumption needed.
+  if [[ "$_json" =~ (^|[^\\])\"permission_mode\"[[:space:]]*:[[:space:]]*\"([a-zA-Z]+)\" ]]; then
+    PERM="${BASH_REMATCH[2]}"
+  fi
+  # enforce-autonomous iff bypassPermissions OR not a recognized attended
+  # mode (absent/unrecognized — fail-safe TOWARD enforcement).
+  case "$PERM" in
+    default|acceptEdits|plan)
+      : # attended modes — fall through to the pipeline-live check
+      ;;
+    *)
+      printf '%s\n' "enforce-autonomous"
+      return 0
+      ;;
+  esac
+  # enforce-pipeline iff a zskills pipeline is LIVE. The LOCAL-root tracked
+  # arm is load-bearing: worktree pipeline agents inherit "default" mode, so
+  # only the worktree's own .zskills/tracked keeps them enforced (subagent
+  # permission_mode VALUE is unpinned by Probe B — it verified PRESENCE only).
+  if [ -f "$_local/.zskills/tracked" ] || [ -f "$_local/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Main-root OR-arm (CLAUDE.md Tracking Enforcement prose — orchestrator
+  # writes both roots; kept even though no skill implements the main-root
+  # write today). Legacy dual-read; drop the .zskills-tracked arm when #1146
+  # lands.
+  if [ -f "$_main/.zskills/tracked" ] || [ -f "$_main/.zskills-tracked" ]; then
+    printf '%s\n' "enforce-pipeline"; return 0
+  fi
+  # Inflight sentinel younger than the TTL (120 min = 7200 s, the
+  # check-inflight-batch.sh default). Supplementary signal — ages by file
+  # MTIME (check-inflight-batch ages by the started_at JSON field; congruent
+  # because sentinels are only ever written/rewritten whole). Only the
+  # cron-shaped workers write sentinels; runs >2h age out mid-run, falling
+  # back to the tracked-marker arm.
+  if [ -d "$_main/.zskills/inflight" ]; then
+    if [ -n "$(find "$_main/.zskills/inflight" -name '*.json' -mmin -120 2>/dev/null | head -1)" ]; then
+      printf '%s\n' "enforce-pipeline"; return 0
+    fi
+  fi
+  # NOTE: bare [ -d "$_main/.zskills/tracking" ] is deliberately NOT tested —
+  # finished pipelines leave subdirs there indefinitely (20+ stale dirs in
+  # the dogfood repo), which would make enforce permanent in every repo that
+  # ever ran a pipeline.
+  printf '%s\n' "watched"
+}
+zskills_enforcement_load_toggles() {
+  [ "${_ZSK_ENF_TOGGLES_LOADED:-0}" = "1" ] && return 0
+  _ZSK_ENF_TOGGLES=""
+  _ZSK_ENF_TOGGLES_LOADED=1
+  local _cfg="$1"
+  [ -n "$_cfg" ] && [ -f "$_cfg" ] || return 0
+  # Resolve a working Python 3 interpreter (probe-run; honors ZSKILLS_PYTHON).
+  local _py="" _cand
+  for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+    [ -n "$_cand" ] || continue
+    command -v "$_cand" >/dev/null 2>&1 || continue
+    if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+      _py=$(command -v "$_cand"); break
+    fi
+  done
+  [ -n "$_py" ] || return 0   # Python unavailable → shipped defaults
+  local _dump
+  _dump=$("$_py" - "$_cfg" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(0)   # parse error → empty dump → shipped defaults
+hooks = data.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+out = []
+for group, body in hooks.items():
+    if not isinstance(body, dict):
+        continue
+    for key, val in body.items():
+        if key == "enabled":
+            if isinstance(val, bool):
+                out.append("%s.enabled=%s" % (group, "true" if val else "false"))
+        elif isinstance(val, str):
+            out.append("%s.%s=%s" % (group, key, val))
+print("\n".join(out))
+PYEOF
+)
+  # A non-zero exit or empty dump leaves _ZSK_ENF_TOGGLES="" (defaults).
+  [ -n "$_dump" ] && _ZSK_ENF_TOGGLES="$_dump"
+  return 0
+}
+zskills_enforcement_mode() {
+  local _group="$1" _check="$2" _class="$3" _pred="$4"
+  local _explicit="" _group_enabled="" _line
+  # Read the cached toggles. Linear scan — the list is tiny (<=37 lines).
+  if [ -n "${_ZSK_ENF_TOGGLES:-}" ]; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        "$_group.$_check="*) _explicit="${_line#*=}" ;;
+        "$_group.enabled="*) _group_enabled="${_line#*=}" ;;
+      esac
+    done <<EOF
+$_ZSK_ENF_TOGGLES
+EOF
+  fi
+
+  # Group ceiling: enabled:false turns the whole group off — EXCEPT
+  # config_hooks_tamper, which is ceiling-EXEMPT (Settled decision 13
+  # self-protection: a group ceiling write must not take the tamper gate down
+  # with it; only its own explicit per-check value can turn it off).
+  if [ "$_group_enabled" = "false" ] && [ "$_check" != "config_hooks_tamper" ]; then
+    _ZSK_ENF_SOURCE="group disabled in project config"
+    printf '%s\n' "off"; return 0
+  fi
+
+  # Explicit per-check value always wins (Settled decision 6) — for hard AND
+  # demotable checks alike. Only block|warn|off are honored values.
+  case "$_explicit" in
+    block|warn|off)
+      _ZSK_ENF_SOURCE="project config: $_explicit"
+      printf '%s\n' "$_explicit"; return 0
+      ;;
+  esac
+
+  # Unset → class-derived default.
+  if [ "$_class" = "hard" ]; then
+    # A hard check is never silent, even watched.
+    case "$_pred" in
+      enforce-autonomous) _ZSK_ENF_SOURCE="autonomous default" ;;
+      enforce-pipeline)   _ZSK_ENF_SOURCE="pipeline-active default" ;;
+      *)                  _ZSK_ENF_SOURCE="hard default" ;;
+    esac
+    printf '%s\n' "block"; return 0
+  fi
+
+  # Demotable, unset.
+  case "$_pred" in
+    enforce-autonomous)
+      _ZSK_ENF_SOURCE="autonomous default"
+      printf '%s\n' "block"; return 0
+      ;;
+    enforce-pipeline)
+      _ZSK_ENF_SOURCE="pipeline-active default"
+      printf '%s\n' "block"; return 0
+      ;;
+    *)
+      # watched + demotable + unset.
+      if [ "$_check" = "config_hooks_tamper" ]; then
+        # NAMED EXCEPTION (DA4): the tamper gate's effect is durable +
+        # cross-session, so a config-disarm must be VISIBLE at write time —
+        # warn, NOT silent.
+        _ZSK_ENF_SOURCE="attended default (warn — tamper exception)"
+        printf '%s\n' "warn"; return 0
+      fi
+      # OWNER-AMENDMENT zero-config quiet default (was "warn"): emit NOTHING.
+      _ZSK_ENF_SOURCE="attended default (silent)"
+      printf '%s\n' "silent"; return 0
+      ;;
+  esac
+}
+zskills_enforcement_tag() {
+  printf '[hooks.%s.%s — block|warn|off in .claude/zskills-config.json; currently: %s]' \
+    "$1" "$2" "${_ZSK_ENF_SOURCE:-unknown}"
+}
+zskills_enforcement_json_escape() {
+  local LC_ALL=C
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\b'/\\b}"
+  s="${s//$'\f'/\\f}"
+  s="${s//[[:cntrl:]]/}"
+  printf '%s' "$s"
+}
+zskills_enforcement_warn() {
+  local _w="WARNING (not blocked by this check): $1"
+  if [ -z "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _ZSK_ENF_WARNINGS="$_w"
+  else
+    _ZSK_ENF_WARNINGS="$_ZSK_ENF_WARNINGS
+$_w"
+  fi
+}
+zskills_enforcement_flush_warnings() {
+  [ -n "${_ZSK_ENF_WARNINGS:-}" ] || return 0
+  local _esc
+  _esc=$(zskills_enforcement_json_escape "$_ZSK_ENF_WARNINGS")
+  printf '{"systemMessage":"%s"}' "$_esc"
+}
+
+# ── gate_with_reason (ENFORCEMENT_V2_PLAN Phase 3, #1159) ──────────────────
+# Sibling of block_with_reason that routes a deny site through the enforcement
+# predicate + per-check toggle. Sites pass BARE group/check/class args; the
+# switch-naming tag (Settled decision 14) is appended HERE in exactly one place.
+#   $1=group  $2=check  $3=class(hard|demotable)  $4=message
+# Resolution → action:
+#   silent | off  → return 0 (continue scanning; accumulate nothing). silent is
+#                   the zero-config WATCHED default for demotable sites (owner
+#                   amendment) — emits nothing, exactly like off.
+#   warn          → accumulate the tagged message via zskills_enforcement_warn
+#                   and return 0 (the opt-in coaching value). Must NOT exit the
+#                   scan loop, or a single warned check would mask a later hard
+#                   check in the same command; the hook's final allow path calls
+#                   zskills_enforcement_flush_warnings.
+#   block         → emit the deny envelope and exit 0, APPENDING any
+#                   already-accumulated warnings to the deny's
+#                   permissionDecisionReason (lib deny-path rule — nothing
+#                   silently dropped). Uses the same inline 3-step JSON escape
+#                   block_with_reason's callers rely on (backslash, quote,
+#                   newline) so the tag + warnings serialize safely.
+# ENF_ROOT (REUSES the hook's TRACKING_ROOT — same git-common-dir-parent CORE
+# as config_root) and ENF_LOCAL (REUSES the hook's LOCAL_ROOT, the SAME root the
+# Tier-1 TRACKED_MARKER read uses) are HOISTED above the first deny site so all
+# 17 sites consume them.
+gate_with_reason() {
+  local _g="$1" _c="$2" _cl="$3" _msg="$4"
+  local _pred _mode
+  _pred=$(zskills_enforcement_predicate "$INPUT" "$ENF_ROOT" "$ENF_LOCAL")
+  zskills_enforcement_load_toggles "$ENF_ROOT/.claude/zskills-config.json"
+  _mode=$(zskills_enforcement_mode "$_g" "$_c" "$_cl" "$_pred")
+  case "$_mode" in
+    silent|off) return 0 ;;
+  esac
+  # Re-run WITHOUT command substitution so _ZSK_ENF_SOURCE is set in THIS shell
+  # for the tag formatter (the $()-captured call above loses the side effect).
+  zskills_enforcement_mode "$_g" "$_c" "$_cl" "$_pred" >/dev/null
+  local _tagged="$_msg
+
+$(zskills_enforcement_tag "$_g" "$_c")"
+  if [ "$_mode" = "warn" ]; then
+    zskills_enforcement_warn "$_tagged"
+    return 0
+  fi
+  # block — append any already-accumulated warnings, then deny + exit.
+  if [ -n "${_ZSK_ENF_WARNINGS:-}" ]; then
+    _tagged="$_tagged
+
+$_ZSK_ENF_WARNINGS"
+  fi
+  local _esc="${_tagged//\\/\\\\}"
+  _esc="${_esc//\"/\\\"}"
+  _esc="${_esc//$'\n'/\\n}"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$_esc"
   exit 0
 }
 
@@ -333,9 +622,9 @@ enforce_requires_marker() {
   local subdir_fulfilled="${req_dir}/${base/requires./fulfilled.}"
   if [ ! -f "$fulfilled" ] && [ ! -f "$subdir_fulfilled" ]; then
     if [ "$action" = "pushing" ]; then
-      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+      gate_with_reason tracking requires_unfulfilled demotable "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
     else
-      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+      gate_with_reason tracking requires_unfulfilled demotable "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
     fi
   fi
 }
@@ -347,7 +636,7 @@ enforce_step_implement_marker() {
   base=$(basename "$impl" .implement)
   local verify="${impl/\.implement/.verify}"
   if [ ! -f "$verify" ]; then
-    block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+    gate_with_reason tracking step_unverified demotable "BLOCKED: ${base#step.} has implementation but no verification. Run verification before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
   fi
 }
 
@@ -358,7 +647,7 @@ enforce_step_verify_marker() {
   base=$(basename "$verif" .verify)
   local report="${verif/\.verify/.report}"
   if [ ! -f "$report" ]; then
-    block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+    gate_with_reason tracking step_unreported demotable "BLOCKED: ${base#step.} verified but no report written. Write report before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
   fi
 }
 
@@ -592,6 +881,26 @@ is_on_main() {
   [[ "$branch" == "main" || "$branch" == "master" ]]
 }
 
+# ── Enforcement roots (ENFORCEMENT_V2_PLAN Phase 3, #1159) ─────────────────
+# Hoisted ABOVE the first deny site (the recursive-.zskills-delete block below)
+# so all 17 gate_with_reason sites resolve the same two predicate/toggle roots.
+# Both computations keep their `${VAR:-…}` env-override guards, so the later
+# per-section TRACKING_ROOT / LOCAL_ROOT recomputations (in the commit /
+# cherry-pick / push blocks) no-op idempotently.
+#   ENF_ROOT  = TRACKING_ROOT — the MAIN root (git-common-dir parent), the
+#               toggle-file root + the predicate's main-root marker/sentinel arm
+#               (same git-common-dir-parent CORE as config_root; an empty value
+#               in a non-git context makes the toggle path unresolvable → the lib
+#               serves shipped defaults, fail-closed). Env-overridable for tests.
+#   ENF_LOCAL = LOCAL_ROOT — the effective local root (env override → cd-target →
+#               git toplevel/pwd), the SAME root the Tier-1 TRACKED_MARKER read
+#               uses, so the predicate's tracked-marker arm aligns: a live
+#               pipeline's worktree agents stay enforced.
+TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
+LOCAL_ROOT=$(resolve_effective_worktree_root "${LOCAL_ROOT:-}" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+ENF_ROOT="$TRACKING_ROOT"
+ENF_LOCAL="$LOCAL_ROOT"
+
 # ─── Tracking file protection ───
 # Block recursive deletion of tracking directory.
 # The `-r` / `-R` / `--recursive` flag must be a standalone token (preceded
@@ -604,7 +913,7 @@ is_on_main() {
 # false-positived because `--worktree`'s `-r-letters` satisfied the flag
 # slot mid-regex.
 if [[ "$COMMAND" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills ]]; then
-  block_with_reason "BLOCKED: Cannot recursively delete inside .zskills/. The tree holds tracking markers, audit history, issues, monitor state, and dashboard runtime. To clear tracking specifically: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+  gate_with_reason fs_destructive zskills_tree_delete hard "BLOCKED: Cannot recursively delete inside .zskills/. The tree holds tracking markers, audit history, issues, monitor state, and dashboard runtime. To clear tracking specifically: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
 fi
 
 # Block agent execution of clear-tracking script (reading is OK).
@@ -618,7 +927,7 @@ fi
 _CT_EXEC_CMD='(^|[;&|(`]|"command":")[[:space:]]*(bash|sh)[[:space:]][^;&|"]*clear-tracking'
 _CT_EXEC_DIR='(^|[;&|(`]|"command":")[[:space:]]*\./[^[:space:]"]*clear-tracking'
 if [[ "$COMMAND" =~ $_CT_EXEC_CMD ]] || [[ "$COMMAND" =~ $_CT_EXEC_DIR ]]; then
-  block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+  gate_with_reason fs_destructive clear_tracking_agent hard "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
 fi
 
 # ─── Config file ───
@@ -630,7 +939,7 @@ fi
 # ─── CONFIGURE: remove this section if you don't use session logging ───
 # git add .claude/logs/ (sweeps in all sessions' logs -- stage specific files)
 if [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+\.claude/logs/?([[:space:]]|$) ]]; then
-  block_with_reason "BLOCKED: git add .claude/logs/ sweeps in ALL sessions' logs. Stage your session's logs by name: git add .claude/logs/*-<session-id>*.md"
+  gate_with_reason git_discipline logs_add_all demotable "BLOCKED: git add .claude/logs/ sweeps in ALL sessions' logs. Stage your session's logs by name: git add .claude/logs/*-<session-id>*.md"
 fi
 
 # ─── CONFIGURE: set your test command patterns ────────────────────────
@@ -773,7 +1082,7 @@ if [ -n "$FULL_TEST_CMD" ]; then
   IFS=$'\x01' read -ra _TEST_SEGMENTS <<< "$_TEST_NORM"
   for _seg in "${_TEST_SEGMENTS[@]}"; do
     if [[ "$_seg" =~ $TEST_PIPE_PATTERN ]] && [[ "$_seg" == *'|'* ]]; then
-      block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD} > \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" 2>&1 then read \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" to inspect failures."
+      gate_with_reason git_discipline test_pipe demotable "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD} > \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" 2>&1 then read \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" to inspect failures."
     fi
   done
   unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
@@ -793,7 +1102,7 @@ elif [ "$TEST_INFRA_DETECTED" -eq 1 ]; then
   for _seg in "${_TEST_SEGMENTS[@]}"; do
     if [[ "$_seg" == *'|'* ]] && \
        [[ "$_seg" =~ (npm[[:space:]]+(run[[:space:]]+)?test|pytest|vitest|jest|mocha|make[[:space:]]+test|(bash|sh)[[:space:]]+tests/) ]]; then
-      block_with_reason "BLOCKED: project has test infrastructure (package.json test script, vitest/jest/pytest config, Makefile, or tests/*.sh|*.py|*.js files) but testing.full_cmd is empty in .claude/zskills-config.json. The test-pipe gate cannot function without it. Run /update-zskills to configure testing.full_cmd, or edit .claude/zskills-config.json directly."
+      gate_with_reason git_discipline full_cmd_unset demotable "BLOCKED: project has test infrastructure (package.json test script, vitest/jest/pytest config, Makefile, or tests/*.sh|*.py|*.js files) but testing.full_cmd is empty in .claude/zskills-config.json. The test-pipe gate cannot function without it. Run /update-zskills to configure testing.full_cmd, or edit .claude/zskills-config.json directly."
     fi
   done
   unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
@@ -809,7 +1118,7 @@ fi
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#399) closes
 # `bash -c 'git commit'` / `eval 'git commit'` bypass.
 if is_git_subcommand_in_wrappers "$COMMAND" commit && is_main_protected && is_on_main; then
-  block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
+  gate_with_reason main_protection commit_on_main demotable "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
 
 # ─── CONFIGURE: set your full test command ────────────────────────────
@@ -832,7 +1141,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
         fi
       done <<< "$DIFF_OUTPUT"
       if [ -n "$CODE_FILES" ]; then
-        block_with_reason "BLOCKED: Committing code but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before committing. (Content-only commits are exempt.)"
+        gate_with_reason git_discipline tests_not_run demotable "BLOCKED: Committing code but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before committing. (Content-only commits are exempt.)"
       fi
     fi
 
@@ -850,7 +1159,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
       if [ -n "$UI_FILES" ]; then
         TRANSCRIPT_CONTENT="${TRANSCRIPT_CONTENT:-$(cat "$TRANSCRIPT" 2>/dev/null)}" || TRANSCRIPT_CONTENT=""
         if [[ "$TRANSCRIPT_CONTENT" != *'playwright-cli'* ]]; then
-          block_with_reason "BLOCKED: UI files changed but no playwright-cli verification found in session transcript. Verify UI changes before committing. Changed files: $(echo $UI_FILES | tr '\n' ', ')"
+          gate_with_reason git_discipline ui_unverified demotable "BLOCKED: UI files changed but no playwright-cli verification found in session transcript. Verify UI changes before committing. Changed files: $(echo $UI_FILES | tr '\n' ', ')"
         fi
       fi
     fi
@@ -974,7 +1283,7 @@ fi
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#399) closes
 # `bash -c 'git cherry-pick'` / `eval 'git cherry-pick'` bypass.
 if is_git_subcommand_in_wrappers "$COMMAND" cherry-pick && is_main_protected && is_on_main; then
-  block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
+  gate_with_reason main_protection cherry_pick_on_main demotable "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
 
 # Safety net: transcript-based verification on git cherry-pick
@@ -986,7 +1295,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" cherry-pick; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
     TRANSCRIPT_CONTENT=$(cat "$TRANSCRIPT" 2>/dev/null) || TRANSCRIPT_CONTENT=""
     if [[ "$TRANSCRIPT_CONTENT" != *"$FULL_TEST_CHECK"* ]]; then
-      block_with_reason "BLOCKED: git cherry-pick but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before landing code on main."
+      gate_with_reason git_discipline tests_not_run demotable "BLOCKED: git cherry-pick but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before landing code on main."
     fi
   fi
 
@@ -1242,7 +1551,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   # PUSH_ARGS containing trailing `main'` still match (#399). The optional
   # `refs/heads/` prefix closes the fully-qualified-ref bypass (#470).
   if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(refs/heads/)?(main|master)([[:space:]]|$|\"|\') ]]; then
-    block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
+    gate_with_reason main_protection push_to_main demotable "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (b) Any <localref>:main or <localref>:master refspec — covers HEAD:main,
   # feat:main, abc123:main, HEAD~3:main, and the deletion form :main.
@@ -1256,7 +1565,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   # `(refs/heads/)?` allows the fully-qualified form `feat:refs/heads/main`
   # (#470).
   if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:[+]?(refs/heads/)?(main|master)([[:space:]]|$|\"|\') ]]; then
-    block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
+    gate_with_reason main_protection push_to_main demotable "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (c) Naked push (no origin arg) while on main — based on PUSH_ARGS,
   # not full $COMMAND. An empty PUSH_ARGS means we extracted no
@@ -1265,7 +1574,7 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   # in some-file) no longer trip because the extraction loop only
   # sees tokens after the actual `git push` invocation.
   if [ -z "${PUSH_ARGS// /}" ] && is_on_main; then
-    block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
+    gate_with_reason main_protection push_to_main demotable "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
 fi
 
@@ -1273,5 +1582,8 @@ fi
 # .zskills/tracking push enforcement at line 377 (with pipeline scoping,
 # worktree support, and no staleness bypass).
 
-# No match — allow
+# No match — allow. Flush any accumulated opt-in "warn" coaching messages on
+# the decision-less warn channel (Settled decision 2 — never a permissionDecision)
+# before allowing. Empty accumulator → emits nothing (the zero-config silent path).
+zskills_enforcement_flush_warnings
 exit 0
