@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.11+0ebe97"
+  version: "2026.06.15+85206a"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -1070,6 +1070,21 @@ Verification intensity matches the change type (from Phase 1):
   wait for the monitor." Past failure: 6+ subagent crashes with that
   phrase across 2026-04-29 and 2026-04-30. Always foreground-Bash with
   explicit long timeout; capture to file; read the file on return.
+- **Result-provenance de-duplication (de-dup, NOT skip).** If a results file
+  already exists for the CURRENT working tree (e.g. captured moments earlier
+  on the same uncommitted tree), run `tests/lib/suite-result-valid.sh` on it
+  before re-running the full suite. On **exit 0** (the provenance header
+  validates for the current tree, < 30 min), de-duplicate — verify the tally,
+  ALWAYS run the cross-cutting concern suites (`test-skill-conformance.sh`,
+  `test-skills-mirror-parity.sh`, `test-skill-version-enforcement.sh`,
+  `test-doc-viewer-catalog.sh`, `test-managed-md-up-to-date.sh`,
+  `test-agents-parity.sh`), and re-run only the targeted suites for the
+  changed area. On **exit 1** (invalid/stale), when the targeted set is empty
+  or uncertain, or when the diff touches shared infra (`tests/`, `hooks/`,
+  `scripts/_lib/`, shared skill scripts, the runner) or any `skills/**/*.md` /
+  `agents/*.md` / `.claude/agents/*.md` / `CLAUDE_TEMPLATE.md`, run the full
+  suite. A suite is elided ONLY when provably unrelated; an empty or uncertain
+  target means a FULL re-run.
 - **If tests fail: fix them.** Do not check if failures are pre-existing.
   Do not stash, checkout old commits, or create comparison worktrees.
   If you touched code and tests fail, they're yours to fix. (See

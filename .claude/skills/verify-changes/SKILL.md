@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.06.10+0b68d4"
+  version: "2026.06.15+b3eca3"
 ---
 
 # /verify-changes [<scope> | last [N]] — Verify, Test & Fix Changes
@@ -353,7 +353,22 @@ to file as below; read the file when the call returns.
 
 1. **Run the full test suite with output captured to a file** (canonical form —
    maintainers: see `references/canonical-config-prelude.md` §1 in the zskills
-   source):
+   source).
+
+   **Result-provenance de-duplication (de-dup, NOT skip).** If a results file
+   already exists for the CURRENT working tree (e.g. one captured moments
+   earlier on the same uncommitted tree), run `tests/lib/suite-result-valid.sh`
+   on it. On **exit 0** (the provenance header validates for the current tree,
+   < 30 min), de-duplicate — verify the tally, ALWAYS run the cross-cutting
+   concern suites (`test-skill-conformance.sh`, `test-skills-mirror-parity.sh`,
+   `test-skill-version-enforcement.sh`, `test-doc-viewer-catalog.sh`,
+   `test-managed-md-up-to-date.sh`, `test-agents-parity.sh`), and re-run only
+   the targeted suites for the changed area. On **exit 1** (invalid/stale; e.g.
+   the tree advanced), when the targeted set is empty, or when the diff touches
+   shared infra (`tests/`, `hooks/`, `scripts/_lib/`, shared skill scripts, the
+   runner) or any `skills/**/*.md` / `agents/*.md` / `.claude/agents/*.md` /
+   `CLAUDE_TEMPLATE.md`, run the full suite as below. A suite is elided ONLY
+   when provably unrelated; an empty or uncertain target means a FULL re-run.
    ```bash
    if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
      export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"

@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.12+c4f5cc"
+  version: "2026.06.15+2e2c75"
 ---
 
 # /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -381,6 +381,25 @@ Do not proceed until you have read the file.
 - **`$FULL_TEST_CMD` before every commit** (canonical form — maintainers: see
   `references/canonical-config-prelude.md` §1 in the zskills source) — not
   just `npm test`.
+- **Result-provenance de-duplication (de-dup, NOT skip).** The impl agent's
+  pre-commit `$FULL_TEST_CMD` run produces a STAMPED results file carrying a
+  provenance header (tree + content-sensitive fingerprint + epoch). Because
+  fix-issues uses the verifier-commits-after model (the impl agent does NOT
+  commit; the verification agent commits AFTER passing tests, above), that
+  stamped result IS reusable by the verification agent: at verify time the
+  working tree is the SAME dirty pre-commit tree the impl agent measured, so
+  `tests/lib/suite-result-valid.sh` validates it (exit 0) and the verifier
+  de-duplicates — verify the tally, ALWAYS run the cross-cutting concern
+  suites (`test-skill-conformance.sh`, `test-skills-mirror-parity.sh`,
+  `test-skill-version-enforcement.sh`, `test-doc-viewer-catalog.sh`,
+  `test-managed-md-up-to-date.sh`, `test-agents-parity.sh`), and re-run only
+  the targeted suites for the changed area. Run the FULL suite on invalid/stale
+  (exit 1), an empty/uncertain target, or a shared-infra / `skills/**/*.md` /
+  `agents/*.md` / `CLAUDE_TEMPLATE.md` diff. Honest caveat: a result captured
+  BEFORE the impl agent's LAST edit drifts in content → fingerprint mismatch →
+  exit 1 → full re-run (the predicate working, not a foreclosure). Reuse is NOT
+  foreclosed across a commit boundary — the model is identical to run-plan.
+  (fix-issues impl agents are `subagent_type: "implementer"`.)
 - **Never weaken tests** — fix the code, not the test. Do not loosen
   tolerances, skip assertions, or remove test cases.
 - **Never defer the hard parts** — finish all phases of the plan. Do not

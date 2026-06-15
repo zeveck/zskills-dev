@@ -692,6 +692,24 @@ Include this VERBATIM in the verifier dispatch prompt:
        2026-05-18: verifier reported "3313/3313 passed" by counting inline
        PASS lines; final tally was 3311/3313 — two regressions slipped
        (anchor `feedback_verify_by_count_not_any_fail`).
+     - **Result-provenance de-duplication (de-dup, NOT skip).** Before
+       re-running the full suite, run `tests/lib/suite-result-valid.sh` on the
+       implementer's results file. In run-plan the implementer does NOT commit
+       and the VERIFIER commits after — so at verify time the working tree is
+       the SAME dirty pre-commit tree the implementer measured, and the
+       provenance header validates (exit 0): reuse is real. On **exit 0**
+       (valid for the current tree, < 30 min), de-duplicate — verify the tally,
+       ALWAYS run the cross-cutting concern suites
+       (`test-skill-conformance.sh`, `test-skills-mirror-parity.sh`,
+       `test-skill-version-enforcement.sh`, `test-doc-viewer-catalog.sh`,
+       `test-managed-md-up-to-date.sh`, `test-agents-parity.sh`), and re-run
+       the targeted suites for the changed area. Run the **FULL suite** when
+       the result is invalid/stale (exit 1), when the targeted set is empty or
+       uncertain, or when the diff touches shared infra (`tests/`, `hooks/`,
+       `scripts/_lib/`, shared skill scripts, the runner) or any
+       `skills/**/*.md` / `agents/*.md` / `.claude/agents/*.md` /
+       `CLAUDE_TEMPLATE.md`. De-dup changes WHAT runs, never that a fresh
+       verifier independently audits the diff.
 
 2. **Additional plan-specific checks** (the verifier checks these against the
    verbatim plan text — not against a summary):
