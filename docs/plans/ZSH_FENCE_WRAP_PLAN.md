@@ -2,7 +2,7 @@
 issue: 1155
 title: zsh/macOS portability of skill-file bash fences — three-track remediation + conformance tripwire
 created: 2026-06-12
-status: active
+status: "complete"
 ---
 
 # Plan: zsh Fence Portability — Three-Track Remediation + Conformance Tripwire (#1155 remainder)
