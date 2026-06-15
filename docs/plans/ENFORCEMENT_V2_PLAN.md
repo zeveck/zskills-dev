@@ -702,7 +702,7 @@ Drafter classification notes (bind the implementer):
 | 3 — Big-hook retarget (generic + project) + tag tripwire + bypass parity ×18 | ✅ Done | 3e9154c | Verified PASS (keep-hard destructive set block-always incl. watched; deny envelopes byte-identical) — generic 19 + project 17 gate_with_reason sites; row-50 tamper added; tag + registry-sync tripwires (anti-vacuous demo'd); bypass-parity ×18 + watched-silent + opt-in-warn + SPOOF + stale-pipeline; suite 8061/8061; drift 119; AC parity-floor 25 |
 | 4 — Cascade v2: workflow keys + raise-only floors | ✅ Done | a4c4103 | Verified PASS; suite 8077/8077; raise-only floors proven (user cannot lower main_protected/min_model); fail-closed on malformed user cfg; 3-copy Python lockstep; Test15 9/14/500 |
 | 5 — move-to-worktree helper (stash-free dirty-main carry) | ✅ Done | c3c8778 | Verified PASS; suite 8123/8123; main never data-lost on failure (rc7 unmerged untouched / rc8 verify-mismatch preserved); stash-free; split+index-blobs preserved; preflight untouched (SD8) |
-| 6 — Config-UX: personal-config offer, decline marker, update nudge | ⬚ | | |
+| 6 — Config-UX: personal-config offer, decline marker, update nudge | ✅ Done | e2f8a18 | Verified PASS; suite 8143/8143; config-never-seed (personal scaffold empty, byte-pinned); decline-marker suppression; update nudge via config-key-versions.tsv |
 | 7 — Docs rewrite + conformance sweep | ⬚ | | |
 
 ---
