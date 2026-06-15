@@ -2,7 +2,7 @@
 issue: 1166
 title: Suite-result provenance — stamp, validate, and de-duplicate test runs without ever skipping verification
 created: 2026-06-15
-status: "active"
+status: "complete"
 ---
 
 # Plan: Suite-result provenance — stamp, validate, and de-duplicate test runs without ever skipping verification
