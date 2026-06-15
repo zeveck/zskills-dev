@@ -9,7 +9,7 @@ description: >-
   and sanitised .zskills/tracked / .zskills/worktreepurpose writes. Prints the
   worktree path on stdout.
 metadata:
-  version: "2026.06.15+6c532f"
+  version: "2026.06.15+fdfe7d"
 ---
 
 # /create-worktree — Unified Worktree Creation
@@ -110,6 +110,40 @@ Codes 2/3/4 propagate from `.claude/skills/create-worktree/scripts/worktree-add-
   / esbuild) across worktrees and serves stale output; do a real install into
   the worktree. See the stub's inline comments for the template.
 
+## move-to-worktree.sh — stash-free dirty-main carry
+
+`scripts/move-to-worktree.sh` is a sibling helper for the "I have dirty
+changes on main and want them moved into a worktree" flow (#1165). It
+creates a worktree off the CURRENT LOCAL HEAD (via `create-worktree.sh
+--no-preflight`, so the carry is same-base by construction), carries the
+dirty + untracked files into it (a TWO-patch carry that preserves the
+staged/unstaged split, plus per-file untracked copy), byte+index-verifies
+the carry, and then performs a SANCTIONED, stash-free restore of main
+back to HEAD. No `git stash` (hard-denied), no `git clean`, no
+tree-overwriting verbs — only `git restore --staged --worktree
+--source=HEAD`, run by the helper itself so the agent never types a denied
+command.
+
+```bash
+bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/move-to-worktree.sh" <branch-name|--auto> [--keep-main-dirty]
+```
+
+Exit codes (distinct from create-worktree.sh's table above):
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success — worktree created, dirt carried, main restored (unless `--keep-main-dirty`) |
+| 2 | Usage error (bad/missing args, not in a git repo, unknown flag) |
+| 6 | `create-worktree.sh` failed (its rc reported in the message) |
+| 7 | Base mismatch OR patch-apply failure — main left FULLY untouched (UNMERGED paths land here: resolve the merge first) |
+| 8 | Byte/index verification mismatch — step-6 leaves main fully untouched; a step-7 per-file TOCTOU mismatch leaves main PARTIALLY restored, with the preserved files listed |
+
+`--keep-main-dirty` skips the restore (main stays dirty, the worktree also
+has the dirt). Gitignored files and `.zskills/` (plus the legacy root
+markers) are structurally excluded from the carry. The worktree branches
+off LOCAL HEAD — if local main is ahead of/behind origin, the branch
+rebases later through the normal PR flow.
+
 ## Pointer
 
-Authoritative spec: [`scripts/create-worktree.sh`](scripts/create-worktree.sh). Edit there; this wrapper should stay thin.
+Authoritative spec: [`scripts/create-worktree.sh`](scripts/create-worktree.sh) and [`scripts/move-to-worktree.sh`](scripts/move-to-worktree.sh). Edit there; this wrapper should stay thin.

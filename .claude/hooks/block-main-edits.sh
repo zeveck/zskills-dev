@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.4
+# zskills-hook-version: 2026.06.5
 # block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
@@ -577,6 +577,11 @@ this change into a worktree:
   - Standard task with review: \\\`/do pr\\\` (worktree → PR)
   - Plan-driven work: \\\`/run-plan\\\` (worktree per phase)
   - Manual: \\\`/create-worktree\\\` then operate inside the returned path
+  - Already have dirty changes on main to carry across? Run
+    \\\`bash skills/create-worktree/scripts/move-to-worktree.sh <branch>\\\`
+    (lane-portable: \\\`\${CLAUDE_PLUGIN_ROOT}/skills/...\\\` on the plugin
+    lane, \\\`.claude/skills/...\\\` on the legacy mirror) — it creates the
+    worktree, carries the dirt in, and restores main, stash-free.
 
 Allowed on main (not blocked): paths under \\\`.zskills/\\\` (tracking,
 audit, issues, dev-server state, and the worktree-state markers

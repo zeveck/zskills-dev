@@ -2095,6 +2095,74 @@ check_fixed draft-tests               "ensure-worktree invocation" 'bash "$HELPE
 check_fixed fix-issues                "ensure-worktree invocation" 'bash "$HELPER"'
 
 echo ""
+echo "=== move-to-worktree.sh safety pins (ENFORCEMENT_V2 Phase 5) ==="
+# The helper performs a SANCTIONED, helper-mediated restore of main. These pins
+# keep its internals from silently regressing into a general bypass:
+#   - NO `git stash` (hard-denied + unsafe-by-construction here).
+#   - NO `git clean`, NO `reset --hard`.
+#   - NO `checkout` at all — the restore primitive is
+#     `git restore --staged --worktree --source=HEAD` (checkout HEAD -- dies
+#     rc 1 on staged-NEW paths, DA6); restore required present ≥1.
+#   - inventory uses `--untracked-files=all` (DA7) ≥1.
+#   - anti-vacuous: the file exists and is non-empty.
+#   - destruction follows verification: the FIRST
+#     `restore --staged --worktree` line appears AFTER the FIRST `cmp` line.
+MVWT="$REPO_ROOT/skills/create-worktree/scripts/move-to-worktree.sh"
+if [ -s "$MVWT" ]; then
+  pass "[move-to-worktree] helper exists and is non-empty"
+
+  if [ "$(grep -c 'git stash' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'git stash'"
+  else
+    fail "[move-to-worktree] 'git stash' present" "stash is hard-denied"
+  fi
+
+  if [ "$(grep -c 'git clean' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'git clean'"
+  else
+    fail "[move-to-worktree] 'git clean' present" "no git clean"
+  fi
+
+  if [ "$(grep -c 'reset --hard' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'reset --hard'"
+  else
+    fail "[move-to-worktree] 'reset --hard' present" "no reset --hard"
+  fi
+
+  if [ "$(grep -c 'checkout' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'checkout' (restore is the primitive)"
+  else
+    fail "[move-to-worktree] 'checkout' present" "checkout HEAD -- dies rc 1 on staged-new (DA6); use restore"
+  fi
+
+  if [ "$(grep -c 'restore --staged --worktree --source=HEAD' "$MVWT")" -ge 1 ]; then
+    pass "[move-to-worktree] restore --staged --worktree --source=HEAD present"
+  else
+    fail "[move-to-worktree] restore primitive absent" "git restore --staged --worktree --source=HEAD"
+  fi
+
+  if [ "$(grep -c 'untracked-files=all' "$MVWT")" -ge 1 ]; then
+    pass "[move-to-worktree] inventory uses --untracked-files=all (DA7)"
+  else
+    fail "[move-to-worktree] --untracked-files=all absent" "per-file inventory required"
+  fi
+
+  # destruction-follows-verification: the first ACTUAL `cmp` invocation
+  # (`cmp -s`) must precede the first ACTUAL restore COMMAND invocation
+  # (`git ... restore --staged --worktree`). Anchor on the invocation forms so
+  # the header-comment mentions of the phrases do not confound the line numbers.
+  CMP_LN="$(grep -n 'cmp -s' "$MVWT" | head -1 | cut -d: -f1)"
+  RESTORE_LN="$(grep -nE 'git .* restore --staged --worktree' "$MVWT" | head -1 | cut -d: -f1)"
+  if [ -n "$CMP_LN" ] && [ -n "$RESTORE_LN" ] && [ "$RESTORE_LN" -gt "$CMP_LN" ]; then
+    pass "[move-to-worktree] restore (L$RESTORE_LN) follows cmp verification (L$CMP_LN)"
+  else
+    fail "[move-to-worktree] verify-before-destroy ordering" "cmp@$CMP_LN restore@$RESTORE_LN"
+  fi
+else
+  fail "[move-to-worktree] helper exists and is non-empty" "$MVWT missing or empty"
+fi
+
+echo ""
 echo "=== clear-tracking recovery hint — dual-lane path (#865) ==="
 # User-facing tracking-cleanup recovery hints must NOT print a bare
 # mirror-only clear-tracking.sh path as the SOLE hint: on the plugin lane
