@@ -246,8 +246,12 @@ test_eval_roundtrip_multi_candidate() {
   local RESEARCHED="" MISSING=""
   eval "$(ZSKILLS_ISSUES_DIR="$dir" bash "$FILTER" 100 102 38)"
   local -a RESEARCHED_ARR=() MISSING_ARR=()
-  read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
-  read -r -a MISSING_ARR    <<<"${MISSING:-}"
+  while IFS= read -r _tok || [ -n "$_tok" ]; do
+    [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+  done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
+  while IFS= read -r _tok || [ -n "$_tok" ]; do
+    [ -n "$_tok" ] && MISSING_ARR+=("$_tok")
+  done < <(printf '%s' "${MISSING:-}" | head -n 1 | tr ' \t' '\n\n')
   if [ "${#RESEARCHED_ARR[@]}" -eq 3 ] \
      && [ "${RESEARCHED_ARR[0]}" = "100" ] \
      && [ "${RESEARCHED_ARR[1]}" = "102" ] \
@@ -270,7 +274,9 @@ test_eval_roundtrip_single_candidate() {
   local RESEARCHED="" MISSING=""
   eval "$(ZSKILLS_ISSUES_DIR="$dir" bash "$FILTER" 100)"
   local -a RESEARCHED_ARR=()
-  read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+  while IFS= read -r _tok || [ -n "$_tok" ]; do
+    [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+  done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
   if [ "${#RESEARCHED_ARR[@]}" -eq 1 ] && [ "${RESEARCHED_ARR[0]}" = "100" ]; then
     pass "single-candidate eval round-trip: 1 researched into array (N=1 boundary)"
   else

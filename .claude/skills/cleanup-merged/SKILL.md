@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `--force`) — they are always skipped.
 metadata:
-  version: "2026.06.05+4a9c2a"
+  version: "2026.06.15+9894a8"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -477,7 +477,7 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       CLOSED) PR_PHRASE="closed PR" ;;
       OPEN)   PR_PHRASE="open PR" ;;
       "")     PR_PHRASE="no PR" ;;
-      *)      PR_PHRASE="PR ${PR_STATE,,}" ;;
+      *)      PR_PHRASE="PR $(printf '%s' "$PR_STATE" | tr '[:upper:]' '[:lower:]')" ;;
     esac
 
     # Merged-check: a named branch under `--force` skips the merged
@@ -790,7 +790,7 @@ if [ "$DO_REMOTE" -eq 1 ]; then
         CLOSED) RPR_PHRASE="closed PR" ;;
         OPEN)   RPR_PHRASE="open PR" ;;
         "")     RPR_PHRASE="no PR" ;;
-        *)      RPR_PHRASE="PR ${PR_STATE,,}" ;;
+        *)      RPR_PHRASE="PR $(printf '%s' "$PR_STATE" | tr '[:upper:]' '[:lower:]')" ;;
       esac
 
       if [ "$PR_STATE" = "OPEN" ] && [ "$NAMED_FORCE" -eq 0 ]; then

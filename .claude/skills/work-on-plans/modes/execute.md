@@ -187,7 +187,8 @@ fi
 
 ```bash
 # Dispatch list: take the first N ready entries (or all when "all").
-mapfile -t READY_LINES < <(printf '%s' "$READY_TSV" \
+READY_LINES=()
+while IFS= read -r _line || [ -n "$_line" ]; do READY_LINES+=("$_line"); done < <(printf '%s' "$READY_TSV" \
   | awk -F'\t' '$1!="__DEFAULT__" && $1!="" {print}')
 ```
 
@@ -211,7 +212,8 @@ FILTER="$ZSKILLS_SKILLS_ROOT/work-on-plans/scripts/filter-in-flight-plan-claims.
 if [ -x "$FILTER" ]; then
   FILTERED=$(printf '%s\n' "${READY_LINES[@]}" | bash "$FILTER")
   if [ -n "$FILTERED" ]; then
-    mapfile -t READY_LINES <<< "$FILTERED"
+    READY_LINES=()
+    while IFS= read -r _line || [ -n "$_line" ]; do READY_LINES+=("$_line"); done <<< "$FILTERED"
   else
     READY_LINES=()
   fi
@@ -274,7 +276,8 @@ if [ -x "$MM_FILTER" ] && [ -n "${MODE_OVERRIDE:-}" ]; then
     printf '%s\n' "${READY_LINES[@]}" | bash "$MM_FILTER"
   )
   if [ -n "$MM_FILTERED" ]; then
-    mapfile -t READY_LINES <<< "$MM_FILTERED"
+    READY_LINES=()
+    while IFS= read -r _line || [ -n "$_line" ]; do READY_LINES+=("$_line"); done <<< "$MM_FILTERED"
   else
     READY_LINES=()
   fi
@@ -327,7 +330,7 @@ for f in "$ZSKILLS_PLANS_DIR"/*.md; do
   bn=$(basename "$f" .md)
   [ "$bn" = "PLAN_INDEX" ] && continue
   slug=$(printf '%s' "$bn" | tr '[:upper:]_' '[:lower:]-')
-  SLUG_TO_FILE["$slug"]="$f"
+  SLUG_TO_FILE[$slug]="$f"
 done
 ```
 
@@ -493,13 +496,14 @@ For each ready entry in `plans.ready[0:N]`:
    if [ "${_ZSKILLS_TEST_HARNESS:-}" = "1" ]; then
      _slug_uc=$(printf '%s' "$SLUG" | tr '[:lower:]-' '[:upper:]_')
      _perslug_var="_ZSKILLS_TEST_RUNPLAN_RESULT_${_slug_uc}"
-     if [ -n "${!_perslug_var:-}" ]; then
-       RUNPLAN_RESULT="${!_perslug_var}"
+     _perslug_val=$(printenv "$_perslug_var" 2>/dev/null || true)
+     if [ -n "$_perslug_val" ]; then
+       RUNPLAN_RESULT="$_perslug_val"
      else
        RUNPLAN_RESULT=$(printf '%s\n' "${_ZSKILLS_TEST_RUNPLAN_RESULT:-}" \
          | awk -F'\t' -v s="$SLUG" '$1==s {sub(/^[^\t]*\t/,""); print; exit}')
      fi
-     unset _slug_uc _perslug_var
+     unset _slug_uc _perslug_var _perslug_val
    fi
    ```
 

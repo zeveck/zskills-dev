@@ -20,6 +20,7 @@ number. The regex captured the issue number in `ADD_ISSUE_NUM`; now scan
 the rest of `$ARGUMENTS` for optional column and position:
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$ADD_MODE" = "1" ]; then
   # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -113,6 +114,7 @@ does NOT proceed to Phase 0/1/2.
 - Idempotent: if `<N>` not in the target column, exit 0 with stderr note.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$REMOVE_MODE" = "1" ]; then
   # Resolve $PYTHON (Windows MS-Store-stub guard, #1083).
   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then

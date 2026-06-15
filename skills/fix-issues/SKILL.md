@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.15+1685dc"
+  version: "2026.06.15+b4d031"
 ---
 
 # /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -120,6 +120,7 @@ gate stays unchanged.
 
 ```bash
 # Argument parsing — extract canonical flags from $ARGUMENTS.
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
@@ -140,6 +141,7 @@ fi
 # is EMPTY when neither tier sets execution.landing so this fence keeps its own
 # `cherry-pick` unset-default (equivalence: old inline read matched the same
 # project key; user-tier fill is the only added effect, per #1159 scope).
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 LANDING_MODE="cherry-pick"
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
@@ -197,6 +199,7 @@ any `create-worktree.sh --prefix fix-issue NNN` invocation that lacks a
 matching claim, so omitting the acquire fence fails closed at runtime.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 DASHBOARD_MODE=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]]) ]]; then
   DASHBOARD_MODE=1
@@ -220,6 +223,7 @@ leading-N integer parser (which would misinterpret the issue number after
 subcommands (`sync`, `plan`, `stop`, `next`, `dashboard`).
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 ADD_MODE=0
 REMOVE_MODE=0
 RECONSIDER_MODE=0
@@ -248,6 +252,7 @@ any subcommand, or a leading `N` all leave `BARE_MODE=0`. Place this AFTER
 all subcommand detection so every recognized token has already been seen.
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 BARE_MODE=0
 if ! [[ "$ARGUMENTS" =~ ^[[:space:]]*[0-9]+ ]] \
    && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[sS][tT][oO][pP]($|[[:space:]]) ]] \
@@ -281,6 +286,7 @@ BEFORE Phase 1 starts (i.e., after Phase 0 arg detection so we know
 which mode is active):
 
 ```bash
+if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 if [ "$DASHBOARD_MODE" = "1" ]; then
   if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][oO][cC][uU][sS]($|[[:space:]]) ]]; then
     echo "ERROR: dashboard is incompatible with focus mode" >&2

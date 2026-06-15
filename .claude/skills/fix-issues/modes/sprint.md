@@ -356,7 +356,8 @@ alert user, write failure to report).
    # reuse this blob (no N+1 `gh issue view` loop — see issue #280).
    GH_OUT=$(gh issue list --state open --limit 500 --json number,title,labels 2>&1) \
      || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
-   mapfile -t OPEN_NUMS < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
+   OPEN_NUMS=()
+   while IFS= read -r _line || [ -n "$_line" ]; do OPEN_NUMS+=("$_line"); done < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
    OPEN_COUNT=${#OPEN_NUMS[@]}
    ```
 
@@ -676,7 +677,7 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
             STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
             MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
             CONFLICT_FILES_LIST|CALL_ERROR_FILE)
-              LP_DASH["$KEY"]="$VALUE" ;;
+              LP_DASH[$KEY]="$VALUE" ;;
             "") ;;
             *) printf 'WARN: /land-pr (dashboard-empty sync-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
           esac
@@ -705,7 +706,8 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
   if [ -z "${OPEN_NUMS+x}" ]; then
     GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
       || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
-    mapfile -t OPEN_NUMS < <(printf '%s' "$GH_OUT" | "$PYTHON" -c '
+    OPEN_NUMS=()
+    while IFS= read -r _line || [ -n "$_line" ]; do OPEN_NUMS+=("$_line"); done < <(printf '%s' "$GH_OUT" | "$PYTHON" -c '
 import json, sys
 for it in json.load(sys.stdin):
     n = it.get("number")
@@ -779,7 +781,10 @@ print(" ".join(str(p) for p in picks))
   # Downstream triage subsection + Phase 3 dispatch consume this array
   # the same way they would consume the rubric's output. Skip the
   # rubric/focus/default-ranking text below — the picks ARE the order.
-  read -r -a CANDIDATE_ISSUES <<<"$DASHBOARD_PICKS"
+  CANDIDATE_ISSUES=()
+  while IFS= read -r _tok || [ -n "$_tok" ]; do
+    [ -n "$_tok" ] && CANDIDATE_ISSUES+=("$_tok")
+  done < <(printf '%s' "$DASHBOARD_PICKS" | head -n 1 | tr ' \t' '\n\n')
   echo "Dashboard candidates (drag order, uncapped — triage caps to N=$N actionable): ${CANDIDATE_ISSUES[*]}"
 fi
 ```
@@ -814,8 +819,14 @@ eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
   bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
   "${CANDIDATE_ISSUES[@]}")"
 # eval populated two bash vars: RESEARCHED (space-sep nums) and MISSING.
-read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
-read -r -a MISSING_ARR <<<"${MISSING:-}"
+RESEARCHED_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
+MISSING_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && MISSING_ARR+=("$_tok")
+done < <(printf '%s' "${MISSING:-}" | head -n 1 | tr ' \t' '\n\n')
 
 if [ ${#MISSING_ARR[@]} -gt 0 ]; then
   if [ "$AUTO_FLAG" = "1" ]; then
@@ -841,13 +852,19 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
-    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
-    read -r -a MISSING_ARR <<<"${MISSING:-}"
+    RESEARCHED_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+    done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
+    MISSING_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && MISSING_ARR+=("$_tok")
+    done < <(printf '%s' "${MISSING:-}" | head -n 1 | tr ' \t' '\n\n')
     declare -A RESEARCHED_SET=()
-    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET[$__r]=1; done
     for N in "${MISSING_ARR[@]}"; do
       if [ -f ".zskills/research-staging/$PIPELINE_ID/issue-${N}.md" ]; then
-        RESEARCHED_SET["$N"]=1
+        RESEARCHED_SET[$N]=1
       fi
     done
     unset __r N
@@ -883,7 +900,7 @@ fi
 if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
   declare -A RESEARCHED_SET=()
   for __r in "${RESEARCHED_ARR[@]}"; do
-    RESEARCHED_SET["$__r"]=1
+    RESEARCHED_SET[$__r]=1
   done
   unset __r
 fi
@@ -894,11 +911,14 @@ fi
 # (plan-scale / bug-unclear-cause / needs-decision). These were
 # classified as non-actionable in prior fires; skip re-research and
 # re-triage now (#606 tax fix).
-read -r -a SKIP_TAGGED_ARR <<<"${SKIP_TAGGED:-}"
+SKIP_TAGGED_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && SKIP_TAGGED_ARR+=("$_tok")
+done < <(printf '%s' "${SKIP_TAGGED:-}" | head -n 1 | tr ' \t' '\n\n')
 declare -A SKIP_TAGGED_SET=()
 for tok in "${SKIP_TAGGED_ARR[@]+"${SKIP_TAGGED_ARR[@]}"}"; do
   case "$tok" in
-    *:*) SKIP_TAGGED_SET["${tok%%:*}"]="${tok#*:}" ;;
+    *:*) SKIP_TAGGED_SET[${tok%%:*}]="${tok#*:}" ;;
   esac
 done
 unset tok
@@ -1016,8 +1036,14 @@ fi
 eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
   bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
   "${CANDIDATE_ISSUES[@]}")"
-read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
-read -r -a MISSING_ARR <<<"${MISSING:-}"
+RESEARCHED_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
+MISSING_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && MISSING_ARR+=("$_tok")
+done < <(printf '%s' "${MISSING:-}" | head -n 1 | tr ' \t' '\n\n')
 
 if [ ${#MISSING_ARR[@]} -gt 0 ]; then
   if [ "$AUTO_FLAG" = "1" ]; then
@@ -1036,13 +1062,19 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
-    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
-    read -r -a MISSING_ARR <<<"${MISSING:-}"
+    RESEARCHED_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+    done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
+    MISSING_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && MISSING_ARR+=("$_tok")
+    done < <(printf '%s' "${MISSING:-}" | head -n 1 | tr ' \t' '\n\n')
     declare -A RESEARCHED_SET=()
-    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET[$__r]=1; done
     for N in "${MISSING_ARR[@]}"; do
       if [ -f ".zskills/research-staging/$PIPELINE_ID/issue-${N}.md" ]; then
-        RESEARCHED_SET["$N"]=1
+        RESEARCHED_SET[$N]=1
       fi
     done
     unset __r N
@@ -1073,7 +1105,7 @@ fi
 if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
   declare -A RESEARCHED_SET=()
   for __r in "${RESEARCHED_ARR[@]}"; do
-    RESEARCHED_SET["$__r"]=1
+    RESEARCHED_SET[$__r]=1
   done
   unset __r
 fi
@@ -1081,11 +1113,14 @@ fi
 # PR-2 / A+F: drop SKIP_TAGGED candidates from CANDIDATE_ISSUES. Mirrors
 # the dashboard branch's block — see expanded prose there. Functions
 # don't span skill fences so the block is duplicated literally.
-read -r -a SKIP_TAGGED_ARR <<<"${SKIP_TAGGED:-}"
+SKIP_TAGGED_ARR=()
+while IFS= read -r _tok || [ -n "$_tok" ]; do
+  [ -n "$_tok" ] && SKIP_TAGGED_ARR+=("$_tok")
+done < <(printf '%s' "${SKIP_TAGGED:-}" | head -n 1 | tr ' \t' '\n\n')
 declare -A SKIP_TAGGED_SET=()
 for tok in "${SKIP_TAGGED_ARR[@]+"${SKIP_TAGGED_ARR[@]}"}"; do
   case "$tok" in
-    *:*) SKIP_TAGGED_SET["${tok%%:*}"]="${tok#*:}" ;;
+    *:*) SKIP_TAGGED_SET[${tok%%:*}]="${tok#*:}" ;;
   esac
 done
 unset tok
@@ -1441,7 +1476,7 @@ If ALL candidates are too vague, too complex, or already attempted:
                STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
                MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
                CONFLICT_FILES_LIST|CALL_ERROR_FILE)
-                 LP_NOACT["$KEY"]="$VALUE" ;;
+                 LP_NOACT[$KEY]="$VALUE" ;;
                "") ;;
                *) printf 'WARN: /land-pr (no-actionable sync-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
              esac
@@ -1678,6 +1713,7 @@ agent hasn't returned after 1 hour, declare it **failed**:
    > `git commit`):
    > ```bash
    > # 1. Enumerate Tier-1 source paths from script-ownership.md.
+   > if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
    > TIER1_PATHS=$(awk -F'|' 'NR>1 && $3 ~ /^[[:space:]]*1[[:space:]]*$/ {
    >   gsub(/[[:space:]`]/, "", $2);
    >   owner=$4; sub(/^[[:space:]`]+/, "", owner);
@@ -1830,7 +1866,8 @@ FILTER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-in-flight-issue-claims.sh
 if [ -x "$FILTER" ] && [ "${#CANDIDATE_ISSUES[@]}" -gt 0 ]; then
   FILTERED=$(printf '%s\n' "${CANDIDATE_ISSUES[@]}" | bash "$FILTER")
   if [ -n "$FILTERED" ]; then
-    mapfile -t CANDIDATE_ISSUES <<< "$FILTERED"
+    CANDIDATE_ISSUES=()
+    while IFS= read -r _line || [ -n "$_line" ]; do CANDIDATE_ISSUES+=("$_line"); done <<< "$FILTERED"
   else
     CANDIDATE_ISSUES=()
   fi
@@ -1906,15 +1943,18 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
-    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    RESEARCHED_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+    done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
     RESEARCHED_SET=()
-    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET[$__r]=1; done
     unset __r
     # Also count scratchpads from THIS pipeline as researched:
     for f in .zskills/research-staging/"$PIPELINE_ID"/issue-*.md; do
       [ -f "$f" ] || continue
       N=$(basename "$f" .md | sed 's/^issue-//')
-      RESEARCHED_SET["$N"]=1
+      RESEARCHED_SET[$N]=1
     done
     unset f N
     if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
@@ -2200,15 +2240,18 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
-    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    RESEARCHED_ARR=()
+    while IFS= read -r _tok || [ -n "$_tok" ]; do
+      [ -n "$_tok" ] && RESEARCHED_ARR+=("$_tok")
+    done < <(printf '%s' "${RESEARCHED:-}" | head -n 1 | tr ' \t' '\n\n')
     RESEARCHED_SET=()
-    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET[$__r]=1; done
     unset __r
     # Also count scratchpads from THIS pipeline as researched:
     for f in .zskills/research-staging/"$PIPELINE_ID"/issue-*.md; do
       [ -f "$f" ] || continue
       N=$(basename "$f" .md | sed 's/^issue-//')
-      RESEARCHED_SET["$N"]=1
+      RESEARCHED_SET[$N]=1
     done
     unset f N
     if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
@@ -2868,7 +2911,7 @@ if [ -n "${WT_PATH:-}" ]; then
           STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
           MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
           CONFLICT_FILES_LIST|CALL_ERROR_FILE)
-            LP_SPRINT["$KEY"]="$VALUE" ;;
+            LP_SPRINT[$KEY]="$VALUE" ;;
           "") ;;
           *) printf 'WARN: /land-pr (sprint-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
         esac
