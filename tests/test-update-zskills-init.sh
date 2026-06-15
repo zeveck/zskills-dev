@@ -116,9 +116,16 @@ PY
 run_init() {
   local PROJ="$1"
   local INTERVIEW="${ZSINIT_INTERVIEW:-skip}"
+  local PERSONAL="${ZSINIT_PERSONAL:-skip}"   # personal A3.5: skip|accept|decline
   local CURE="${ZSINIT_CURE:-decline}"
   local VERIFY_CMD="${ZSINIT_VERIFY_CMD:-true}"
   local ZS_INIT_VERSION="$EXPECTED_VER"
+  # Personal config lives under $HOME — sandbox it so the oracle never
+  # touches the real home dir (mirrors the SKILL.md A3.5 fence, which keys
+  # on $HOME). Each call may pin its own ZSINIT_HOME (a shared TMP_HOME
+  # exercises the DA14 cross-project property).
+  local HOME="${ZSINIT_HOME:-$PROJ/home}"
+  mkdir -p "$HOME/.claude"
 
   # ── A1.5(a) — sentinelled-artifact removal (init-state.sh function) ──
   local removed
@@ -143,19 +150,34 @@ run_init() {
 
   # ── A1 route ──
   if zskills_init_done_present "$PROJ"; then
-    # Update arm: conditional config offer + verify + version-line refresh.
+    # Update arm: conditional config offer(s) + verify + version-line refresh.
     if [ ! -f "$PROJ/.claude/zskills-config.json" ] \
        && [ "$ZS_REMOVED_CONFIG_THIS_RUN" = 0 ] \
-       && [ "$INTERVIEW" = accept ]; then
-      oracle_seed_config "$PROJ" "$ZS_INIT_VERSION" || return 1
+       && ! zskills_config_declined project "$PROJ"; then
+      if [ "$INTERVIEW" = accept ]; then
+        oracle_seed_config "$PROJ" "$ZS_INIT_VERSION" || return 1
+      elif [ "$INTERVIEW" = decline ]; then
+        zskills_write_config_declined project "$PROJ" || return 1
+      fi
     fi
+    # A3.5 personal offer re-runs on the update arm too (self-gating).
+    oracle_personal_config "$PERSONAL" || return 1
     # A6 HARD gate (Phase 6b): a verify FAIL stops the run before the
     # version-line refresh.
     $VERIFY_CMD || {
       echo "STOP: verify-install reported a FAIL" >&2
       return 1
     }
+    # Capture the RECORDED version BEFORE refreshing it (for the nudge).
+    local ZS_RECORDED_VER
+    ZS_RECORDED_VER="$(sed -n 's/^version: //p' \
+      "$PROJ/$ZSKILLS_INIT_DONE_REL" 2>/dev/null | head -n 1)"
+    if [ -z "$ZS_RECORDED_VER" ] && [ -f "$PROJ/.claude/zskills-config.json" ]; then
+      ZS_RECORDED_VER="$(sed -n 's/.*"zskills_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$PROJ/.claude/zskills-config.json" 2>/dev/null | head -n 1)"
+    fi
     zskills_write_init_markers "$PROJ" "$ZS_INIT_VERSION" || return 1
+    oracle_config_news_nudge "$ZS_RECORDED_VER"
     echo "arm: update"
     return 0
   fi
@@ -201,11 +223,21 @@ run_init() {
   # ── A3 — optional config interview (init arm) ──
   # The accept fence runs ONLY on the "no config exists" interview path —
   # a pre-existing config is review/keep (never clobbered, never restamped).
-  if [ "$INTERVIEW" = accept ] && [ ! -f "$PROJ/.claude/zskills-config.json" ] \
-     && [ "$ZS_REMOVED_CONFIG_THIS_RUN" = 0 ]; then
-    oracle_seed_config "$PROJ" "$ZS_INIT_VERSION" || return 1
+  # A decline records the PROJECT decline marker so the update arm stops
+  # re-asking.
+  if [ ! -f "$PROJ/.claude/zskills-config.json" ] \
+     && [ "$ZS_REMOVED_CONFIG_THIS_RUN" = 0 ] \
+     && ! zskills_config_declined project "$PROJ"; then
+    if [ "$INTERVIEW" = accept ]; then
+      oracle_seed_config "$PROJ" "$ZS_INIT_VERSION" || return 1
+    elif [ "$INTERVIEW" = decline ]; then
+      zskills_write_config_declined project "$PROJ" || return 1
+    fi
   fi
-  # decline / skip / existing-config / removed-this-run: write nothing.
+  # skip / existing-config / removed-this-run / already-declined: write nothing.
+
+  # ── A3.5 — optional PERSONAL (user-tier) config offer (#1160) ──
+  oracle_personal_config "$PERSONAL" || return 1
 
   # ── A4 / A5 — no-ops on the landed 1A + T-A + R-b branches ──
 
@@ -265,6 +297,71 @@ PY
         "$ZS_CONFIG" zskills_version "$ZS_INIT_VERSION"
     fi
   fi
+}
+
+# Mirrors the SKILL.md A3.5 PERSONAL-config offer fence (#1160). $HOME is the
+# sandbox set by run_init. accept → EMPTY scaffold (never seeded) +
+# refresh-on-update schema sibling, both never-clobber on the config; decline
+# → user-scope decline marker. Self-gates: the offer fires only when the user
+# config is ABSENT and no personal decline marker exists.
+oracle_personal_config() {
+  local CHOICE="$1"
+  local ZS_USER_DIR="$HOME/.claude"
+  local ZS_USER_CONFIG="$ZS_USER_DIR/zskills-config.json"
+  local ZS_USER_SCHEMA="$ZS_USER_DIR/zskills-config.schema.json"
+  # Self-gate: existing user file OR a prior decline suppresses the offer.
+  if [ -f "$ZS_USER_CONFIG" ] || zskills_config_declined personal "$HOME"; then
+    return 0
+  fi
+  case "$CHOICE" in
+    accept)
+      mkdir -p "$ZS_USER_DIR"
+      if [ ! -f "$ZS_USER_CONFIG" ]; then   # never-clobber
+        local zs_user_cfg_tmp="$ZS_USER_CONFIG.zskills-tmp.$$"
+        cat > "$zs_user_cfg_tmp" <<'PERSONALCFG'
+{
+  "$schema": "./zskills-config.schema.json",
+  "_comment": "zskills personal config (v2 contract): unset keys track shipped defaults; workflow keys (execution.landing, execution.branch_prefix, execution.max_concurrent_worktrees, plus the cascadable string keys) apply wherever the project config does not override them; safety keys (execution.main_protected, agents.min_model) are raise-only floors — they can raise a project's protection, never lower it."
+}
+PERSONALCFG
+        [ -s "$zs_user_cfg_tmp" ] && mv "$zs_user_cfg_tmp" "$ZS_USER_CONFIG" \
+          || rm -f "$zs_user_cfg_tmp"
+      fi
+      # Schema sibling — refresh-on-update (rewrite when it differs).
+      local ZS_USER_SCHEMA_SRC="$REPO_ROOT/config/zskills-config.schema.json"
+      if [ -f "$ZS_USER_SCHEMA_SRC" ] \
+         && ! cmp -s "$ZS_USER_SCHEMA_SRC" "$ZS_USER_SCHEMA" 2>/dev/null; then
+        local zs_user_schema_tmp="$ZS_USER_SCHEMA.zskills-tmp.$$"
+        cp "$ZS_USER_SCHEMA_SRC" "$zs_user_schema_tmp" \
+          && mv "$zs_user_schema_tmp" "$ZS_USER_SCHEMA" \
+          || rm -f "$zs_user_schema_tmp"
+      fi
+      ;;
+    decline)
+      zskills_write_config_declined personal "$HOME" || return 1
+      ;;
+    skip|*) : ;;
+  esac
+  return 0
+}
+
+# Mirrors the SKILL.md update-arm new-config-surface nudge (#1160). Emits one
+# `news:` trace line per TSV key whose introduced-version is NEWER than the
+# recorded version (NUMERIC dot-segment compare). Empty recorded → silent.
+oracle_config_news_nudge() {
+  local recorded="$1"
+  local tsv="$REPO_ROOT/skills/update-zskills/references/config-key-versions.tsv"
+  [ -n "$recorded" ] && [ -f "$tsv" ] && [ -n "$PYTHON" ] || return 0
+  local zs_key zs_introduced zs_default zs_where
+  while IFS=$'\t' read -r zs_key zs_introduced zs_default zs_where; do
+    case "$zs_key" in ''|'#'*) continue ;; esac
+    [ -n "$zs_introduced" ] || continue
+    if "$PYTHON" -c 'import sys; a,b=(tuple(int(x) for x in v.split("+")[0].split(".")) for v in sys.argv[1:3]); sys.exit(0 if a>b else 1)' \
+         "$zs_introduced" "$recorded" 2>/dev/null; then
+      printf 'news: %s — default %s — set in %s\n' "$zs_key" "${zs_default:-(unset)}" "$zs_where"
+    fi
+  done < "$tsv"
+  return 0
 }
 
 cfg_field() {  # cfg_field <config> <python-expr over d>
@@ -778,6 +875,192 @@ if [ "$DUP_COUNT" = "1" ]; then
 else
   fail "13a. duplicate .zskills/ lines in non-git project: $DUP_COUNT"
 fi
+
+# ── 14. A3.5 PERSONAL config offer — accept path (ENFORCEMENT_V2 P6 #1160) ─
+# Personal accept writes the EMPTY scaffold (never seeded) + a schema sibling,
+# both under a sandboxed $HOME/.claude. The scaffold is byte-pinned to the
+# exact v2-contract JSON (the freeze-trap is the empty scaffold).
+EXPECTED_PERSONAL_CFG="$WORK_BASE/expected-personal-config.json"
+cat > "$EXPECTED_PERSONAL_CFG" <<'PERSONALCFG'
+{
+  "$schema": "./zskills-config.schema.json",
+  "_comment": "zskills personal config (v2 contract): unset keys track shipped defaults; workflow keys (execution.landing, execution.branch_prefix, execution.max_concurrent_worktrees, plus the cascadable string keys) apply wherever the project config does not override them; safety keys (execution.main_protected, agents.min_model) are raise-only floors — they can raise a project's protection, never lower it."
+}
+PERSONALCFG
+
+P="$(new_proj personal-accept)"
+H14="$WORK_BASE/home-personal-accept"
+rm -rf "$H14"; mkdir -p "$H14"
+ZSINIT_HOME="$H14" ZSINIT_PERSONAL=accept run_init "$P" >/dev/null 2>&1
+UCFG="$H14/.claude/zskills-config.json"
+USCHEMA="$H14/.claude/zskills-config.schema.json"
+[ -f "$UCFG" ] && pass "14a. personal accept: ~/.claude/zskills-config.json written" \
+  || fail "14a. personal accept: user config NOT written"
+if [ -f "$UCFG" ]; then
+  # byte-pin assertion (plan AC: "quote the scaffold byte-pin assertion")
+  cmp -s "$UCFG" "$EXPECTED_PERSONAL_CFG" \
+    && pass "14b. personal scaffold byte-identical to the pinned v2-contract JSON (empty — never seeded)" \
+    || fail "14b. personal scaffold drifted from the pinned JSON: $(cat "$UCFG")"
+  # The scaffold has NO value-bearing keys (only $schema + _comment).
+  EMPTY_OK=$("$PYTHON" - "$UCFG" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("ok" if set(d.keys()) == {"$schema", "_comment"} else "bad")
+PY
+)
+  [ "$EMPTY_OK" = ok ] \
+    && pass "14c. scaffold carries ONLY \$schema + _comment (no seeded values — freeze-trap avoided)" \
+    || fail "14c. scaffold has unexpected keys (seeded?)"
+fi
+cmp -s "$USCHEMA" "$REPO_ROOT/config/zskills-config.schema.json" \
+  && pass "14d. personal schema sibling copied (byte-equal to shipped schema)" \
+  || fail "14d. personal schema sibling missing or differs"
+
+# ── 15. A3.5 personal DECLINE — user-scope marker + cross-project suppress ──
+# Declining the personal offer writes ~/.claude/zskills-config.declined and
+# suppresses the question in EVERY project sharing that $HOME (DA14 property).
+P1="$(new_proj personal-decline-1)"
+H15="$WORK_BASE/home-personal-decline"
+rm -rf "$H15"; mkdir -p "$H15"
+ZSINIT_HOME="$H15" ZSINIT_PERSONAL=decline run_init "$P1" >/dev/null 2>&1
+[ -f "$H15/.claude/zskills-config.declined" ] \
+  && pass "15a. personal decline wrote the USER-scope marker (~/.claude/zskills-config.declined)" \
+  || fail "15a. personal decline marker not written"
+[ ! -f "$H15/.claude/zskills-config.json" ] \
+  && pass "15b. personal decline wrote NO user config" \
+  || fail "15b. personal decline unexpectedly wrote a user config"
+# Same TMP_HOME, a SECOND scratch project with accept requested → still
+# suppressed (the marker is user-global, not per-project).
+P2="$(new_proj personal-decline-2)"
+ZSINIT_HOME="$H15" ZSINIT_PERSONAL=accept run_init "$P2" >/dev/null 2>&1
+[ ! -f "$H15/.claude/zskills-config.json" ] \
+  && pass "15c. DA14: a second project sharing the same HOME does NOT re-ask (decline is user-global)" \
+  || fail "15c. DA14 violated: personal offer re-fired in a second project despite the decline marker"
+
+# ── 16. A3.5 existing-user-file + never-clobber + schema refresh ────────────
+# (a) An existing user config suppresses the offer WITHOUT a marker, and is
+# NEVER clobbered.
+P="$(new_proj personal-existing)"
+H16="$WORK_BASE/home-personal-existing"
+rm -rf "$H16"; mkdir -p "$H16/.claude"
+printf '{"$schema":"./zskills-config.schema.json","execution":{"landing":"pr"}}\n' \
+  > "$H16/.claude/zskills-config.json"
+cp "$H16/.claude/zskills-config.json" "$WORK_BASE/personal-existing.before"
+ZSINIT_HOME="$H16" ZSINIT_PERSONAL=accept run_init "$P" >/dev/null 2>&1
+cmp -s "$H16/.claude/zskills-config.json" "$WORK_BASE/personal-existing.before" \
+  && pass "16a. existing user config NEVER clobbered by the accept path" \
+  || fail "16a. existing user config was modified"
+[ ! -f "$H16/.claude/zskills-config.declined" ] \
+  && pass "16b. existing user file suppresses the offer WITHOUT writing a decline marker" \
+  || fail "16b. an unnecessary decline marker was written"
+# (b) Schema-sibling refresh (DA13): on a fresh accept (no user config yet)
+# a stale sibling differing from the shipped schema is rewritten. With an
+# existing user CONFIG the offer self-gates before the schema refresh, so the
+# refresh is exercised on the no-config accept path.
+H16b="$WORK_BASE/home-personal-refresh"
+rm -rf "$H16b"; mkdir -p "$H16b/.claude"
+printf 'STALE-SCHEMA\n' > "$H16b/.claude/zskills-config.schema.json"
+P="$(new_proj personal-refresh)"
+ZSINIT_HOME="$H16b" ZSINIT_PERSONAL=accept run_init "$P" >/dev/null 2>&1
+cmp -s "$H16b/.claude/zskills-config.schema.json" "$REPO_ROOT/config/zskills-config.schema.json" \
+  && pass "16c. DA13: stale schema sibling rewritten to the shipped schema on accept" \
+  || fail "16c. stale schema sibling NOT refreshed"
+
+# ── 17. PROJECT decline marker suppresses the project re-offer ──────────────
+P="$(new_proj project-decline)"
+ZSINIT_INTERVIEW=decline run_init "$P" >/dev/null 2>&1
+[ -f "$P/$ZSKILLS_CONFIG_DECLINED_REL" ] \
+  && grep -q '^project:' "$P/$ZSKILLS_CONFIG_DECLINED_REL" \
+  && pass "17a. project decline wrote the gitignored .zskills/config-offer-declined marker" \
+  || fail "17a. project decline marker not written"
+[ ! -f "$P/.claude/zskills-config.json" ] \
+  && pass "17b. project decline wrote NO config" \
+  || fail "17b. project decline unexpectedly wrote a config"
+# Update arm with accept requested → STILL suppressed (the project declined).
+ZSINIT_INTERVIEW=accept run_init "$P" >/dev/null 2>&1
+[ ! -f "$P/.claude/zskills-config.json" ] \
+  && pass "17c. project re-offer suppressed on the update arm after a decline" \
+  || fail "17c. update arm re-seeded despite the project decline marker"
+
+# ── 18. New-config-surface nudge (ENFORCEMENT_V2 P6 #1160) ─────────────────
+# A consumer recorded at an OLD version sees the newer keys listed; a current
+# consumer sees nothing (silence, not noise).
+P="$(new_proj nudge-old)"
+HNUDGE="$WORK_BASE/home-nudge"
+rm -rf "$HNUDGE"; mkdir -p "$HNUDGE/.claude"
+# decline personal so it doesn't interfere
+printf '%s\n' "(declined)" > "$HNUDGE/.claude/zskills-config.declined"
+ZSINIT_HOME="$HNUDGE" run_init "$P" >/dev/null 2>&1   # initialise
+# Rewrite init-done with an OLD recorded version (older than the hooks.* rows).
+"$PYTHON" - "$P/$ZSKILLS_INIT_DONE_REL" <<'PY'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("version: 2026.06.0\ndate: 2020-01-01T00:00:00+00:00\n")
+PY
+OUT="$(ZSINIT_HOME="$HNUDGE" run_init "$P" 2>/dev/null)"
+if printf '%s\n' "$OUT" | grep -q '^news: hooks\.main_protection ' \
+   && printf '%s\n' "$OUT" | grep -q '^news: execution\.max_concurrent_worktrees '; then
+  pass "18a. nudge lists keys introduced after the recorded version (hooks.* + max_concurrent_worktrees)"
+else
+  fail "18a. nudge did not surface the new keys (out: $(printf '%s' "$OUT" | grep '^news:' | tr '\n' '|'))"
+fi
+# The nudge must NOT list keys already present at the recorded version.
+if printf '%s\n' "$OUT" | grep -q '^news: timezone '; then
+  fail "18b. nudge wrongly listed a key the consumer already had (timezone @ 2026.06.0)"
+else
+  pass "18b. nudge does NOT list keys present at the recorded version (numeric compare correct)"
+fi
+# A consumer recorded at a version newer than every TSV row → no news section.
+P="$(new_proj nudge-current)"
+ZSINIT_HOME="$HNUDGE" run_init "$P" >/dev/null 2>&1
+"$PYTHON" - "$P/$ZSKILLS_INIT_DONE_REL" <<'PY'
+import sys
+with open(sys.argv[1], "w") as f:
+    f.write("version: 9999.99.9\ndate: 2020-01-01T00:00:00+00:00\n")
+PY
+OUT="$(ZSINIT_HOME="$HNUDGE" run_init "$P" 2>/dev/null)"
+if printf '%s\n' "$OUT" | grep -q '^news: '; then
+  fail "18c. up-to-date consumer wrongly got a config-news section"
+else
+  pass "18c. up-to-date consumer gets NO config-news section (silence, not noise)"
+fi
+# Numeric (not lexical) dot-segment compare: 2026.06.10 recorded must NOT
+# flag a 2026.06.2-introduced key (lexical would wrongly flag it).
+NUM_OK=$("$PYTHON" -c 'import sys; a,b=(tuple(int(x) for x in v.split("+")[0].split(".")) for v in ["2026.06.2","2026.06.10"]); sys.exit(0 if a>b else 1)' && echo flagged || echo silent)
+[ "$NUM_OK" = silent ] \
+  && pass "18d. numeric dot-segment compare: 2026.06.2 NOT newer than 2026.06.10 (lexical bug avoided)" \
+  || fail "18d. version compare is lexical, not numeric"
+
+# ── 19. TSV conformance (anti-drift + anti-vacuous) ────────────────────────
+# Every leaf key in zskills-defaults.json has a TSV row; total rows >= 20.
+TSV="$REPO_ROOT/skills/update-zskills/references/config-key-versions.tsv"
+[ -f "$TSV" ] && pass "19a. config-key-versions.tsv present" || fail "19a. TSV missing"
+TSV_ROWS="$(awk 'NF && $0 !~ /^[[:space:]]*#/' "$TSV" | wc -l | tr -d ' ')"
+[ "${TSV_ROWS:-0}" -ge 20 ] \
+  && pass "19b. TSV has >= 20 data rows (anti-vacuous): $TSV_ROWS" \
+  || fail "19b. TSV has only $TSV_ROWS data rows (< 20)"
+MISSING_KEYS="$(
+  "$PYTHON" - "$REPO_ROOT/skills/update-zskills/scripts/zskills-defaults.json" "$TSV" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d.pop("_comment", None)
+leaves = []
+def walk(prefix, obj):
+    for k, v in obj.items():
+        kk = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict): walk(kk, v)
+        else: leaves.append(kk)
+walk("", d)
+rows = set()
+for line in open(sys.argv[2]):
+    if line.strip() and not line.lstrip().startswith("#"):
+        rows.add(line.split("\t", 1)[0].strip())
+missing = [k for k in leaves if k not in rows]
+print(" ".join(missing))
+PY
+)"
+[ -z "$MISSING_KEYS" ] \
+  && pass "19c. every zskills-defaults.json leaf key has a TSV row (anti-drift)" \
+  || fail "19c. TSV missing rows for leaf keys: $MISSING_KEYS"
 
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

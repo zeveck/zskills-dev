@@ -1,0 +1,47 @@
+# config-key-versions.tsv — ENFORCEMENT_V2 Phase 6 (#1160)
+#
+# The new-config-surface manifest: one row per config surface, used by the
+# /update-zskills update-arm nudge to tell a consumer which config keys were
+# added SINCE their recorded zskills_version. The update report is the SINGLE
+# config-news channel (no SessionStart nags, no per-session reminders).
+#
+# Columns (TAB-separated): <dotted key>  <version introduced>  <shipped default>  <where to set>
+#   - version introduced: the YYYY.MM.N zskills release the key first shipped
+#     in. Use 2026.06.0 for any key older than reliable record-keeping
+#     (precision only matters going forward; comparison is NUMERIC dot-segment,
+#     never lexical — see the update-arm fence).
+#   - shipped default: the built-in default value the key tracks when unset.
+#   - where to set: the config block / tier where a consumer sets the key.
+#
+# Conformance (tests/test-update-zskills-init.sh): every leaf key in
+# zskills-defaults.json MUST have a row here (anti-drift); total rows >= 20
+# (anti-vacuous). Comment lines (leading #) and blank lines are ignored.
+#
+# Tab-separated; do NOT convert tabs to spaces.
+timezone	2026.06.0	UTC	top-level
+execution.landing	2026.06.0	direct	execution block (cascades from user tier where project unset)
+execution.main_protected	2026.06.0	false	execution block (raise-only floor from user tier)
+execution.branch_prefix	2026.06.0	feat/	execution block (cascades from user tier where project unset)
+commit.co_author	2026.06.0		commit block
+testing.unit_cmd	2026.06.0		testing block
+testing.full_cmd	2026.06.0		testing block
+testing.output_file	2026.06.0	.test-results.txt	testing block
+testing.file_patterns	2026.06.0	[]	testing block
+dev_server.cmd	2026.06.0		dev_server block
+dev_server.default_port	2026.06.0	8080	dev_server block
+ui.file_patterns	2026.06.0		ui block
+ui.auth_bypass	2026.06.0		ui block
+ci.auto_fix	2026.06.0	true	ci block
+ci.max_fix_attempts	2026.06.0	2	ci block
+agents.min_model	2026.06.0	auto	agents block (raise-only floor from user tier)
+output.plans_dir	2026.06.0	docs/plans	output block
+output.issues_dir	2026.06.0	docs/issues	output block
+output.reports_dir	2026.06.0	docs/reports	output block
+execution.max_concurrent_worktrees	2026.06.1	(unset)	execution block (cascades from user tier where project unset)
+hooks.git_destructive	2026.06.1	block-always (per-check tristate)	hooks block (project-only)
+hooks.fs_destructive	2026.06.1	block-always (per-check tristate)	hooks block (project-only)
+hooks.process_kill	2026.06.1	block-always (per-check tristate)	hooks block (project-only)
+hooks.git_discipline	2026.06.1	silent-when-watched / block-when-autonomous	hooks block (project-only)
+hooks.main_protection	2026.06.1	silent-when-watched / block-when-autonomous	hooks block (project-only)
+hooks.pr_discipline	2026.06.1	block-always (per-check tristate)	hooks block (project-only)
+hooks.tracking	2026.06.1	silent-when-watched / block-when-autonomous	hooks block (project-only)
