@@ -703,7 +703,7 @@ Drafter classification notes (bind the implementer):
 | 4 — Cascade v2: workflow keys + raise-only floors | ✅ Done | a4c4103 | Verified PASS; suite 8077/8077; raise-only floors proven (user cannot lower main_protected/min_model); fail-closed on malformed user cfg; 3-copy Python lockstep; Test15 9/14/500 |
 | 5 — move-to-worktree helper (stash-free dirty-main carry) | ✅ Done | c3c8778 | Verified PASS; suite 8123/8123; main never data-lost on failure (rc7 unmerged untouched / rc8 verify-mismatch preserved); stash-free; split+index-blobs preserved; preflight untouched (SD8) |
 | 6 — Config-UX: personal-config offer, decline marker, update nudge | ✅ Done | e2f8a18 | Verified PASS; suite 8143/8143; config-never-seed (personal scaffold empty, byte-pinned); decline-marker suppression; update nudge via config-key-versions.tsv |
-| 7 — Docs rewrite + conformance sweep | ⬚ | | |
+| 7 — Docs rewrite + conformance sweep | ✅ Done | e169f69 | Verified PASS; suite 8145/8145; docs match amended model; managed.md lockstep; 0 stale prose; registry-sync 37/37; nits fixed |
 
 ---
 
