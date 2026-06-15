@@ -809,7 +809,7 @@ missing; only LOCAL zsh-less runs skip, with a WARN.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Probe + declare-A decision + tripwire infrastructure (pending-scoped) | ⬚ | | |
+| 1 — Probe + declare-A decision + tripwire infrastructure (pending-scoped) | ✅ Done | 5da09e7 | Verified PASS; suite 8169/8169; semantics probe 15/15 (Branch B); tripwire non-vacuous (28 pending, canaries n1-n5); declare-A literal+var covered; zsh-in-CI; infra-only |
 | 2 — Track R rewrites + normalization + guards: fix-issues, work-on-plans, cleanup-merged | ⬚ | | |
 | 3 — Caller-loop family + guard v2 upgrade: land-pr, run-plan, do, commit, draft-tests | ⬚ | | |
 | 4 — Remaining skills: draft-plan, refine-plan, update-zskills, zskills-dashboard, verify-changes, research-and-go, research-and-plan | ⬚ | | |
