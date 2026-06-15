@@ -23,7 +23,7 @@
 #   5. CLAUDE_PROJECT_DIR-switching: tmp1 with London, tmp2 with Tokyo;
 #      switching $CLAUDE_PROJECT_DIR in a fresh subshell yields the
 #      correct timezone for each.
-#   6. references/canonical-config-prelude.md exists with 7 sections.
+#   6. references/canonical-config-prelude.md exists with 8 sections.
 #   7. Install integrity: helper script is present in the
 #      .claude/skills/update-zskills/scripts/ mirror (the install
 #      location consumers receive via /update-zskills's skill mirror).
@@ -298,9 +298,12 @@ TZ_B=$(HOME="$EMPTY_HOME" CLAUDE_PROJECT_DIR="$T5B" bash -c '. "'"$HELPER"'" && 
 
 rm -rf "$T5A" "$T5B"
 
-# --- Test 6: references/canonical-config-prelude.md exists with 7 sections (AC6) ---
+# --- Test 6: references/canonical-config-prelude.md exists with 8 sections (AC6) ---
+# Section 8 ("zsh fence-portability marker") added by ZSH_FENCE_WRAP_PLAN
+# Phase 1 (#1155) — the allow-zsh-unwrapped marker spec + "Writing portable
+# fences" authoring note.
 echo ""
-echo "=== Test 6: references/canonical-config-prelude.md exists with 7 sections ==="
+echo "=== Test 6: references/canonical-config-prelude.md exists with 8 sections ==="
 
 if [ -f "$PRELUDE_DOC" ]; then
   pass "Test 6a: references/canonical-config-prelude.md exists"
@@ -309,16 +312,16 @@ else
 fi
 
 SECTION_COUNT=$(grep -cE '^## ' "$PRELUDE_DOC" 2>/dev/null || echo 0)
-if [ "$SECTION_COUNT" = "7" ]; then
-  pass "Test 6b: prelude doc has exactly 7 ## sections"
+if [ "$SECTION_COUNT" = "8" ]; then
+  pass "Test 6b: prelude doc has exactly 8 ## sections"
 else
-  fail "Test 6b: 7 sections" "got $SECTION_COUNT ## sections"
+  fail "Test 6b: 8 sections" "got $SECTION_COUNT ## sections"
 fi
 
-# Spot-check that each of the 7 expected topic keywords appears in the doc
+# Spot-check that each of the 8 expected topic keywords appears in the doc
 # (heading text + body content combined). Loose match — confirms each
 # section was written, not the exact heading title.
-TOPICS=("Sourcing pattern" "Fallback semantics" "Mode files" "Subagent" "Shell-state" "Heredoc" "Allowlist marker")
+TOPICS=("Sourcing pattern" "Fallback semantics" "Mode files" "Subagent" "Shell-state" "Heredoc" "Allowlist marker" "allow-zsh-unwrapped")
 MISSING=""
 for topic in "${TOPICS[@]}"; do
   if ! grep -qF "$topic" "$PRELUDE_DOC"; then
@@ -326,9 +329,9 @@ for topic in "${TOPICS[@]}"; do
   fi
 done
 if [ -z "$MISSING" ]; then
-  pass "Test 6c: all 7 expected section topics present in prelude doc"
+  pass "Test 6c: all 8 expected section topics present in prelude doc"
 else
-  fail "Test 6c: 7 topics" "missing:$MISSING"
+  fail "Test 6c: 8 topics" "missing:$MISSING"
 fi
 
 # --- Test 7: install integrity (AC7) ----------------------------------------

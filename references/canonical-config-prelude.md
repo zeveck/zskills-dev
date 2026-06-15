@@ -322,3 +322,91 @@ echo "By default we use 'npm run test:all'; configure via testing.full_cmd."
 The Phase 4 deny-list test exempts the `npm run test:all` hit inside the
 fence above; any other hit of the same literal in another fence without
 its own marker still fails.
+
+## 8. zsh fence-portability marker (`allow-zsh-unwrapped`)
+
+Skill-file bash fences execute under the consumer's snapshot shell, which is
+**zsh** on stock macOS/dev setups, not bash. The zsh fence-portability
+tripwire in `tests/test-skill-conformance.sh` (`=== zsh fence-portability
+tripwire (#1155) ===`) flags executed fences containing zsh-divergent
+constructs that are not remediated. A fence the scanner flags must be
+**wrapped** (Track W), **guarded** (Track G), **rewritten** (Track R), or —
+for the rare fence that is genuinely never executed (display-only
+illustration, prohibition-by-name) — carry an inspectable marker on the line
+**immediately above** the fence-opener:
+
+```
+<!-- allow-zsh-unwrapped: <construct> reason: <why this fence is exempt> -->
+```
+
+### Format rules
+
+- **Case-sensitive lowercase** prefix: `<!-- allow-zsh-unwrapped:`.
+- `<construct>` names the flagged construct token **verbatim as the scanner
+  reports it** — e.g. `BASH_REMATCH`, `mapfile`, `read-a`, `for-in-scalar`,
+  `quoted-subscript`. The capture is delimited by ` reason:`, so multi-token
+  construct names work.
+- `<reason>` may contain any characters except the substrings `-->` and
+  `reason:`.
+
+### Marker scope
+
+- Markers live in **markdown prose**, on the line **immediately above** a
+  fence-opener (` ```bash `, ` ```sh `, ` ```shell `, or a bare ` ``` `).
+- A marker exempts the named construct inside the immediately-following
+  fence only.
+- Markers **stack**: place multiple consecutive marker lines above one
+  fence-opener to exempt several distinct constructs. The scanner reads
+  upward from the opener until it hits a non-blank, non-marker line, which
+  resets the block.
+- Markers **inside** fences (as bash comments) are **not** supported (HTML
+  comments are not bash-valid inside a fence).
+
+### Worked examples
+
+Display-only illustration fence (never executed — a docs example of an
+idiom):
+
+```markdown
+<!-- allow-zsh-unwrapped: BASH_REMATCH reason: display-only idiom illustration, never executed -->
+\`\`\`bash
+[[ "$s" =~ ^([0-9]+) ]] && echo "${BASH_REMATCH[1]}"
+\`\`\`
+```
+
+Prohibition-by-name fence (the fence documents an antipattern verbatim):
+
+```markdown
+<!-- allow-zsh-unwrapped: mapfile reason: prohibition-by-name — the fence shows the construct authors must NOT use -->
+\`\`\`bash
+# WRONG under zsh — mapfile is a bash builtin absent in zsh:
+mapfile -t ARR < <(cmd)
+\`\`\`
+```
+
+### Writing portable fences (authoring note)
+
+When you write a new executed bash fence in a skill file, make it portable
+so the first reader on macOS does not learn the policy from red CI:
+
+- **Default remedy = the v2 guard** as the first executable line (handles
+  `[[ =~ ]]`/`BASH_REMATCH`, 0-based indexed arrays, and `for tok in
+  $SCALAR` word-split):
+  `if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi`
+- **setopt-UNFIXABLE constructs** (`mapfile`/`readarray`, `read -a`,
+  `${!var}`, `${var,,}`/`${var^^}`, `compgen`) have no guard — use the
+  Track-R replacement idioms (see `docs/plans/ZSH_FENCE_WRAP_PLAN.md` §Track R
+  and the matching sections of `tests/test-zsh-fence-semantics.sh`).
+- **Associative-array subscripts** must be **consistent-unquoted**
+  (`LP[$KEY]` / `${LP[STATUS]}`, never `LP["$KEY"]`) — zsh addresses quoted
+  and unquoted keys as different keys; see
+  `skills/land-pr/references/caller-loop-pattern.md`.
+- **Display-only / prohibition fences** get the `allow-zsh-unwrapped` marker
+  above.
+- **Wrap (`bash <<'ZSKILLS_BASH_FENCE'` … `ZSKILLS_BASH_FENCE`) only a
+  PROVEN self-contained fence** — one that neither reads nor writes any
+  cross-fence shell variable or function; the child inherits only exported
+  env. Most fences are not self-contained — default to the guard.
+- **Named residuals the guard does NOT fix** — glob-in-variable expansion
+  (`v="*.md"; ls $v`; no `GLOB_SUBST`) and argument-position word-split
+  (`cmd $FLAGS`): do not rely on them.

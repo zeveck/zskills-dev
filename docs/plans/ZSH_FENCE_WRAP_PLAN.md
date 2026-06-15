@@ -1268,6 +1268,67 @@ Phases 1–4 (empty pending list).
 > hits, computed from the same seeding run per WI 1.3; Phase 5 reads this
 > literal); any files the appendix missed.
 
+**Run environment.** zsh 5.9 (`x86_64-debian-linux-gnu`), the dev
+container's `/usr/bin/zsh`. Seeding run recorded 2026-06-15. `${CI:-}`
+empty (local), so the semantics suite executed (zsh present). All 15
+sections of `tests/test-zsh-fence-semantics.sh` PASS.
+
+**declare-A decision: BRANCH B (subscript normalization) — SELECTED.**
+The decision rule (s3 diverges AND s4 identical → Branch B) is satisfied:
+
+- **s3 (as-written mixed-quoted assoc) — DIVERGES (as expected).** Verbatim
+  probe output (the snippet assigns `LP["$KEY"]="success"` / `L3["STATUS"]="ok"`
+  then reads `${LP[STATUS]:-EMPTY}` / `${L3[STATUS]:-EMPTY}`):
+  - bash: `a=success` / `b=ok`
+  - zsh:  `a=EMPTY`   / `b=EMPTY`
+
+  zsh stores the subscript text verbatim (including the quote characters), so
+  the bare-literal read misses → the caller-loop misroute class. Both the
+  quoted-VARIABLE and quoted-LITERAL spellings diverge identically
+  (correction 6 confirmed).
+- **s4 (consistent-unquoted normalization) — IDENTICAL.** All three key
+  shapes (variable `LP[$KEY]`, parameter-expansion `SKIP_TAGGED_SET[${tok%%:*}]`,
+  fixed literal `FIX[STATUS]`), the case-allowlist loop, and the
+  membership-set dedupe produce byte-identical output under bash and zsh.
+
+Therefore the tripwire's check (c) is wired ACTIVE (the Branch-B spelling):
+quoted-variable (`[A-Za-z0-9_]\["\$`) AND quoted-literal
+(`[A-Za-z0-9_]\["[A-Za-z0-9_]+"\]`) subscripts both FAIL, with the
+normalize-remedy. Phases 2–4 carry the one-line-per-site normalization edits;
+Branch A (accept) and Branch C (flat-var rewrite) are NOT taken.
+
+**Seeded pending-list file count: 28** (`grep -c .
+tests/fixtures/zsh-fence-pending.txt` = 28). This MATCHES the appendix
+inventory's "28 distinct files across 15 skills" — the scanner agrees with
+the appendix, it does not over-detect. The seeded files (the scanner report
+is ground truth, superseding the appendix per correction 4) include
+`skills/run-plan/subcommands/stop-next-status.md`, which the research
+per-skill totals omitted (correction 4 anticipated this) — no NEW files
+beyond what the appendix lists were found.
+
+**check-(b) fence census: 46.** This is within the drafting estimate band
+(research ~52, independent review census ≈46 — it matches the review census
+exactly), so no STOP-and-surface. Initial **floor (ii) = floor(46 × 0.75)
+= 34** — pinned as the literal `ZF_CHECKB_FLOOR=34` in
+`tests/test-skill-conformance.sh` with a comment citing this Findings entry.
+
+**floor-(iii) base census (guard-expected set): 67.** From the same
+fixture-absent seeding run: 67 distinct scanner-flagged fences whose flagged
+constructs are all (b)/(b2)/(c)-class (no (a)-class / Track-R hit in the
+fence). Phase 5 reads this literal (do not re-derive); it pins anti-vacuous
+floor (iii) at 75% of 67.
+
+**Wrapped-fence count: 0** (`wrapped_fences=0` in the seeding-run summary) —
+as expected (Settled decision 1; every inspected Track-W candidate has
+demoted to G). The wrap-acceptance path is exercised solely by the n5
+synthetic self-check.
+
+**Full seeding-run summary line** (fixture absent):
+`ZSH-FENCE-SUMMARY: exec_fences=523 check_b_fences=46 guard_expected_fences=67 wrapped_fences=0 unlisted_violations=83 fixture_malformed=0`
+(the 83 unlisted_violations is the total violation COUNT across the 28 files
+when no fixture scopes them; with the seeded fixture present,
+unlisted_violations drops to 0 and all 28 files report as PENDING).
+
 ---
 
 ## Fence inventory (advisory appendix — non-phase)
