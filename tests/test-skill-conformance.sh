@@ -434,7 +434,11 @@ check       commit "read-only reviewer"       'You are read-only|you are read-on
 # A config of `cherry-pick` is rejected as misuse (the `land` subcommand
 # is the cherry-pick flow, not a default-mode selector).
 check_fixed commit "default-mode: landing config read"   'execution.landing'
-check_fixed commit "default-mode: bash-regex landing"    '\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"'
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4) RE-SPEC: the inline BASH_REMATCH landing
+# read was replaced by a cascaded $ZSKILLS_CFG_LANDING read (see the
+# landing-reader migration tripwire below). The default-mode dispatch now
+# reads the resolver-resolved value.
+check_fixed commit "default-mode: cascaded landing read"  'CFG_LANDING="$ZSKILLS_CFG_LANDING"'
 check_fixed commit "default-mode: explicit-mode guard"   'HAS_EXPLICIT_MODE'
 check_fixed commit "default-mode: push|land anywhere"    '(push|land)'
 check_fixed commit "default-mode: pr → PR mode"          'DEFAULT_MODE="pr"'
@@ -2091,6 +2095,74 @@ check_fixed draft-tests               "ensure-worktree invocation" 'bash "$HELPE
 check_fixed fix-issues                "ensure-worktree invocation" 'bash "$HELPER"'
 
 echo ""
+echo "=== move-to-worktree.sh safety pins (ENFORCEMENT_V2 Phase 5) ==="
+# The helper performs a SANCTIONED, helper-mediated restore of main. These pins
+# keep its internals from silently regressing into a general bypass:
+#   - NO `git stash` (hard-denied + unsafe-by-construction here).
+#   - NO `git clean`, NO `reset --hard`.
+#   - NO `checkout` at all — the restore primitive is
+#     `git restore --staged --worktree --source=HEAD` (checkout HEAD -- dies
+#     rc 1 on staged-NEW paths, DA6); restore required present ≥1.
+#   - inventory uses `--untracked-files=all` (DA7) ≥1.
+#   - anti-vacuous: the file exists and is non-empty.
+#   - destruction follows verification: the FIRST
+#     `restore --staged --worktree` line appears AFTER the FIRST `cmp` line.
+MVWT="$REPO_ROOT/skills/create-worktree/scripts/move-to-worktree.sh"
+if [ -s "$MVWT" ]; then
+  pass "[move-to-worktree] helper exists and is non-empty"
+
+  if [ "$(grep -c 'git stash' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'git stash'"
+  else
+    fail "[move-to-worktree] 'git stash' present" "stash is hard-denied"
+  fi
+
+  if [ "$(grep -c 'git clean' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'git clean'"
+  else
+    fail "[move-to-worktree] 'git clean' present" "no git clean"
+  fi
+
+  if [ "$(grep -c 'reset --hard' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'reset --hard'"
+  else
+    fail "[move-to-worktree] 'reset --hard' present" "no reset --hard"
+  fi
+
+  if [ "$(grep -c 'checkout' "$MVWT")" -eq 0 ]; then
+    pass "[move-to-worktree] contains no 'checkout' (restore is the primitive)"
+  else
+    fail "[move-to-worktree] 'checkout' present" "checkout HEAD -- dies rc 1 on staged-new (DA6); use restore"
+  fi
+
+  if [ "$(grep -c 'restore --staged --worktree --source=HEAD' "$MVWT")" -ge 1 ]; then
+    pass "[move-to-worktree] restore --staged --worktree --source=HEAD present"
+  else
+    fail "[move-to-worktree] restore primitive absent" "git restore --staged --worktree --source=HEAD"
+  fi
+
+  if [ "$(grep -c 'untracked-files=all' "$MVWT")" -ge 1 ]; then
+    pass "[move-to-worktree] inventory uses --untracked-files=all (DA7)"
+  else
+    fail "[move-to-worktree] --untracked-files=all absent" "per-file inventory required"
+  fi
+
+  # destruction-follows-verification: the first ACTUAL `cmp` invocation
+  # (`cmp -s`) must precede the first ACTUAL restore COMMAND invocation
+  # (`git ... restore --staged --worktree`). Anchor on the invocation forms so
+  # the header-comment mentions of the phrases do not confound the line numbers.
+  CMP_LN="$(grep -n 'cmp -s' "$MVWT" | head -1 | cut -d: -f1)"
+  RESTORE_LN="$(grep -nE 'git .* restore --staged --worktree' "$MVWT" | head -1 | cut -d: -f1)"
+  if [ -n "$CMP_LN" ] && [ -n "$RESTORE_LN" ] && [ "$RESTORE_LN" -gt "$CMP_LN" ]; then
+    pass "[move-to-worktree] restore (L$RESTORE_LN) follows cmp verification (L$CMP_LN)"
+  else
+    fail "[move-to-worktree] verify-before-destroy ordering" "cmp@$CMP_LN restore@$RESTORE_LN"
+  fi
+else
+  fail "[move-to-worktree] helper exists and is non-empty" "$MVWT missing or empty"
+fi
+
+echo ""
 echo "=== clear-tracking recovery hint — dual-lane path (#865) ==="
 # User-facing tracking-cleanup recovery hints must NOT print a bare
 # mirror-only clear-tracking.sh path as the SOLE hint: on the plugin lane
@@ -2636,6 +2708,52 @@ else
   printf '%s\n' "$CASCADE_CONGRUENCE_HITS" | while IFS= read -r h; do
     [ -n "$h" ] && printf '    %s\n' "$h" >&2
   done
+fi
+
+echo ""
+echo "=== Landing-reader migration: cascaded \$ZSKILLS_CFG_LANDING (CASCADE v2, ENFORCEMENT_V2 Phase 4) ==="
+# CASCADE v2 (#1159) migrated the landing-mode RESOLUTION fences off inline
+# BASH_REMATCH reads onto the canonical resolver's $ZSKILLS_CFG_LANDING export.
+# Each migrated file must (a) source zskills-resolve-config.sh and (b)
+# reference $ZSKILLS_CFG_LANDING. Anti-vacuous pinned file count = 6 (5 skill
+# surfaces + ensure-worktree.sh). apply-preset.sh is DELIBERATELY excluded
+# (R5: it probes the PROJECT FILE to decide whether to rewrite it) — its
+# exclusion is pinned, not assumed.
+LANDING_MIGRATED_FILES=(
+  "skills/do/SKILL.md"
+  "skills/fix-issues/SKILL.md"
+  "skills/run-plan/SKILL.md"
+  "skills/commit/SKILL.md"
+  "skills/update-zskills/SKILL.md"
+  "skills/create-worktree/scripts/ensure-worktree.sh"
+)
+LANDING_MIGRATED_COUNT=0
+for _lmf in "${LANDING_MIGRATED_FILES[@]}"; do
+  _lmf_path="$REPO_ROOT/$_lmf"
+  if [ ! -f "$_lmf_path" ]; then
+    fail "[landing-migration] $_lmf exists" "$_lmf missing"
+    continue
+  fi
+  if grep -q 'zskills-resolve-config\.sh' "$_lmf_path" \
+     && grep -q 'ZSKILLS_CFG_LANDING' "$_lmf_path"; then
+    pass "[landing-migration] $_lmf sources resolver + references \$ZSKILLS_CFG_LANDING"
+    LANDING_MIGRATED_COUNT=$((LANDING_MIGRATED_COUNT + 1))
+  else
+    fail "[landing-migration] $_lmf sources resolver + references \$ZSKILLS_CFG_LANDING" \
+      "missing source-of-resolver or \$ZSKILLS_CFG_LANDING reference"
+  fi
+done
+if [ "$LANDING_MIGRATED_COUNT" -eq 6 ]; then
+  pass "[landing-migration] exactly 6 migrated files reference \$ZSKILLS_CFG_LANDING (anti-vacuous count)"
+else
+  fail "[landing-migration] migrated-file count" "expected 6, found $LANDING_MIGRATED_COUNT"
+fi
+# R5 exclusion pin: apply-preset.sh must NOT reference $ZSKILLS_CFG_LANDING.
+if grep -q 'ZSKILLS_CFG_LANDING' "$REPO_ROOT/skills/update-zskills/scripts/apply-preset.sh" 2>/dev/null; then
+  fail "[landing-migration] apply-preset.sh R5 exclusion" \
+    "apply-preset.sh references \$ZSKILLS_CFG_LANDING — must read the PROJECT FILE directly (R5)"
+else
+  pass "[landing-migration] apply-preset.sh does NOT reference \$ZSKILLS_CFG_LANDING (R5 exclusion pinned)"
 fi
 
 echo ""
@@ -4055,6 +4173,277 @@ PY
   else
     fail "seed-safety-pin: legacy install scaffold dropped agents.min_model (parallel of #1136)" "agents.min_model"
     echo "$SEED_OUT" | sed 's/^/        /'
+  fi
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+# ENFORCEMENT_V2_PLAN Phase 3 (#1159) — message-tag + registry-sync tripwires.
+# Now that ALL 49 in-scope emission sites are tagged (47 hooks.*-keyed + 2
+# agents.min_model static), pin the one-form-per-hook-class tag emissions and the
+# lib↔schema registry equality. Model: the gate allow/block-list tripwire above
+# (sed-extracted lists + anti-vacuous emptiness check).
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== ENFORCEMENT_V2 Phase 3: message-tag + registry-sync tripwires (#1159) ==="
+
+# ── Tripwire 1 — tag-format, exactly the Settled-decision-14 forms ───────────
+# Big hooks (wrapper-tagged): count column-anchored gate_with_reason call lines.
+declare -A _ENF_BIG_EXPECT=(
+  [block-unsafe-generic.sh]=19
+  [block-unsafe-project.sh]=17
+)
+for _H in "${!_ENF_BIG_EXPECT[@]}"; do
+  _want="${_ENF_BIG_EXPECT[$_H]}"
+  _got=$(grep -cE '^[[:space:]]*gate_with_reason[[:space:]]+(git_destructive|fs_destructive|process_kill|git_discipline|main_protection|pr_discipline|tracking)[[:space:]]+[a-z0-9_]+' "$REPO_ROOT/hooks/$_H" 2>/dev/null || echo 0)
+  if [ "$_got" -eq 0 ]; then
+    fail "[enforcement] tag-tripwire: $_H has ZERO gate_with_reason sites (anti-vacuous)" "gate_with_reason"
+  elif [ "$_got" -eq "$_want" ]; then
+    pass "[enforcement] tag-tripwire: $_H has $_got gate_with_reason sites (expected $_want)"
+  else
+    fail "[enforcement] tag-tripwire: $_H gate_with_reason count $_got != expected $_want" "gate_with_reason count drift"
+  fi
+done
+
+# Small hooks (call-line-tagged): count zskills_enforcement_tag <group> <check>
+# call lines. NOTE the lib also DEFINES the function (zskills_enforcement_tag())
+# and the inlined COMMENT references it; the pinned regex requires a SPACE then
+# two lowercase identifier args, which the def line `zskills_enforcement_tag() {`
+# does not match, so call-site counts are clean.
+declare -A _ENF_SMALL_EXPECT=(
+  [block-main-edits.sh]=2
+  [block-fix-issue-unclaimed.sh]=2
+  [block-run-plan-unclaimed.sh]=1
+  [block-stale-skill-version.sh]=1
+  [block-bad-cron.sh]=3
+  [block-bypassed-land-pr.sh]=2
+)
+for _H in "${!_ENF_SMALL_EXPECT[@]}"; do
+  _want="${_ENF_SMALL_EXPECT[$_H]}"
+  _got=$(grep -cE 'zskills_enforcement_tag[[:space:]]+[a-z_]+[[:space:]]+[a-z0-9_]+' "$REPO_ROOT/hooks/$_H" 2>/dev/null || echo 0)
+  if [ "$_got" -eq 0 ]; then
+    fail "[enforcement] tag-tripwire: $_H has ZERO zskills_enforcement_tag call sites (anti-vacuous)" "zskills_enforcement_tag"
+  elif [ "$_got" -eq "$_want" ]; then
+    pass "[enforcement] tag-tripwire: $_H has $_got zskills_enforcement_tag call sites (expected $_want)"
+  else
+    fail "[enforcement] tag-tripwire: $_H zskills_enforcement_tag count $_got != expected $_want" "tag-call count drift"
+  fi
+done
+
+# Static-literal hook: block-agents.sh has exactly 2 `[agents.min_model — ` tags.
+_AGENTS_GOT=$(grep -cE '\[agents\.min_model — ' "$REPO_ROOT/hooks/block-agents.sh" 2>/dev/null || echo 0)
+if [ "$_AGENTS_GOT" -eq 2 ]; then
+  pass "[enforcement] tag-tripwire: block-agents.sh has 2 [agents.min_model — ] static tags"
+else
+  fail "[enforcement] tag-tripwire: block-agents.sh [agents.min_model — ] count $_AGENTS_GOT != 2" "static agents tag"
+fi
+
+# Exemption is EXPLICIT, not silent: block-unmaterialised-skill.sh must carry
+# NONE of the three tag forms (Settled decision 9 — different envelope, init gate).
+_UNMAT="$REPO_ROOT/hooks/block-unmaterialised-skill.sh"
+if [ -f "$_UNMAT" ]; then
+  if grep -qE '^[[:space:]]*gate_with_reason[[:space:]]|zskills_enforcement_tag[[:space:]]+[a-z_]+[[:space:]]+[a-z0-9_]+|\[agents\.min_model — ' "$_UNMAT"; then
+    fail "[enforcement] tag-tripwire: block-unmaterialised-skill.sh carries a toggle tag (must be EXEMPT — Settled decision 9)" "no tag forms"
+  else
+    pass "[enforcement] tag-tripwire: block-unmaterialised-skill.sh carries NO toggle tag (exemption explicit)"
+  fi
+fi
+
+# Warn-emission assertions (DA8 — call-line counts can't see the emitted string).
+# Checked at EVERY lib-inlining hook (the inlined copy, not just the lib source).
+_ENF_INLINING_HOOKS="block-main-edits.sh block-fix-issue-unclaimed.sh block-run-plan-unclaimed.sh block-bad-cron.sh block-bypassed-land-pr.sh block-stale-skill-version.sh block-unsafe-generic.sh block-unsafe-project.sh"
+for _H in $_ENF_INLINING_HOOKS; do
+  _HF="$REPO_ROOT/hooks/$_H"
+  [ -f "$_HF" ] || { fail "[enforcement] warn-assert: $_H not found" "hook present"; continue; }
+  # (a) the inlined tag printf format string matches the pinned emitted-tag skeleton.
+  if grep -qF "'[hooks.%s.%s — block|warn|off in .claude/zskills-config.json; currently: %s]'" "$_HF"; then
+    pass "[enforcement] warn-assert: $_H inlined tag printf matches pinned skeleton"
+  else
+    fail "[enforcement] warn-assert: $_H inlined tag printf skeleton missing/drifted" "pinned tag skeleton"
+  fi
+  # (b) the literal warn prefix appears exactly once (in the inlined warn fn).
+  _WP=$(grep -cF 'WARNING (not blocked by this check): ' "$_HF")
+  if [ "$_WP" -eq 1 ]; then
+    pass "[enforcement] warn-assert: $_H warn prefix appears exactly once"
+  else
+    fail "[enforcement] warn-assert: $_H warn prefix count $_WP != 1" "warn prefix exactly once"
+  fi
+  # (c) the inlined flush function body contains NO permissionDecision literal
+  # (decision-less invariant, checked at the inline copy).
+  _FLUSH=$(sed -n '/^zskills_enforcement_flush_warnings()/,/^}$/p' "$_HF")
+  if printf '%s' "$_FLUSH" | grep -q 'permissionDecision'; then
+    fail "[enforcement] warn-assert: $_H flush body contains permissionDecision (must be decision-less)" "no permissionDecision in flush"
+  else
+    pass "[enforcement] warn-assert: $_H flush body is decision-less (no permissionDecision)"
+  fi
+done
+
+# ── Tripwire 2 — registry-sync: lib KNOWN_CHECKS ↔ schema hooks block ─────────
+# Extract the 37-key set from _ZSK_ENF_KNOWN_CHECKS (lib) and from the schema's
+# hooks block per-group check properties; assert set-equality. Anti-vacuous:
+# either extraction yielding < 30 keys FAILS.
+_ENF_LIB="$REPO_ROOT/hooks/_lib/zskills-enforcement.sh"
+_ENF_SCHEMA="$REPO_ROOT/config/zskills-config.schema.json"
+# Resolve a Python 3 interpreter (probe-run; no jq per project convention).
+_ENF_PY=""
+for _cand in "${ZSKILLS_PYTHON:-}" python3 python; do
+  [ -n "$_cand" ] || continue
+  command -v "$_cand" >/dev/null 2>&1 || continue
+  if "$_cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+    _ENF_PY=$(command -v "$_cand"); break
+  fi
+done
+if [ -z "$_ENF_PY" ]; then
+  fail "[enforcement] registry-sync: no Python 3 interpreter (cannot read schema)" "python3"
+elif [ ! -f "$_ENF_LIB" ] || [ ! -f "$_ENF_SCHEMA" ]; then
+  fail "[enforcement] registry-sync: lib or schema file missing" "$_ENF_LIB / $_ENF_SCHEMA"
+else
+  # Lib keys: lines `group.check:class` inside the _ZSK_ENF_KNOWN_CHECKS heredoc.
+  _ENF_REGOUT=$(ENF_LIB="$_ENF_LIB" ENF_SCHEMA="$_ENF_SCHEMA" "$_ENF_PY" - <<'PYEOF'
+import json, os, re, sys
+lib = open(os.environ["ENF_LIB"]).read()
+m = re.search(r"_ZSK_ENF_KNOWN_CHECKS='(.*?)'", lib, re.S)
+lib_keys = set()
+if m:
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        gk = line.split(":", 1)[0]
+        if "." in gk:
+            lib_keys.add(gk)
+schema = json.load(open(os.environ["ENF_SCHEMA"]))
+hooks = schema["properties"]["hooks"]["properties"]
+schema_keys = set()
+for group, body in hooks.items():
+    for check in body.get("properties", {}):
+        if check == "enabled":
+            continue
+        schema_keys.add("%s.%s" % (group, check))
+if len(lib_keys) < 30:
+    print("VACUOUS lib %d" % len(lib_keys)); sys.exit(2)
+if len(schema_keys) < 30:
+    print("VACUOUS schema %d" % len(schema_keys)); sys.exit(2)
+if lib_keys == schema_keys:
+    print("EQUAL %d" % len(lib_keys)); sys.exit(0)
+print("MISMATCH lib-only=%s schema-only=%s" % (sorted(lib_keys - schema_keys), sorted(schema_keys - lib_keys)))
+sys.exit(1)
+PYEOF
+)
+  _ENF_REGRC=$?
+  if [ "$_ENF_REGRC" -eq 0 ]; then
+    pass "[enforcement] registry-sync: lib KNOWN_CHECKS == schema hooks keys ($_ENF_REGOUT)"
+  else
+    fail "[enforcement] registry-sync: lib KNOWN_CHECKS != schema hooks keys ($_ENF_REGOUT)" "set-equality (37 keys)"
+  fi
+  # Every group/check pair found by tripwire 1's group-bearing forms is a member.
+  _ENF_PAIRS=$(grep -hoE '(gate_with_reason|zskills_enforcement_tag)[[:space:]]+(git_destructive|fs_destructive|process_kill|git_discipline|main_protection|pr_discipline|tracking)[[:space:]]+[a-z0-9_]+' \
+    "$REPO_ROOT"/hooks/block-*.sh 2>/dev/null | awk '{print $2"."$3}' | sort -u)
+  _ENF_PAIR_BAD=0
+  _ENF_KNOWN=$(sed -n "/_ZSK_ENF_KNOWN_CHECKS='/,/^'/p" "$_ENF_LIB" | sed -E "s/^_ZSK_ENF_KNOWN_CHECKS='//; s/:.*//; /^'?$/d")
+  while IFS= read -r _pair; do
+    [ -n "$_pair" ] || continue
+    if ! printf '%s\n' "$_ENF_KNOWN" | grep -qxF "$_pair"; then
+      fail "[enforcement] registry-sync: emitted pair $_pair is NOT in lib KNOWN_CHECKS" "$_pair"
+      _ENF_PAIR_BAD=1
+    fi
+  done <<< "$_ENF_PAIRS"
+  if [ "$_ENF_PAIR_BAD" -eq 0 ]; then
+    pass "[enforcement] registry-sync: every emitted group/check pair is a KNOWN_CHECKS member"
+  fi
+fi
+
+# ── Tripwire 2b — registry-sync DA16 extension: docs key list + TSV rows ──────
+# ENFORCEMENT_V2_PLAN Phase 7 (#1159) — now that the docs guide enumerates the
+# 37 hooks.<group>.<check> keys and the config-key-versions.tsv carries one row
+# per hooks.<group> + the cascade-v2 keys, extend the lib↔X equality to two more
+# copies. (a) docs key list: extract every hooks.<group>.<check> mention from
+# docs/guides/zskills-config.md and assert set-equality with _ZSK_ENF_KNOWN_CHECKS.
+# (b) TSV: assert presence of one row per hooks.<group> (7) + the 5 cascade-v2
+# keys. Anti-vacuous floors on both extractions. The TSV's introduced-version
+# COLUMN is unverifiable by construction (a freely-chosen YYYY.MM.N string) — we
+# assert ROW PRESENCE only, recorded here as accepted rather than pretending a
+# version-accuracy check exists.
+_ENF_DOCS="$REPO_ROOT/docs/guides/zskills-config.md"
+_ENF_TSV="$REPO_ROOT/skills/update-zskills/references/config-key-versions.tsv"
+if [ -z "$_ENF_PY" ]; then
+  fail "[enforcement] registry-sync DA16: no Python 3 interpreter" "python3"
+elif [ ! -f "$_ENF_LIB" ] || [ ! -f "$_ENF_DOCS" ] || [ ! -f "$_ENF_TSV" ]; then
+  fail "[enforcement] registry-sync DA16: lib/docs/TSV file missing" "$_ENF_LIB / $_ENF_DOCS / $_ENF_TSV"
+else
+  # (a) docs key list ↔ lib KNOWN_CHECKS set-equality.
+  _ENF_DOCSOUT=$(ENF_LIB="$_ENF_LIB" ENF_DOCS="$_ENF_DOCS" "$_ENF_PY" - <<'PYEOF'
+import os, re, sys
+GROUPS = ("git_destructive","fs_destructive","process_kill","git_discipline",
+          "main_protection","pr_discipline","tracking")
+lib = open(os.environ["ENF_LIB"]).read()
+m = re.search(r"_ZSK_ENF_KNOWN_CHECKS='(.*?)'", lib, re.S)
+lib_keys = set()
+if m:
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        gk = line.split(":", 1)[0]
+        if "." in gk:
+            lib_keys.add(gk)
+docs = open(os.environ["ENF_DOCS"]).read()
+# Match `<group>.<check>` mentions; only count those whose group is a known
+# enforcement group, so e.g. execution.* / testing.* mentions are excluded.
+docs_keys = set()
+for grp, chk in re.findall(r"\b([a-z_]+)\.([a-z0-9_]+)\b", docs):
+    if grp in GROUPS and chk != "enabled":  # `enabled` is the group ceiling, not a check
+        docs_keys.add("%s.%s" % (grp, chk))
+if len(lib_keys) < 30:
+    print("VACUOUS lib %d" % len(lib_keys)); sys.exit(2)
+if len(docs_keys) < 30:
+    print("VACUOUS docs %d" % len(docs_keys)); sys.exit(2)
+if lib_keys == docs_keys:
+    print("EQUAL %d" % len(lib_keys)); sys.exit(0)
+print("MISMATCH lib-only=%s docs-only=%s" % (sorted(lib_keys - docs_keys), sorted(docs_keys - lib_keys)))
+sys.exit(1)
+PYEOF
+)
+  _ENF_DOCSRC=$?
+  if [ "$_ENF_DOCSRC" -eq 0 ]; then
+    pass "[enforcement] registry-sync DA16: docs key list == lib KNOWN_CHECKS ($_ENF_DOCSOUT)"
+  else
+    fail "[enforcement] registry-sync DA16: docs key list != lib KNOWN_CHECKS ($_ENF_DOCSOUT)" "docs 37-key set-equality"
+  fi
+  # (b) TSV row presence: 7 hooks.<group> rows + the 5 cascade-v2 keys.
+  _ENF_TSVOUT=$(ENF_TSV="$_ENF_TSV" "$_ENF_PY" - <<'PYEOF'
+import os, sys
+GROUPS = ("git_destructive","fs_destructive","process_kill","git_discipline",
+          "main_protection","pr_discipline","tracking")
+CASCADE = ("execution.landing","execution.branch_prefix",
+           "execution.max_concurrent_worktrees","execution.main_protected",
+           "agents.min_model")
+rows = set()
+for line in open(os.environ["ENF_TSV"]):
+    line = line.rstrip("\n")
+    if not line or line.lstrip().startswith("#"):
+        continue
+    key = line.split("\t", 1)[0].strip()
+    if key:
+        rows.add(key)
+if len(rows) < 20:
+    print("VACUOUS tsv %d" % len(rows)); sys.exit(2)
+missing = []
+for g in GROUPS:
+    if ("hooks.%s" % g) not in rows:
+        missing.append("hooks.%s" % g)
+for k in CASCADE:
+    if k not in rows:
+        missing.append(k)
+if missing:
+    print("MISSING %s" % sorted(missing)); sys.exit(1)
+print("PRESENT 7-groups + 5-cascade (rows=%d)" % len(rows)); sys.exit(0)
+PYEOF
+)
+  _ENF_TSVRC=$?
+  if [ "$_ENF_TSVRC" -eq 0 ]; then
+    pass "[enforcement] registry-sync DA16: TSV has 7 hooks.<group> rows + 5 cascade-v2 keys ($_ENF_TSVOUT)"
+  else
+    fail "[enforcement] registry-sync DA16: TSV missing required rows ($_ENF_TSVOUT)" "7 group rows + 5 cascade keys"
   fi
 fi
 

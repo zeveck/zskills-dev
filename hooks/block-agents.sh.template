@@ -1,15 +1,21 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.2
 # Block Agent (subagent) dispatches that use a model below agents.min_model.
 # Registered under the Agent PreToolUse matcher in .claude/settings.json.
 #
-# CONFIG-CASCADE CARVE-OUT (INSTALL_REDESIGN Phase 5, deliberate): this
-# hook reads agents.min_model from the PROJECT config ONLY — it does NOT
-# participate in the project > user > built-ins cascade. This is a SAFETY
-# setting: letting a user-level ~/.claude/zskills-config.json silently
-# lower a project's model floor would invert the trust direction (a
-# per-user file overriding a per-repo discipline). The existing fail-open
-# defaults are unchanged.
+# CONFIG-CASCADE RAISE-ONLY FLOOR (CASCADE v2, ENFORCEMENT_V2 Phase 4 —
+# supersedes the INSTALL_REDESIGN Phase 5 PROJECT-ONLY carve-out): this hook
+# now reads agents.min_model from BOTH tiers — the PROJECT config and the
+# user ~/.claude/zskills-config.json — and merges RAISE-ONLY. Each tier's
+# `auto`/`inherit` is resolved to the session model FIRST (the existing
+# transcript machinery), then the effective floor = the HIGHER ordinal
+# (haiku=1, sonnet=2, opus=3, unknown=0/no-constraint); on a TIE the PROJECT
+# literal wins (its message names the project switch). The user tier can
+# only RAISE a project's floor, NEVER lower it — preserving the original
+# trust-direction guarantee (a per-user file overriding a per-repo discipline
+# was the rejected inversion; a per-user file RAISING protection is safe).
+# The existing fail-open defaults are unchanged; a malformed user file simply
+# contributes no floor.
 #
 # Ordinal: haiku=1, sonnet=2, opus=3, unknown=0 (always pass — future model families)
 #
@@ -37,54 +43,77 @@ if [[ "$INPUT" != *'"tool_name":"Agent"'* ]] && [[ "$INPUT" != *'"tool_name": "A
   exit 0
 fi
 
-# Read agents.min_model from config
+# Read agents.min_model from config — CASCADE v2 raise-only floor (Phase 4).
+# Both the PROJECT config and the user ~/.claude/zskills-config.json are read;
+# each tier's literal is resolved (auto/inherit → session model) and the
+# effective floor is the HIGHER ordinal, tie→project. The user tier can RAISE
+# the floor but never lower it. Read-root pin (R2-7): the project tier keeps
+# its existing $REPO_ROOT-based read; the user tier is the additive arm.
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 CONFIG_FILE="$REPO_ROOT/.claude/zskills-config.json"
+USER_CONFIG_FILE="${HOME:-}/.claude/zskills-config.json"
 
-MIN_MODEL=""
-if [ -f "$CONFIG_FILE" ]; then
-  # Extract agents.min_model — handles both compact and spaced JSON
-  MIN_MODEL=$(grep -o '"min_model"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" 2>/dev/null \
-    | head -1 | sed 's/.*"min_model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+# Extract the raw min_model literal from a single config file (empty if
+# absent/unreadable). Handles both compact and spaced JSON.
+extract_min_model() {
+  local file="$1"
+  [ -f "$file" ] || { printf ''; return 0; }
+  grep -o '"min_model"[[:space:]]*:[[:space:]]*"[^"]*"' "$file" 2>/dev/null \
+    | head -1 | sed 's/.*"min_model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
+PROJECT_MIN_MODEL=$(extract_min_model "$CONFIG_FILE")
+USER_MIN_MODEL=""
+# Per-tier fail-closed: the user-tier read is purely additive. A malformed /
+# unreadable / absent user file yields empty here, contributing no floor.
+if [ -n "${HOME:-}" ]; then
+  USER_MIN_MODEL=$(extract_min_model "$USER_CONFIG_FILE")
 fi
 
-# If min_model not configured, pass through — no enforcement
-if [ -z "$MIN_MODEL" ]; then
+# If NEITHER tier configures min_model, pass through — no enforcement.
+if [ -z "$PROJECT_MIN_MODEL" ] && [ -z "$USER_MIN_MODEL" ]; then
   exit 0
 fi
 
 # Sentinel resolution: "auto" / "inherit" → match the session's current model.
 # The PreToolUse hook's stdin JSON typically includes "transcript_path" pointing
 # at the session JSONL; each assistant message record there carries a "model"
-# field. We take the most recent, which is the current session model.
-if [[ "$MIN_MODEL" == "auto" || "$MIN_MODEL" == "inherit" ]]; then
-  TRANSCRIPT_PATH=""
-  if [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
-    TRANSCRIPT_PATH="${BASH_REMATCH[1]}"
+# field. We take the most recent, which is the current session model. Each tier
+# is resolved INDEPENDENTLY and BEFORE comparison, so a user's explicit floor
+# can never be silently lowered by a project "auto" in a low-model session.
+resolve_sentinel() {
+  local mm="$1"
+  if [[ "$mm" != "auto" && "$mm" != "inherit" ]]; then
+    printf '%s' "$mm"
+    return 0
   fi
-  RESOLVED=""
-  if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+  local transcript_path=""
+  if [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+    transcript_path="${BASH_REMATCH[1]}"
+  fi
+  local resolved=""
+  if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
     # Walk model entries; filter to ONLY known Claude families (haiku/sonnet/
     # opus); take the most recent. This rejects real-transcript artifacts
     # like `"model":"<synthetic>"` that appear in Claude Code transcripts and
     # would otherwise map to ordinal=0 (unknown), silently disabling the
     # floor for any `auto`-configured project.
-    RESOLVED=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRANSCRIPT_PATH" \
+    resolved=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$transcript_path" \
       | sed 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
       | grep -Ei '(haiku|sonnet|opus)' \
       | tail -1)
   fi
-  if [ -n "$RESOLVED" ]; then
-    MIN_MODEL="$RESOLVED"
+  if [ -n "$resolved" ]; then
+    printf '%s' "$resolved"
   else
     # Resolution failed (transcript missing, unreadable, no model field). Fall
     # back to "sonnet" as a conservative floor: still blocks Haiku (per the
     # "never Haiku" rule), allows sonnet+opus. Print a diagnostic to stderr so
     # the failure is visible — not silent.
-    echo "block-agents.sh: could not resolve 'auto' from transcript (${TRANSCRIPT_PATH:-<missing>}); falling back to sonnet floor" >&2
-    MIN_MODEL="claude-sonnet-4-6"
+    echo "block-agents.sh: could not resolve 'auto' from transcript (${transcript_path:-<missing>}); falling back to sonnet floor" >&2
+    printf 'claude-sonnet-4-6'
   fi
-fi
+}
 
 # Convert model string to ordinal
 # Ordinal: haiku=1, sonnet=2, opus=3, unknown=0 (always allow)
@@ -104,7 +133,24 @@ model_ordinal() {
   fi
 }
 
-MIN_ORDINAL=$(model_ordinal "$MIN_MODEL")
+# Resolve each tier's effective model (auto/inherit dynamic), then merge
+# raise-only: effective floor = higher ordinal; tie → project literal (its
+# message names the project switch). An absent tier contributes ordinal 0.
+PROJECT_RESOLVED=""
+USER_RESOLVED=""
+[ -n "$PROJECT_MIN_MODEL" ] && PROJECT_RESOLVED=$(resolve_sentinel "$PROJECT_MIN_MODEL")
+[ -n "$USER_MIN_MODEL" ] && USER_RESOLVED=$(resolve_sentinel "$USER_MIN_MODEL")
+PROJECT_ORD=$(model_ordinal "$PROJECT_RESOLVED")
+USER_ORD=$(model_ordinal "$USER_RESOLVED")
+
+if [ "$USER_ORD" -gt "$PROJECT_ORD" ]; then
+  MIN_MODEL="$USER_RESOLVED"
+  MIN_ORDINAL="$USER_ORD"
+else
+  # Includes the TIE case → project literal wins.
+  MIN_MODEL="$PROJECT_RESOLVED"
+  MIN_ORDINAL="$PROJECT_ORD"
+fi
 
 # Step 1: Try to extract model from tool_input JSON
 # The Agent tool input may include an optional "model" field
@@ -165,7 +211,7 @@ fi
 KNOWN_HAIKU_PINNED_SUBAGENTS=" Explore "
 if [ -z "$DISPATCH_MODEL" ]; then
   if [ -n "$SUBAGENT_TYPE" ] && [[ "$KNOWN_HAIKU_PINNED_SUBAGENTS" == *" $SUBAGENT_TYPE "* ]]; then
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"subagent_type %s is pinned to Haiku in the host environment but has no .claude/agents/%s.md override resolving it to a higher model. Either pass an explicit model: argument (e.g., model: \"opus\") or add an agent definition file. See CLAUDE.md `## Subagent Dispatch`."}}\n' \
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"subagent_type %s is pinned to Haiku in the host environment but has no .claude/agents/%s.md override resolving it to a higher model. Either pass an explicit model: argument (e.g., model: \"opus\") or add an agent definition file. See CLAUDE.md `## Subagent Dispatch`. [agents.min_model — set in .claude/zskills-config.json; raise-only across config tiers]"}}\n' \
       "$SUBAGENT_TYPE" "$SUBAGENT_TYPE"
     exit 0
   fi
@@ -181,7 +227,7 @@ fi
 
 # Block if dispatch model is below the configured minimum
 if [ "$DISPATCH_ORDINAL" -lt "$MIN_ORDINAL" ]; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"agents.min_model requires %s or higher (ordinal %d); got %s (ordinal %d). Update your Agent dispatch to use a higher model."}}\n' \
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"agents.min_model requires %s or higher (ordinal %d); got %s (ordinal %d). Update your Agent dispatch to use a higher model. [agents.min_model — set in .claude/zskills-config.json; raise-only across config tiers]"}}\n' \
     "$MIN_MODEL" "$MIN_ORDINAL" "$DISPATCH_MODEL" "$DISPATCH_ORDINAL"
   exit 0
 fi

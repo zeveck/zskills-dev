@@ -80,13 +80,39 @@ happen to merge the handful of string keys they read per *key* rather than
 per block, so a split can appear to work in some places and not others —
 treat per-key mixing as undefined and keep blocks whole.)
 
-**`execution.*` never cascades from the user tier.** `landing`,
-`main_protected`, `branch_prefix`, and the rest of the `execution` block
-describe the *project's* repo discipline, and the enforced safety keys
-(`execution.main_protected`, `agents.min_model` as read by their hooks) are
-read from the project config only — a user-level file silently weakening a
-project's protection would invert the trust direction. A user-tier
-`execution` block being ignored is documented behavior, not a bug.
+**What cascades from the user tier — and what does not.** Most of the
+`execution` block still describes the *project's* repo discipline and stays
+project-only. But the user tier has limited, scoped powers over exactly
+**five** keys:
+
+- **Three workflow keys cascade plainly** (project > user > built-ins):
+  `execution.landing`, `execution.branch_prefix`, and
+  `execution.max_concurrent_worktrees`. If the project sets one, the
+  project value wins; if the project leaves it unset, the user-tier value
+  applies; otherwise the built-in default does. (Example: a user-tier
+  `execution.landing: "pr"` is effective in any project that has no
+  `landing` of its own — your personal preference becomes the default
+  everywhere you haven't overridden it.)
+
+- **Two safety keys are RAISE-ONLY floors** — the user tier can only make
+  protection *stricter*, never looser: `execution.main_protected` (`true`
+  wins over `false` — a user `true` protects a project that set `false`,
+  but a user `false` can never unlock a project's `true`) and
+  `agents.min_model` (the stricter model tier wins; a tie resolves to the
+  project value). A user-level file that tried to *lower* a project's
+  protection silently does nothing — the floor holds. (Example: user
+  `main_protected: true` + project `false` → protected; user
+  `main_protected: false` + project `true` → still protected. User
+  `min_model: "opus"` + project `"sonnet"` → opus; user `"haiku"` +
+  project `"sonnet"` → sonnet, never lowered.)
+
+Everything else in `execution` (e.g. `worktree_root`, the `dashboard_*`
+keys) and `zskills_version` stay **project-only** — they are never read
+from the user tier. The raise-only floor design preserves the trust
+direction: a personal file can tighten a project's safety posture but can
+never weaken it, so sharing a machine never silently disarms a repo's
+protection. (A malformed user-tier file is ignored entirely — it never
+disarms a floor and never errors a hook or the resolver.)
 
 A user-tier file looks just like a project one (minus the `$schema` line,
 unless you point it at a local schema copy):
@@ -151,7 +177,7 @@ whether the project is PR-only or lets agents work on `main` directly.
 | Field | What it does | Default |
 |---|---|---|
 | `execution.landing` | Default landing mode when a skill isn't given a positional mode token. One of `cherry-pick`, `pr`, `direct`. | `cherry-pick` |
-| `execution.main_protected` | When `true`, agents cannot edit, commit, cherry-pick, or push to `main` — every change must go through a worktree and PR. **Enforced** by hooks, not just convention. | `false` |
+| `execution.main_protected` | When `true`, **autonomous/unwatched** sessions are blocked from editing, committing, cherry-picking, or pushing to `main` — forcing agents through the worktree/PR flow. **Attended/watched humans are unrestricted and silent, regardless of this value** (git plus Claude Code's permission prompt cover attended safety; `main_protected`'s real job is gating agents). A project that wants hard-deny-even-attended sets the relevant `hooks.main_protection.*` toggle to `"block"`. **Enforced** by hooks, not just convention. | `false` |
 | `execution.branch_prefix` | Prefix for PR-mode branch names (e.g. `feat/`, `agent/`, or `""`). | `feat/` |
 | `execution.worktree_root` | Parent directory for new worktrees (`<root>/<project>-<slug>`). Keeps ephemeral agent work off the repo tree. | `/tmp` |
 | `execution.max_concurrent_worktrees` | Cap on live worktrees during a `/fix-issues` sprint — prevents resource exhaustion in constrained containers. | `3` |
@@ -313,10 +339,199 @@ through the supported path. (A bare preset is a pure landing-mode switch; it
 touches nothing else.) For a fuller explanation of what each mode means, see
 [Landing mode](installing-zskills.md#landing-mode) in the install guide.
 
-When `main_protected` is `true`, the protection is **enforced**, not advisory:
-separate hooks deny edits, commits/cherry-picks, and pushes that target `main`.
-This is what forces every change through a worktree and a PR rather than letting
-an agent edit `main` in place.
+When `main_protected` is `true`, the protection is **enforced**, not advisory —
+but it gates **agents, not the watching human**. The exact contract:
+
+> **`main_protected:true` = block AUTONOMOUS/unwatched direct-to-main (force
+> agents through the worktree/PR flow); attended/watched humans are
+> UNRESTRICTED and SILENT, regardless of `main_protected`'s value.**
+
+So an autonomous/unwatched session is blocked from editing, committing,
+cherry-picking, or pushing directly to `main`, exactly as before; an
+attended human running the same operations sees **no warning and no block**
+even under `main_protected:true` (git and the permission-prompt layer cover
+attended safety). This is the [enforcement model](#hook-toggles--the-enforcement-model)
+applied to the main-protection checks. A project that wants the old
+hard-deny-even-attended behavior on any of these sets the matching
+`hooks.main_protection.*` toggle to `"block"`; one that wants the old
+warn-when-watched nag sets it to `"warn"`. When dirty `main` work needs to
+move off `main`, the sanctioned escape is the **move-to-worktree** helper
+(it carries the dirt into a worktree without `git stash`, which stays
+hard-denied).
+
+## Hook toggles & the enforcement model
+
+zskills ships a set of safety hooks that block dangerous operations. The
+whole system follows one teachable rule:
+
+> **Stay QUIET when watched (no nagging); BLOCK when no one's watching;
+> coaching is OPT-IN; projects/users override per-check.**
+
+**Zero-config quiet is the headline.** On a fresh install with **no config
+of any kind** (no project `.claude/zskills-config.json`, no
+`~/.claude/zskills-config.json`), an **attended** human is nagged about
+**nothing** on a routine git workflow — no warnings *and* no blocks on
+`git add .`, commit, push to a `main_protected:true` main, or editing
+`main` in place. The IDENTICAL commands in an **autonomous/unwatched**
+session are denied exactly as they always were. You do not write a single
+line of config to get the quiet attended experience — it is the shipped
+built-in default. (There is one named exception, the config-tamper gate;
+see below.)
+
+### Watched vs. autonomous
+
+A hook decides whether it is *watched* or *autonomous* from one signal
+(no TTY sniffing, no env vars, no transcript heuristics):
+
+- **Autonomous (enforce)** — the session is running in
+  `bypassPermissions` permission mode, OR the permission-mode field is
+  absent/unrecognized (fail-safe → enforce), OR a zskills pipeline is LIVE
+  (a `.zskills/tracked` marker at the effective local root or the main
+  root, or a fresh `.zskills/inflight/` sentinel). Demotable checks
+  **BLOCK** here.
+- **Watched** — everything else (a normal attended session in `default`,
+  `acceptEdits`, or `plan` permission mode with no live pipeline marker).
+  A demotable check is **SILENT by shipped default** — it does nothing (no
+  warning, no block; the permission prompt the session would normally get
+  still fires from the harness). Coaching is opt-in: set the per-check
+  toggle to `"warn"` to restore warn-when-watched.
+
+### The `hooks` block — per-check toggles (project-only)
+
+A `hooks` block in `.claude/zskills-config.json` tunes each check. It is
+**project-only** — there is no user-tier hook config, and no posture knob
+(the quiet posture is the built-in default, not a setting). The block has
+**seven groups**, named exactly:
+
+`git_destructive`, `fs_destructive`, `process_kill`, `git_discipline`,
+`main_protection`, `pr_discipline`, `tracking`.
+
+Each group has an `enabled` boolean (a **ceiling** — `enabled: false`
+turns the whole group off) plus per-check **tristate** toggles:
+
+- `"block"` — strict: deny even when watched.
+- `"warn"` — opt-in coaching: warn-when-watched (and still allow); the
+  warning reaches the human and the command runs.
+- `"off"` — silent: never warns, never blocks.
+
+An explicit per-check value is **always honored**, in both directions — a
+project that commits `reset_hard: "warn"` to its reviewed config made a
+deliberate choice, and a `"block"` on a normally-demotable check makes it
+strict. The class only sets the **unset** default:
+
+- **`hard`** checks → **block always** (the predicate never demotes them):
+  the destructive-git, filesystem-destructive, process-kill, and a few
+  discipline checks (`no_verify`, `stale_skill_version`, `cron_invalid`,
+  `direct_gh_pr`).
+- **`demotable`** checks → **silent-when-watched / block-when-autonomous**:
+  the git-discipline coaching checks, the main-protection checks, and the
+  tracking-discipline gates.
+
+**Fail-closed.** A missing config, an unparseable config, or an
+unavailable Python interpreter all fall back to the shipped defaults
+(hard checks block; demotable checks follow the watched/autonomous
+predicate). Nothing ever errors a hook.
+
+### Every message names its own switch
+
+Each warn/deny message ends with its toggle path and effective source, e.g.
+
+```
+[hooks.git_discipline.git_add_all — block|warn|off in .claude/zskills-config.json; currently: attended default (silent)]
+```
+
+so when a check fires you can see exactly which key to set to change it.
+
+### The config-tamper gate (the one named exception)
+
+Editing the **main** config's `hooks` block is itself gated by
+`hooks.main_protection.config_hooks_tamper`. It is the **one demotable
+check that is NOT silent when watched**: its shipped watched default is
+**`warn`** (visible, non-blocking), because disarming the protection
+system itself is durable and cross-session and must never happen
+invisibly. An autonomous session that rewrites the toggle file is
+**denied**; a watched session is **warned and allowed**. A project that
+finds even the warn too noisy sets `config_hooks_tamper` to `"off"`; one
+wanting hard-deny-even-attended sets `"block"`.
+
+The tamper gate has two self-protections: it is **exempt from its group's
+`enabled` ceiling** (a `main_protection.enabled: false` write cannot
+silently take the tamper check down with the group), and flipping the
+tamper toggle's own value is itself a tamper-gated write evaluated under
+the *pre-write* config (so an autonomous session cannot disarm it — the
+deny fires before the new value exists). **Threat model, stated honestly:**
+this gate is **anti-casual, not anti-adversarial**. Toggle reads are
+**main-root-only** — a worktree's checkout copy of the config is never
+consulted for toggles, so a worktree-local config edit cannot disarm a
+toggle — but a Bash-mediated write that never names the config file as a
+literal destination (variable destinations, programmatic writes) is not
+caught. Those writes stay visible in the session transcript, and project
+review owns the committed config.
+
+### Claim-gate caveat (two watched sessions)
+
+The tracking claim gates (`issue_unclaimed`, `plan_unclaimed`) are
+demotable: an autonomous session is denied a foreign-held work item, but
+two **concurrently watched** sessions are both silent by default, so the
+same item can be double-claimed (no single human sees both sides). A
+project that wants hard cross-session exclusion sets
+`hooks.tracking.issue_unclaimed` / `hooks.tracking.plan_unclaimed` to
+`"block"`.
+
+### Worked example
+
+```json
+"hooks": {
+  "git_destructive": { "enabled": true },
+  "git_discipline": {
+    "git_add_all": "warn",
+    "test_pipe": "off"
+  },
+  "main_protection": {
+    "push_to_main": "block",
+    "config_hooks_tamper": "warn"
+  },
+  "tracking": {
+    "issue_unclaimed": "block"
+  }
+}
+```
+
+This project opts into coaching on `git add .` (warn-when-watched), silences
+the test-pipe nag entirely, hard-denies pushes to `main` even for an
+attended human, keeps the tamper warn, and enforces strict cross-session
+issue claiming.
+
+### The 37 toggle keys
+
+Every check, by its full `hooks.<group>.<check>` path:
+
+- **`git_destructive`** — `git_destructive.stash_drop`,
+  `git_destructive.stash_write`, `git_destructive.checkout_discard`,
+  `git_destructive.restore_discard`, `git_destructive.switch_discard`,
+  `git_destructive.clean_force`, `git_destructive.reset_hard`
+- **`process_kill`** — `process_kill.kill_9`, `process_kill.fuser_k`,
+  `process_kill.xargs_kill`, `process_kill.kill_substitution`
+- **`fs_destructive`** — `fs_destructive.rm_recursive`,
+  `fs_destructive.find_delete`, `fs_destructive.rsync_delete`,
+  `fs_destructive.xargs_destructive`, `fs_destructive.zskills_tree_delete`,
+  `fs_destructive.clear_tracking_agent`
+- **`git_discipline`** — `git_discipline.git_add_all`,
+  `git_discipline.no_verify`, `git_discipline.logs_add_all`,
+  `git_discipline.test_pipe`, `git_discipline.full_cmd_unset`,
+  `git_discipline.tests_not_run`, `git_discipline.ui_unverified`,
+  `git_discipline.stale_skill_version`
+- **`main_protection`** — `main_protection.push_to_main`,
+  `main_protection.commit_on_main`, `main_protection.cherry_pick_on_main`,
+  `main_protection.main_edit`, `main_protection.config_hooks_tamper`
+- **`tracking`** — `tracking.requires_unfulfilled`,
+  `tracking.step_unverified`, `tracking.step_unreported`,
+  `tracking.issue_unclaimed`, `tracking.plan_unclaimed`,
+  `tracking.cron_invalid`
+- **`pr_discipline`** — `pr_discipline.direct_gh_pr`
+
+(The subagent-model floor is governed by `agents.min_model`, not a
+`hooks.*` key — see the [`agents`](#agents--subagent-floor) reference.)
 
 ## How values resolve
 
@@ -334,6 +549,17 @@ Every field first resolves through [the config cascade](#the-config-cascade)
 - **The enforced keys** (`main_protected`, `agents.min_model`,
   `logging.enabled`) are re-read from the config at runtime by their hooks, so
   editing them takes effect on the next tool call — no reinstall needed.
+
+The five cascade-v2 keys and the `hooks` block resolve specially:
+
+| Field | How it resolves |
+|---|---|
+| `execution.landing` | Plain cascade: project > user > built-in (`direct`/`cherry-pick` per lane). |
+| `execution.branch_prefix` | Plain cascade: project > user > built-in (`feat/`). |
+| `execution.max_concurrent_worktrees` | Plain cascade: project > user > built-in (`3`). |
+| `execution.main_protected` | **Raise-only floor** — `true` from *either* tier wins; the user tier can raise a project's `false` to protected but can never lower a project's `true`. Read at the local toplevel by the gating hooks. |
+| `agents.min_model` | **Raise-only floor** — the stricter model tier wins; a tie resolves to the project value. The user tier can raise the floor, never lower it. |
+| `hooks.*` (toggles) | **Project-only, main-root-only.** Read exclusively from `<main root>/.claude/zskills-config.json` (never a worktree copy, never the user tier) by the enforcement hooks; missing/unparseable → shipped defaults (fail-closed). See [Hook toggles & the enforcement model](#hook-toggles--the-enforcement-model). |
 
 ## Lane differences
 

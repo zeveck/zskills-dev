@@ -33,6 +33,11 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# DA9 (CASCADE v2, ENFORCEMENT_V2 Phase 4): sandbox HOME so a dev machine's
+# personal ~/.claude/zskills-config.json cannot flip this suite — its
+# "absent field → 3" case is exactly what a personal max_concurrent_worktrees
+# would break now that mcw is a plain-cascade workflow key.
+TMP_HOME="$(mktemp -d /tmp/zskills-worktree-cap-home-XXXXXX)"; export HOME="$TMP_HOME"
 SCHEMA="$REPO_ROOT/config/zskills-config.schema.json"
 HELPER="$REPO_ROOT/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MIRROR_HELPER="$REPO_ROOT/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

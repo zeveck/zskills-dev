@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.15+0a8beb"
+  version: "2026.06.15+9435c4"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -919,17 +919,29 @@ elif [[ "$REMAINING" =~ (^|[[:space:]])worktree($|[[:space:]]) ]]; then
   ARG_LANDING="worktree"
 fi
 
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4): the config-default arm now reads the
+# resolved $ZSKILLS_CFG_LANDING (project > user > empty) from the canonical
+# lane-portable resolver instead of an inline BASH_REMATCH read. NO behavior
+# change intended — the arg flag still takes precedence, /do's enum remap
+# (cherry-pick→worktree, unknown→direct) keeps mapping INTO this fence's own
+# LANDING_MODE local, and the empty-when-unset $ZSKILLS_CFG_LANDING preserves
+# /do's `direct` unset-default. The user-tier fill is the only added effect
+# (per #1159 scope).
 if [ -n "$ARG_LANDING" ]; then
   LANDING_MODE="$ARG_LANDING"
-elif [ -f "$CONFIG_FILE" ] && [[ $(cat "$CONFIG_FILE") =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
-  case "${BASH_REMATCH[1]}" in
+else
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  case "$ZSKILLS_CFG_LANDING" in
     pr)          LANDING_MODE="pr" ;;
     cherry-pick) LANDING_MODE="worktree" ;;
     direct)      LANDING_MODE="direct" ;;
+    "")          LANDING_MODE="direct" ;;  # unset in both tiers → /do default
     *)           LANDING_MODE="direct" ;;  # unknown → safe default
   esac
-else
-  LANDING_MODE="direct"
 fi
 
 # Guard: direct + main_protected is an error (same contract as /run-plan

@@ -14,6 +14,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# DA9 (CASCADE v2, ENFORCEMENT_V2 Phase 4): sandbox HOME BEFORE sourcing the
+# harness (the harness honours a pre-set TMP_HOME) so a dev machine's personal
+# ~/.claude/zskills-config.json cannot flip the now-two-tier main_protected
+# read these cases assert.
+TMP_HOME="$(mktemp -d /tmp/zskills-main-protected-home-XXXXXX)"; export HOME="$TMP_HOME"
+printf '[user]\n\tname = zskills-test\n\temail = zskills-test@example.com\n[safe]\n\tdirectory = *\n' > "$TMP_HOME/.gitconfig"
 HOOK="$REPO_ROOT/hooks/block-unsafe-generic.sh"
 
 # shellcheck source=tests/lib/hooks-harness.sh

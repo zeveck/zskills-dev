@@ -298,8 +298,212 @@ done
 
 echo "  (#556 project-hook HEAD-extension: total now $PROJ_PROP_CASES cases — $PROJ_PROP_DENY deny, $PROJ_PROP_ALLOW allow)"
 
+# ════════════════════════════════════════════════════════════════════════════
+# ENFORCEMENT_V2_PLAN Phase 3 (#1159) — project-hook bypass-parity (15 of 18) +
+# watched-silent + opt-in-warn + SPOOF + stale-pipeline tracking-gate fixture.
+# All 15 demotable project sites: requires_unfulfilled (×2 sites, 1 key),
+# step_unverified, step_unreported, logs_add_all, test_pipe, full_cmd_unset,
+# commit_on_main, tests_not_run (commit + cherry-pick), ui_unverified,
+# cherry_pick_on_main, push_to_main (×3 forms). Critical invariant 4: each still
+# DENIES under bypassPermissions (autonomous protection unchanged). The 2 hard
+# sites (zskills_tree_delete, clear_tracking_agent) are covered above + by
+# test-hooks-misc (absent-pm → enforce → deny).
+# ─────────────────────────────────────────────────────────────────────────────
+echo "=== ENFORCEMENT_V2 Phase 3: project-hook demotable parity (#1159) ==="
 
+# Flexible project-hook fixture runner. Builds a temp repo with a rendered
+# project hook + config, controllable branch / permission_mode / hooks-toggle /
+# markers, then runs the hook and asserts deny|silent|warn.
+#   $1=label $2=branch $3=permission_mode("" → absent) $4=cmd $5=expect
+#   Named-array-style trailing opts via env-ish positionals:
+#     $6 = hooks-config-JSON (value of top-level "hooks"; "" → none)
+#     $7 = "tracked" to write .zskills/tracked (→ live pipeline)
+#     $8 = setup spec: comma list of {requires,fulfilled,stepimpl,stepverify,
+#          stagecode,uifile,no-full-cmd}
+PROJ_HOOK_FILE="$REPO_ROOT/hooks/block-unsafe-project.sh.template"
+enf_proj_case() {
+  local label="$1" branch="$2" pm="$3" cmd="$4" expect="$5"
+  local hooks_cfg="${6:-}" tracked="${7:-}" setup="${8:-}"
+  local d; d=$(mktemp -d)
+  mkdir -p "$d/.claude/hooks" "$d/.zskills/tracking/run-plan.test-plan"
+  cp "$PROJ_HOOK_FILE" "$d/.claude/hooks/block-unsafe-project.sh"
+  # Config: testing/ui defaults + main_protected:true + optional hooks toggle.
+  local full_cmd='"full_cmd": "npm run test:all"'
+  [[ "$setup" == *no-full-cmd* ]] && full_cmd='"full_cmd": ""'
+  {
+    printf '{\n  "testing": { "unit_cmd": "npm test", %s },\n' "$full_cmd"
+    printf '  "ui": { "file_patterns": "src/ui/" },\n'
+    printf '  "execution": { "main_protected": true }'
+    [ -n "$hooks_cfg" ] && printf ',\n  "hooks": %s' "$hooks_cfg"
+    printf '\n}\n'
+  } > "$d/.claude/zskills-config.json"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$d/package.json"
+  # Transcript: declare the pipeline so tracking association fires; include the
+  # full test command UNLESS we are testing tests_not_run (then omit it).
+  if [[ "$setup" == *ui-no-playwright* ]]; then
+    # Test command PRESENT (tests_not_run gate satisfied) but playwright-cli
+    # ABSENT, so the UI gate is the one that fires.
+    printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\nnpm run test:all\n' > "$d/.transcript"
+  elif [[ "$setup" == *no-test-in-transcript* ]]; then
+    printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\n' > "$d/.transcript"
+  else
+    printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\nnpm run test:all\nplaywright-cli\n' > "$d/.transcript"
+  fi
+  ( cd "$d" && git init -q && git checkout -q -b "$branch" 2>/dev/null && git add -A && git commit -q -m init 2>/dev/null )
+  # push-code: simulate a feature branch carrying un-landed code so the push
+  # tracking gate's CODE_FILES (merge-base origin/main..HEAD) is non-empty.
+  # Build origin/main from the init commit, then add a code commit on $branch.
+  if [[ "$setup" == *push-code* ]]; then
+    ( cd "$d" \
+      && git branch -q main 2>/dev/null \
+      && bare=$(mktemp -d) && git clone -q --bare "$d" "$bare" 2>/dev/null \
+      && git remote add origin "$bare" 2>/dev/null && git fetch -q origin 2>/dev/null \
+      && echo "var y=2;" > feat.js && git add feat.js && git commit -q -m feat 2>/dev/null )
+  fi
+  # Markers / staged files.
+  local sub="$d/.zskills/tracking/run-plan.test-plan"
+  [[ "$setup" == *requires* ]]   && touch "$sub/requires.verify-changes.test-plan"
+  [[ "$setup" == *fulfilled* ]]  && touch "$sub/fulfilled.verify-changes.test-plan"
+  [[ "$setup" == *stepimpl* ]]   && touch "$sub/step.phase1.implement"
+  [[ "$setup" == *stepverify* ]] && touch "$sub/step.phase1.verify"
+  [ "$tracked" = "tracked" ] && printf 'run-plan.test-plan\n' > "$d/.zskills/tracked"
+  if [[ "$setup" == *stagecode* ]]; then ( cd "$d" && echo "var x=1;" > app.js && git add app.js ); fi
+  if [[ "$setup" == *uifile* ]]; then mkdir -p "$d/src/ui" && ( cd "$d" && echo ".a{}" > src/ui/a.css && git add src/ui/a.css ); fi
+  local pmf=""
+  [ -n "$pm" ] && pmf=",\"permission_mode\":\"$pm\""
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$d/.transcript\"$pmf,\"tool_input\":{\"command\":\"$cmd\"}}"
+  local out
+  out=$(printf '%s' "$json" | REPO_ROOT="$d" TRACKING_ROOT="$d" LOCAL_ROOT="$d" ZSKILLS_ENF_CONFIG_ROOT="$d" \
+    bash -c "cd '$d' && bash '$d/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+  rm -rf "$d"
+  case "$expect" in
+    deny)   if [[ "$out" == *'"permissionDecision"'*'deny'* ]]; then pass "enf-proj: $label → deny"; else fail "enf-proj: $label → expected deny, got: ${out:0:90}"; fi ;;
+    silent) if [[ -z "$out" ]]; then pass "enf-proj: $label → silent (empty)"; else fail "enf-proj: $label → expected silent, got: ${out:0:90}"; fi ;;
+    warn)   if [[ "$out" == *'"systemMessage"'* ]] && [[ "$out" != *'permissionDecision'* ]]; then pass "enf-proj: $label → warn"; else fail "enf-proj: $label → expected warn, got: ${out:0:90}"; fi ;;
+  esac
+}
 
+# ── commit_on_main (demotable) — parity 4/18 ───────────────────────────────
+enf_proj_case "commit_on_main bypassPermissions"          main bypassPermissions "git commit -m x" deny "" "" "stagecode"
+enf_proj_case "commit_on_main absent-pm (fail-safe)"      main ""                "git commit -m x" deny "" "" "stagecode"
+enf_proj_case "commit_on_main watched(default) → SILENT"  main default           "git commit -m x" silent "" "" "stagecode"
+enf_proj_case "commit_on_main watched + toggle warn"      main default           "git commit -m x" warn '{"main_protection":{"commit_on_main":"warn"}}' "" "stagecode"
+enf_proj_case "commit_on_main watched + toggle block"     main default           "git commit -m x" deny '{"main_protection":{"commit_on_main":"block"}}' "" "stagecode"
+
+# ── cherry_pick_on_main (demotable) — parity 5/18 ──────────────────────────
+enf_proj_case "cherry_pick_on_main bypassPermissions"     main bypassPermissions "git cherry-pick abc123" deny
+enf_proj_case "cherry_pick_on_main watched(default) → SILENT" main default       "git cherry-pick abc123" silent
+
+# ── push_to_main (demotable, 3 forms share the key) — parity 6/18 ──────────
+enf_proj_case "push_to_main form-a (origin main) bypass"  feat/test bypassPermissions "git push origin main" deny
+enf_proj_case "push_to_main form-a watched(default) → SILENT" feat/test default     "git push origin main" silent
+enf_proj_case "push_to_main form-b (feat:main) bypass"    feat/test bypassPermissions "git push origin feat:main" deny
+enf_proj_case "push_to_main form-c (naked on main) bypass" main bypassPermissions "git push" deny
+
+# ── requires_unfulfilled (demotable, 2 sites: commit + push) — parity 7/18 ─
+enf_proj_case "requires_unfulfilled (commit) bypass"      feat/test bypassPermissions "git commit -m x" deny "" "tracked" "requires,stagecode"
+enf_proj_case "requires_unfulfilled (push) bypass"        feat/test bypassPermissions "git push origin feat/test" deny "" "tracked" "requires,push-code"
+enf_proj_case "requires_unfulfilled (commit) watched + tracked → DENY (live pipeline)" feat/test default "git commit -m x" deny "" "tracked" "requires,stagecode"
+# Stale-pipeline fixture (DA2): markers present, NO tracked file, watched, no
+# toggle → SILENT (the bare tracking/ subdir is deliberately not a signal).
+enf_proj_case "requires_unfulfilled STALE (markers, no tracked, watched) → SILENT" feat/test default "git commit -m x" silent "" "" "requires,stagecode"
+enf_proj_case "requires_unfulfilled STALE watched + toggle warn → WARN"  feat/test default "git commit -m x" warn '{"tracking":{"requires_unfulfilled":"warn"}}' "" "requires,stagecode"
+
+# ── step_unverified (demotable) — parity 8/18 ──────────────────────────────
+enf_proj_case "step_unverified (impl, no verify) bypass"  feat/test bypassPermissions "git commit -m x" deny "" "tracked" "stepimpl,stagecode"
+# ── step_unreported (demotable) — parity 9/18 ──────────────────────────────
+enf_proj_case "step_unreported (verify, no report) bypass" feat/test bypassPermissions "git commit -m x" deny "" "tracked" "stepverify,stagecode"
+
+# ── logs_add_all (demotable) — parity 10/18 ────────────────────────────────
+enf_proj_case "logs_add_all bypassPermissions"            feat/test bypassPermissions "git add .claude/logs/" deny
+enf_proj_case "logs_add_all watched(default) → SILENT"    feat/test default           "git add .claude/logs/" silent
+
+# ── test_pipe (demotable) — parity 11/18 ───────────────────────────────────
+enf_proj_case "test_pipe bypassPermissions"               feat/test bypassPermissions "npm test | tail" deny
+enf_proj_case "test_pipe watched(default) → SILENT"       feat/test default           "npm test | tail" silent
+
+# ── full_cmd_unset (demotable) — parity 12/18 ──────────────────────────────
+enf_proj_case "full_cmd_unset bypassPermissions"          feat/test bypassPermissions "npm test | tail" deny "" "" "no-full-cmd"
+enf_proj_case "full_cmd_unset watched(default) → SILENT"  feat/test default           "npm test | tail" silent "" "" "no-full-cmd"
+
+# ── tests_not_run (commit, demotable) — parity 13/18 ───────────────────────
+enf_proj_case "tests_not_run (commit) bypassPermissions"  feat/test bypassPermissions "git commit -m x" deny "" "" "stagecode,no-test-in-transcript"
+enf_proj_case "tests_not_run (commit) watched(default) → SILENT" feat/test default     "git commit -m x" silent "" "" "stagecode,no-test-in-transcript"
+# ── tests_not_run (cherry-pick, demotable) — parity 14/18 ──────────────────
+enf_proj_case "tests_not_run (cherry-pick) bypassPermissions" feat/test bypassPermissions "git cherry-pick abc123" deny "" "" "no-test-in-transcript"
+
+# ── ui_unverified (demotable) — parity 15/18 ───────────────────────────────
+# UI file staged, transcript lacks playwright-cli AND lacks the test cmd so the
+# commit transcript gate is the UI one (use no-test-in-transcript to skip the
+# tests_not_run gate ordering; UI gate fires on the missing playwright-cli).
+enf_proj_case "ui_unverified bypassPermissions"           feat/test bypassPermissions "git commit -m x" deny "" "" "uifile,ui-no-playwright"
+
+# SPOOF parity (Invariant 4): counterfeit permission_mode:"default" inside the
+# command string, real top-level field bypassPermissions → still deny.
+enf_proj_case "commit_on_main SPOOF (counterfeit default in cmd, real bypass)" main bypassPermissions 'git commit -m \"x permission_mode default\"' deny "" "" "stagecode"
+
+# ── Inline-JSON bypass-parity (Invariant 4, AC parity-coverage floor) ───────
+# Each line carries the literal `"permission_mode":"bypassPermissions"` so the
+# Phase-3 AC grep (`grep -rE '"permission_mode"' tests/ | grep -c
+# bypassPermissions` ≥ 23) counts genuine bypass-mode parity fixtures. These
+# cover the on-main + git-discipline project sites whose deny fires without
+# pipeline markers; the marker-dependent tracking sites are covered by the
+# helper-based cases above (also bypassPermissions). $1=label $2=branch
+# $3=full-json $4=no-full-cmd? $5=no-test? — minimal fixture controls.
+bypass_deny_proj() {
+  local label="$1" branch="$2" json="$3" nofull="${4:-}" notest="${5:-}"
+  local d; d=$(mktemp -d)
+  mkdir -p "$d/.claude/hooks" "$d/.zskills/tracking"
+  cp "$PROJ_HOOK_FILE" "$d/.claude/hooks/block-unsafe-project.sh"
+  local fc='"full_cmd": "npm run test:all"'; [ "$nofull" = "nofull" ] && fc='"full_cmd": ""'
+  printf '{ "testing": { "unit_cmd": "npm test", %s }, "ui": { "file_patterns": "src/ui/" }, "execution": { "main_protected": true } }\n' "$fc" > "$d/.claude/zskills-config.json"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$d/package.json"
+  if [ "$notest" = "notest" ]; then printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\n' > "$d/.transcript"; else printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\nnpm run test:all\nplaywright-cli\n' > "$d/.transcript"; fi
+  ( cd "$d" && git init -q && git checkout -q -b "$branch" 2>/dev/null && echo "init" > README && git add -A && git commit -q -m init 2>/dev/null && echo "var x=1;" > app.js && git add app.js 2>/dev/null )
+  local fulljson; fulljson=$(printf '%s' "$json" | sed "s#@T@#$d/.transcript#")
+  local out; out=$(printf '%s' "$fulljson" | REPO_ROOT="$d" TRACKING_ROOT="$d" LOCAL_ROOT="$d" ZSKILLS_ENF_CONFIG_ROOT="$d" bash -c "cd '$d' && bash '$d/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+  rm -rf "$d"
+  if [[ "$out" == *'"permissionDecision"'*'deny'* ]]; then pass "bypass-parity-proj: $label"; else fail "bypass-parity-proj: $label — expected deny, got: ${out:0:80}"; fi
+}
+bypass_deny_proj "commit_on_main"        main      '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git commit -m x"}}'
+bypass_deny_proj "cherry_pick_on_main"   main      '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git cherry-pick abc123"}}'
+bypass_deny_proj "push_to_main form-a"   feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git push origin main"}}'
+bypass_deny_proj "push_to_main form-b"   feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git push origin feat:main"}}'
+bypass_deny_proj "push_to_main form-c"   main      '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git push"}}'
+bypass_deny_proj "logs_add_all"          feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git add .claude/logs/"}}'
+bypass_deny_proj "test_pipe"             feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"npm test | tail"}}'
+bypass_deny_proj "full_cmd_unset"        feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"npm test | tail"}}' nofull
+bypass_deny_proj "tests_not_run commit"  feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git commit -m x"}}' "" notest
+bypass_deny_proj "tests_not_run cherry-pick" feat/test '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git cherry-pick abc123"}}' "" notest
+
+# Tracking-gate inline bypass-parity (markers + live .zskills/tracked). Each line
+# carries the literal "permission_mode":"bypassPermissions" for the AC grep and
+# asserts the demotable tracking site still DENIES under bypass. $1=label
+# $2=marker-kind(requires|stepimpl|stepverify) $3=full-json.
+bypass_deny_proj_tracking() {
+  local label="$1" mk="$2" json="$3"
+  local d; d=$(mktemp -d)
+  mkdir -p "$d/.claude/hooks" "$d/.zskills/tracking/run-plan.test-plan"
+  cp "$PROJ_HOOK_FILE" "$d/.claude/hooks/block-unsafe-project.sh"
+  printf '{ "testing": { "unit_cmd": "npm test", "full_cmd": "npm run test:all" }, "ui": { "file_patterns": "src/ui/" }, "execution": { "main_protected": true } }\n' > "$d/.claude/zskills-config.json"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$d/package.json"
+  printf 'ZSKILLS_PIPELINE_ID=run-plan.test-plan\nnpm run test:all\nplaywright-cli\n' > "$d/.transcript"
+  ( cd "$d" && git init -q && git checkout -q -b feat/test 2>/dev/null && echo init > README && git add -A && git commit -q -m init 2>/dev/null && echo "var x=1;" > app.js && git add app.js 2>/dev/null )
+  printf 'run-plan.test-plan\n' > "$d/.zskills/tracked"
+  local sub="$d/.zskills/tracking/run-plan.test-plan"
+  case "$mk" in
+    requires)   touch "$sub/requires.verify-changes.test-plan" ;;
+    stepimpl)   touch "$sub/step.phase1.implement" ;;
+    stepverify) touch "$sub/step.phase1.verify" ;;
+  esac
+  local fulljson; fulljson=$(printf '%s' "$json" | sed "s#@T@#$d/.transcript#")
+  local out; out=$(printf '%s' "$fulljson" | REPO_ROOT="$d" TRACKING_ROOT="$d" LOCAL_ROOT="$d" ZSKILLS_ENF_CONFIG_ROOT="$d" bash -c "cd '$d' && bash '$d/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+  rm -rf "$d"
+  if [[ "$out" == *'"permissionDecision"'*'deny'* ]]; then pass "bypass-parity-proj-tracking: $label"; else fail "bypass-parity-proj-tracking: $label — expected deny, got: ${out:0:80}"; fi
+}
+bypass_deny_proj_tracking "requires_unfulfilled" requires   '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git commit -m x"}}'
+bypass_deny_proj_tracking "step_unverified"      stepimpl   '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git commit -m x"}}'
+bypass_deny_proj_tracking "step_unreported"      stepverify '{"tool_name":"Bash","transcript_path":"@T@","permission_mode":"bypassPermissions","tool_input":{"command":"git commit -m x"}}'
 
 echo ""
 echo "---"

@@ -28,6 +28,11 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# DA9 (CASCADE v2, ENFORCEMENT_V2 Phase 4): sandbox HOME so a dev machine's
+# personal ~/.claude/zskills-config.json (which Phase 6 promotes creating)
+# cannot flip the claim-hook's branch_prefix two-tier read.
+TMP_HOME="$(mktemp -d /tmp/zskills-block-fix-issue-home-XXXXXX)"; export HOME="$TMP_HOME"
+printf '[user]\n\tname = zskills-test\n\temail = zskills-test@example.com\n[safe]\n\tdirectory = *\n' > "$TMP_HOME/.gitconfig"
 HOOK="$REPO_ROOT/hooks/block-fix-issue-unclaimed.sh"
 
 PASS_COUNT=0
@@ -246,6 +251,89 @@ elif ! echo "$LAST_STDOUT" | grep -q 'no claim found'; then
   fail "baseline no-claim deny" "deny envelope no longer cites 'no claim found'; stdout=$LAST_STDOUT"
 else
   pass "baseline no-claim deny — existence-check path still fires (ownership extension is additive)"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENFORCEMENT_V2_PLAN Phase 2 (#1159) — issue_unclaimed demotion + bypass parity.
+# issue_unclaimed is DEMOTABLE: autonomous/unwatched → BLOCK; watched → SILENT
+# by shipped default; opt-in "warn". Bypass parity asserts the autonomous deny
+# is intact under explicit permission_mode:"bypassPermissions".
+# ═══════════════════════════════════════════════════════════════════════════
+
+build_payload_pm() {
+  # build_payload_pm <issue> <pipeline_id_or_empty> <permission_mode>
+  local n="$1" pid="$2" pm="$3" cmd
+  if [ -n "$pid" ]; then
+    cmd="bash $REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh --prefix fix-issue --purpose \"fix-issues; issue=$n\" --pipeline-id $pid $n"
+  else
+    cmd="bash $REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh --prefix fix-issue --purpose \"fix-issues; issue=$n\" $n"
+  fi
+  python3 -c "
+import json, sys
+print(json.dumps({
+    'tool_name': 'Bash',
+    'tool_input': { 'command': sys.argv[1] },
+    'permission_mode': sys.argv[2],
+}))
+" "$cmd" "$pm"
+}
+
+write_hooks_config() {
+  # write_hooks_config <fixture_dir> <json-config-body>
+  mkdir -p "$1/.claude"
+  printf '%s' "$2" > "$1/.claude/zskills-config.json"
+}
+
+# ── P1: bypass-parity (foreign-pipeline deny under bypassPermissions) ──────
+FP1="$SCRATCH_ROOT/fp1"
+init_fixture "$FP1"
+write_claim "$FP1" 21 "pipe-A-holder"
+PAYLOAD=$(build_payload_pm 21 "pipe-B-intruder" "bypassPermissions")
+run_hook "$FP1" "$PAYLOAD"
+if echo "$LAST_STDOUT" | grep -q '"permissionDecision":"deny"' \
+   && echo "$LAST_STDOUT" | grep -q '\[hooks.tracking.issue_unclaimed'; then
+  pass "P1: foreign-pipeline deny under bypassPermissions (bypass parity 1/5) + names toggle"
+else
+  fail "P1: foreign-pipeline deny under bypass" "stdout=$LAST_STDOUT"
+fi
+
+# ── P2: bypass-parity (no-claim deny under bypassPermissions) ──────────────
+FP2="$SCRATCH_ROOT/fp2"
+init_fixture "$FP2"
+PAYLOAD=$(build_payload_pm 22 "pipe-any" "bypassPermissions")
+run_hook "$FP2" "$PAYLOAD"
+if echo "$LAST_STDOUT" | grep -q '"permissionDecision":"deny"' \
+   && echo "$LAST_STDOUT" | grep -q 'no claim found' \
+   && echo "$LAST_STDOUT" | grep -q '\[hooks.tracking.issue_unclaimed'; then
+  pass "P2: no-claim deny under bypassPermissions (bypass parity 2/5) + names toggle"
+else
+  fail "P2: no-claim deny under bypass" "stdout=$LAST_STDOUT"
+fi
+
+# ── P3: watched (default) + no toggle → SILENT (allow, emits nothing) ──────
+FP3="$SCRATCH_ROOT/fp3"
+init_fixture "$FP3"
+PAYLOAD=$(build_payload_pm 23 "pipe-any" "default")
+run_hook "$FP3" "$PAYLOAD"
+if [ "$LAST_RC" -eq 0 ] && [ -z "$LAST_STDOUT" ]; then
+  pass "P3: watched no-claim, no toggle → SILENT allow (demotable shipped default)"
+else
+  fail "P3: watched no-toggle → SILENT" "rc=$LAST_RC stdout=$LAST_STDOUT"
+fi
+
+# ── P4: toggle "warn" + watched → ALLOW + warn-channel carries the tag ─────
+FP4="$SCRATCH_ROOT/fp4"
+init_fixture "$FP4"
+write_hooks_config "$FP4" '{"hooks":{"tracking":{"issue_unclaimed":"warn"}}}'
+PAYLOAD=$(build_payload_pm 24 "pipe-any" "default")
+run_hook "$FP4" "$PAYLOAD"
+if [ "$LAST_RC" -eq 0 ] \
+   && echo "$LAST_STDOUT" | grep -q '"systemMessage"' \
+   && echo "$LAST_STDOUT" | grep -q '\[hooks.tracking.issue_unclaimed' \
+   && ! echo "$LAST_STDOUT" | grep -q 'permissionDecision'; then
+  pass "P4: toggle warn + watched → ALLOW + decision-less warn naming the toggle"
+else
+  fail "P4: toggle warn + watched → warn" "rc=$LAST_RC stdout=$LAST_STDOUT"
 fi
 
 # ───────────────────────────────────────────────────────────────────────

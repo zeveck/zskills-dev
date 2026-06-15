@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [locked-main-pr|direct|cherry-pick]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.12+a14fcd"
+  version: "2026.06.15+9c2175"
 ---
 
 # Update Z Skills Infrastructure
@@ -446,6 +446,17 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
    ```bash
    CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
+   # CASCADE v2 (ENFORCEMENT_V2 Phase 4): execution.landing and
+   # execution.branch_prefix are plain-cascade workflow keys — source the
+   # canonical lane-portable resolver and read $ZSKILLS_CFG_LANDING /
+   # $ZSKILLS_CFG_BRANCH_PREFIX (project > user > empty) instead of the inline
+   # BASH_REMATCH reads (below). The remaining keys keep the documented
+   # scoped-extraction form (this fence demonstrates that canonical form).
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # Top-level string (no parent — direct extraction is safe):
    if [[ "$CONFIG_CONTENT" =~ \"project_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      PROJECT_NAME="${BASH_REMATCH[1]}"
@@ -487,14 +498,14 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      MAIN_PROTECTED="${BASH_REMATCH[1]}"
    fi
-   # parent: execution  (landing mode)
-   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-     LANDING_MODE="${BASH_REMATCH[1]}"
-   fi
-   # parent: execution  (branch prefix)
-   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-     BRANCH_PREFIX="${BASH_REMATCH[1]}"
-   fi
+   # parent: execution  (landing mode) — CASCADE v2 (Phase 4): read the
+   # resolved cascade value ($ZSKILLS_CFG_LANDING, project > user > empty)
+   # instead of an inline BASH_REMATCH read.
+   LANDING_MODE="$ZSKILLS_CFG_LANDING"
+   # parent: execution  (branch prefix) — CASCADE v2 (Phase 4): read the
+   # resolved cascade value ($ZSKILLS_CFG_BRANCH_PREFIX, project > user >
+   # empty) instead of an inline BASH_REMATCH read.
+   BRANCH_PREFIX="$ZSKILLS_CFG_BRANCH_PREFIX"
    # parent: ci  (boolean)
    if [[ "$CONFIG_CONTENT" =~ \"ci\"[[:space:]]*:[[:space:]]*\{[^}]*\"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      CI_AUTO_FIX="${BASH_REMATCH[1]}"
@@ -1190,10 +1201,14 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
       review it, especially `testing.unit_cmd`/`full_cmd` and
       `execution.landing`."* Keep it on any answer — init NEVER clobbers
       and NEVER deletes a config.
-    - **No config exists:** offer creation — *"Want a project config?
-      Without one, zskills runs on built-in defaults (landing=direct,
-      timezone=UTC); a config lets you set test commands, landing mode,
-      etc."* On **decline**, write NOTHING. On **accept**, seed from the
+    - **No config exists** (AND no project decline marker —
+      `zskills_config_declined project "$CLAUDE_PROJECT_DIR"` is false):
+      offer creation — *"Want a project config? Without one, zskills runs on
+      built-in defaults (landing=direct, timezone=UTC); a config lets you
+      set test commands, landing mode, etc."* On **decline**, write the
+      PROJECT decline marker so the update arm stops re-asking
+      (`zskills_write_config_declined project "$CLAUDE_PROJECT_DIR"`) — no
+      config, no schema. On **accept**, seed from the
       canonical defaults artifact (never a re-typed dict), atomically and
       never-clobber, then copy the schema sibling and stamp
       `zskills_version` (the Step F.5-region scripts) ONLY when the config
@@ -1244,6 +1259,93 @@ PY
             || echo "WARN: failed to stamp zskills_version into config" >&2
         fi
       fi
+      ```
+
+  - **A3.5 — optional PERSONAL (user-tier) config offer (ENFORCEMENT_V2
+    Phase 6, #1160).** A clearly-separated SECOND question, asked AFTER the
+    A3 project-config question, offering a user-global personal config at
+    `~/.claude/zskills-config.json`. Non-interactive contexts skip it (same
+    discipline as A3 — write nothing). The personal question fires ONLY
+    when `~/.claude/zskills-config.json` is ABSENT **and** no personal
+    decline marker exists (`zskills_config_declined personal "$HOME"` is
+    false) — an existing user file means the consumer already chose, and a
+    decline must not re-ask in ANY project (the marker is user-global; see
+    A3.5 decline below). Phrase it as plainly separate from the project
+    question, e.g.:
+
+    > *"Separately — a PERSONAL config (`~/.claude/zskills-config.json`)
+    > applies across ALL your projects. Under the v2 contract: unset keys
+    > track shipped defaults; workflow keys (`execution.landing`,
+    > `execution.branch_prefix`, `execution.max_concurrent_worktrees`)
+    > apply wherever a project does not override them; safety keys
+    > (`execution.main_protected`, `agents.min_model`) are raise-only floors
+    > that can raise a project's protection but never lower it. Want one?"*
+
+    - **Accept** → write an EMPTY scaffold (the `_comment` documents the v2
+      contract; NEVER seeded with values) plus a refresh-on-update copy of
+      the shipped schema. The scaffold is **never-clobber** (#1079); the
+      schema sibling is **refresh-on-update** (rewritten whenever it differs
+      from the shipped schema — it is a generated copy, and with
+      `additionalProperties: false` in the hooks block a stale sibling would
+      flag future VALID keys as editor errors):
+
+      ```bash
+      # PERSONAL config accept (#1160). The scaffold is EMPTY BY DESIGN —
+      # NEVER seed values here. A seeded literal freezes today's default and
+      # silently stops tracking shipped-default changes (the FREEZE TRAP):
+      # an unset key tracks the evolving shipped default; a seeded key does
+      # not. The only config zskills ever pre-fills with values is the
+      # PROJECT seed (A3) — the personal scaffold stays empty.
+      #
+      # The mv destination is a VARIABLE ($ZS_USER_CONFIG), NOT the literal
+      # filename — this shape is LOAD-BEARING: the Phase 3 row-50 tamper
+      # check (config_hooks_tamper) is destination-anchored on the literal
+      # `.claude/zskills-config.json` string, so a literal-destination write
+      # here would warn/deny on zskills' OWN sanctioned writer. Keep it
+      # variable (DA4).
+      ZS_USER_DIR="$HOME/.claude"
+      ZS_USER_CONFIG="$ZS_USER_DIR/zskills-config.json"
+      ZS_USER_SCHEMA="$ZS_USER_DIR/zskills-config.schema.json"
+      mkdir -p "$ZS_USER_DIR"
+      if [ ! -f "$ZS_USER_CONFIG" ]; then   # never-clobber (#1079)
+        zs_user_cfg_tmp="$ZS_USER_CONFIG.zskills-tmp.$$"
+        cat > "$zs_user_cfg_tmp" <<'PERSONALCFG'
+{
+  "$schema": "./zskills-config.schema.json",
+  "_comment": "zskills personal config (v2 contract): unset keys track shipped defaults; workflow keys (execution.landing, execution.branch_prefix, execution.max_concurrent_worktrees, plus the cascadable string keys) apply wherever the project config does not override them; safety keys (execution.main_protected, agents.min_model) are raise-only floors — they can raise a project's protection, never lower it."
+}
+PERSONALCFG
+        if [ -s "$zs_user_cfg_tmp" ]; then
+          mv "$zs_user_cfg_tmp" "$ZS_USER_CONFIG"
+        else
+          rm -f "$zs_user_cfg_tmp"
+          echo "WARN: failed to write ~/.claude/zskills-config.json — continuing (defaults apply)" >&2
+        fi
+      fi
+      # Schema sibling — refresh-on-update (DA13): rewrite whenever it
+      # differs from the shipped schema (atomic; generated copy, not user
+      # content). Variable destination, same tamper-safety rationale.
+      ZS_USER_SCHEMA_SRC="${CLAUDE_PLUGIN_ROOT}/config/zskills-config.schema.json"
+      if [ -f "$ZS_USER_SCHEMA_SRC" ] \
+         && ! cmp -s "$ZS_USER_SCHEMA_SRC" "$ZS_USER_SCHEMA" 2>/dev/null; then
+        zs_user_schema_tmp="$ZS_USER_SCHEMA.zskills-tmp.$$"
+        if cp "$ZS_USER_SCHEMA_SRC" "$zs_user_schema_tmp"; then
+          mv "$zs_user_schema_tmp" "$ZS_USER_SCHEMA" \
+            || { rm -f "$zs_user_schema_tmp"; echo "WARN: failed to refresh ~/.claude/zskills-config.schema.json" >&2; }
+        else
+          rm -f "$zs_user_schema_tmp"
+        fi
+      fi
+      ```
+
+    - **Decline** → record the user-scope decline marker so the question is
+      not re-asked in ANY project (update runs are deliberate checkup
+      moments, but a declined personal offer stays declined until the user
+      removes the marker):
+
+      ```bash
+      zskills_write_config_declined personal "$HOME" \
+        || echo "WARN: failed to write the personal-config decline marker" >&2
       ```
 
   - **A4 — branch-dependent artifact writes: NO-OP on the landed branches.**
@@ -1322,12 +1424,37 @@ PY
     (`ZS_REMOVED_CONFIG_THIS_RUN=0` — a consumer who accepted the
     seeded-config removal has chosen zero-config; immediately re-offering
     would contradict the choice; the offer stays available on a LATER bare
-    run), offer creation via the same A3 interview (same accept fence,
-    same non-interactive skip).
+    run) AND no project decline marker exists
+    (`zskills_config_declined project "$CLAUDE_PROJECT_DIR"` is false — a
+    consumer who declined the project config once is not re-asked), offer
+    creation via the same A3 interview (same accept fence, same
+    non-interactive skip, same decline-marker write).
+  - **Conditional PERSONAL config offer:** re-run the A3.5 question on the
+    update arm too — it self-gates on `~/.claude/zskills-config.json`
+    absence AND no personal decline marker
+    (`zskills_config_declined personal "$HOME"` is false), so an existing
+    user file or a prior decline silently suppresses it. Update runs are
+    deliberate checkup moments — the personal offer is re-presented to a
+    consumer who has neither a user file nor a decline on record.
   - **Re-run verify-install** — the same A6 fence (hard gate, cheap tier):
     a FAIL stops the run before the version-line refresh below; fix the
     reported problem(s) and re-run. (Markers already exist on this arm, so
     the fence's pre-lock allowance is inert here.)
+  - **Capture the RECORDED version BEFORE refreshing it** (for the
+    config-news nudge below — the refresh clobbers it). The single-path
+    resolver is the init-done `version:` line, falling back to the config's
+    `zskills_version` field:
+
+    ```bash
+    ZS_RECORDED_VER="$(sed -n 's/^version: //p' \
+      "$CLAUDE_PROJECT_DIR/$ZSKILLS_INIT_DONE_REL" 2>/dev/null | head -n 1)"
+    if [ -z "$ZS_RECORDED_VER" ] \
+       && [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
+      ZS_RECORDED_VER="$(sed -n 's/.*"zskills_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" 2>/dev/null | head -n 1)"
+    fi
+    ```
+
   - **Refresh the version line in the init-done marker** — re-run the same
     single writer: `zskills_write_init_markers "$CLAUDE_PROJECT_DIR"
     "$ZS_INIT_VERSION"` (atomic rewrite; re-stamping setup-confirmed is the
@@ -1335,6 +1462,37 @@ PY
     version resolve came back EMPTY, the writer keeps the marker's existing
     non-empty `version:` value instead of clobbering it (#1150 guard —
     documented in the writer's header in `init-state.sh`).
+  - **New-config-surface nudge (ENFORCEMENT_V2 Phase 6, #1160).** The update
+    report is the SINGLE config-news channel (no SessionStart nags, no
+    per-session reminders). List every config key in
+    `references/config-key-versions.tsv` whose introduced-version is NEWER
+    than the consumer's recorded version — one line each (name, shipped
+    default, where to set). Version comparison is **NUMERIC dot-segment**
+    (R12) — `YYYY.MM.N` strings compare wrong lexically (`2026.06.10 <
+    2026.06.2` as strings), so the compare runs in Python (`$PYTHON` from
+    the prelude already sourced in A3). No newer keys → no section (silence,
+    not noise). When the recorded version is empty/unknown, skip the nudge
+    (a config-less or unversioned install gets the full surface on its next
+    versioned refresh; do not flood it):
+
+    ```bash
+    ZS_KEYVER_TSV="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/references/config-key-versions.tsv"
+    if [ -n "$ZS_RECORDED_VER" ] && [ -f "$ZS_KEYVER_TSV" ] && [ -n "$PYTHON" ]; then
+      zs_news=""
+      while IFS=$'\t' read -r zs_key zs_introduced zs_default zs_where; do
+        case "$zs_key" in ''|'#'*) continue ;; esac
+        [ -n "$zs_introduced" ] || continue
+        if "$PYTHON" -c 'import sys; a,b=(tuple(int(x) for x in v.split("+")[0].split(".")) for v in sys.argv[1:3]); sys.exit(0 if a>b else 1)' \
+             "$zs_introduced" "$ZS_RECORDED_VER" 2>/dev/null; then
+          zs_news="$zs_news  $zs_key — default ${zs_default:-(unset)} — set in $zs_where"$'\n'
+        fi
+      done < "$ZS_KEYVER_TSV"
+      if [ -n "$zs_news" ]; then
+        printf 'New config keys since %s:\n%s\n' "$ZS_RECORDED_VER" "$zs_news"
+      fi
+    fi
+    ```
+
   - Print the update summary — include A1.5 removals, then the standing
     plugin-lane explanation — and exit 0:
 

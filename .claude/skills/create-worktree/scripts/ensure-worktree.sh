@@ -162,28 +162,35 @@ if [ -n "$WORKTREE_OVERRIDE" ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# WI 1.4 — Config reader (BASH_REMATCH only, no external parser). Scoped to the
-# execution object to avoid top-level "landing" / "main_protected"
-# false-matches. Accepts both bare-boolean and string-quoted
-# main_protected forms (DA-6 robustness).
-# Schema-fragility caveat (DA-R2-10): the [^}]* lookahead terminates
-# at the first '}', so adding a nested object BEFORE main_protected
-# inside the execution block would break this. Documented; same
-# caveat applies to block-unsafe-project.sh.template:476.
+# WI 1.4 — Config reader. CASCADE v2 (ENFORCEMENT_V2 Phase 4): landing and
+# main_protected are now resolved through the canonical lane-portable resolver
+# (project > user, with main_protected a RAISE-ONLY floor) instead of an inline
+# BASH_REMATCH read. The resolver exports $ZSKILLS_CFG_LANDING (empty when
+# unset in both tiers — this helper keeps its own `cherry-pick` default) and
+# $ZSKILLS_MAIN_PROTECTED ("true" iff either tier sets it true — giving this
+# helper the user-tier floor for free). NO behavior change for project-only
+# configs; the only added effect is the user-tier read (per #1159 scope).
 # ──────────────────────────────────────────────────────────────────
 PROJECT_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
-LANDING="cherry-pick"  # default if unset
+LANDING="cherry-pick"  # default if unset (resolver carries no landing default)
 MAIN_PROTECTED="false"
-if [ -f "$CONFIG_FILE" ]; then
-  CONFIG_CONTENT=$(cat "$CONFIG_FILE")
-  if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-    LANDING="${BASH_REMATCH[1]}"
-  fi
-  if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_protected\"[[:space:]]*:[[:space:]]*\"?(true|false)\"? ]]; then
-    MAIN_PROTECTED="${BASH_REMATCH[1]}"
-  fi
+# Resolver source — SIBLING-RELATIVE to this script's own location, which is
+# lane-portable by construction: on BOTH lanes the resolver lives at
+# <skills-root>/update-zskills/scripts/ and this helper at
+# <skills-root>/create-worktree/scripts/, so $SCRIPT_DIR/../../update-zskills/
+# resolves to the resolver regardless of lane or of where the consumer's
+# checkout lives (CLAUDE_PROJECT_DIR / CLAUDE_PLUGIN_ROOT need not be set — the
+# canary fixtures exercise exactly that). Guard with `set +e` so a resolver
+# edge-case return cannot abort this `set -e` script before its own gates run;
+# PROJECT_ROOT above already established a git repo.
+RESOLVER_SIBLING="$SCRIPT_DIR/../../update-zskills/scripts/zskills-resolve-config.sh"
+set +e
+if [ -f "$RESOLVER_SIBLING" ]; then
+  . "$RESOLVER_SIBLING"
 fi
+set -e
+[ -n "${ZSKILLS_CFG_LANDING:-}" ] && LANDING="$ZSKILLS_CFG_LANDING"
+[ "${ZSKILLS_MAIN_PROTECTED:-}" = "true" ] && MAIN_PROTECTED="true"
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1.7 — Gate logic precedence (after override returned above):

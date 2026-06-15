@@ -79,6 +79,106 @@
         }
       }
     },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PROJECT-ONLY per-check enforcement toggles (ENFORCEMENT_V2_PLAN, #1159). Each group has an optional boolean `enabled` ceiling (false turns the whole group off; config_hooks_tamper is EXEMPT — a group-ceiling write cannot silently disarm the tamper gate) plus per-check tristate values `\"block\" | \"warn\" | \"off\"`. There is NO literal default value for any check: defaults are CLASS-DERIVED (absence semantics), which is why no `hooks` block is seeded into zskills-defaults.json — adding literal defaults would freeze the predicate-driven behavior. For a HARD check the unset default is block-always. For a DEMOTABLE check the unset default is block-when-autonomous/unwatched and SILENT-when-watched (the zero-config quiet headline) — except main_protection.config_hooks_tamper, whose unset watched default is `warn` (the protection system disarming itself must be visible). Setting `\"warn\"` is the OPT-IN coaching value (restores warn-when-watched on a demotable check); `\"block\"` makes a demotable check strict (deny even when watched); `\"off\"` silences it entirely. Explicit values are always honored — including for hard checks (a reviewed project decision). Toggle reads are MAIN-ROOT-ONLY; worktree-local config copies are never consulted. Example: { \"git_discipline\": { \"git_add_all\": \"off\", \"tests_not_run\": \"block\" }, \"main_protection\": { \"enabled\": true, \"main_edit\": \"warn\" }, \"tracking\": { \"enabled\": false } }",
+      "properties": {
+        "git_destructive": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Hard checks: irreversible git data-loss commands.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "stash_drop": { "enum": ["block", "warn", "off"] },
+            "stash_write": { "enum": ["block", "warn", "off"] },
+            "checkout_discard": { "enum": ["block", "warn", "off"] },
+            "restore_discard": { "enum": ["block", "warn", "off"] },
+            "switch_discard": { "enum": ["block", "warn", "off"] },
+            "clean_force": { "enum": ["block", "warn", "off"] },
+            "reset_hard": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "fs_destructive": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Hard checks: irreversible filesystem data-loss commands.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "rm_recursive": { "enum": ["block", "warn", "off"] },
+            "find_delete": { "enum": ["block", "warn", "off"] },
+            "rsync_delete": { "enum": ["block", "warn", "off"] },
+            "xargs_destructive": { "enum": ["block", "warn", "off"] },
+            "zskills_tree_delete": { "enum": ["block", "warn", "off"] },
+            "clear_tracking_agent": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "process_kill": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Hard checks: process-kill commands that can disrupt container-critical processes or other sessions.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "kill_9": { "enum": ["block", "warn", "off"] },
+            "fuser_k": { "enum": ["block", "warn", "off"] },
+            "xargs_kill": { "enum": ["block", "warn", "off"] },
+            "kill_substitution": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "git_discipline": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Mixed: git/commit discipline checks. Some demotable (git_add_all, logs_add_all, test_pipe, full_cmd_unset, tests_not_run, ui_unverified), some hard (no_verify, stale_skill_version).",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "git_add_all": { "enum": ["block", "warn", "off"] },
+            "no_verify": { "enum": ["block", "warn", "off"] },
+            "logs_add_all": { "enum": ["block", "warn", "off"] },
+            "test_pipe": { "enum": ["block", "warn", "off"] },
+            "full_cmd_unset": { "enum": ["block", "warn", "off"] },
+            "tests_not_run": { "enum": ["block", "warn", "off"] },
+            "ui_unverified": { "enum": ["block", "warn", "off"] },
+            "stale_skill_version": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "main_protection": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Demotable: on-main write gates (commit/cherry-pick/push/Edit/Write) + the config-tamper gate. main_protected:true blocks AUTONOMOUS/unwatched direct-to-main; attended/watched humans are unrestricted and silent regardless of main_protected. config_hooks_tamper is the one demotable check that WARNS-when-watched by default (not silent) and is EXEMPT from this group's enabled ceiling.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off EXCEPT config_hooks_tamper (ceiling-exempt self-protection)." },
+            "push_to_main": { "enum": ["block", "warn", "off"] },
+            "commit_on_main": { "enum": ["block", "warn", "off"] },
+            "cherry_pick_on_main": { "enum": ["block", "warn", "off"] },
+            "main_edit": { "enum": ["block", "warn", "off"] },
+            "config_hooks_tamper": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "pr_discipline": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Hard check: direct gh pr create/merge bypassing /land-pr.",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "direct_gh_pr": { "enum": ["block", "warn", "off"] }
+          }
+        },
+        "tracking": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Mostly demotable: pipeline tracking-discipline gates (requires/step markers, claim gates). cron_invalid is hard (a warned-through malformed cron silently never fires).",
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Group ceiling. false turns every check in this group off." },
+            "requires_unfulfilled": { "enum": ["block", "warn", "off"] },
+            "step_unverified": { "enum": ["block", "warn", "off"] },
+            "step_unreported": { "enum": ["block", "warn", "off"] },
+            "issue_unclaimed": { "enum": ["block", "warn", "off"] },
+            "plan_unclaimed": { "enum": ["block", "warn", "off"] },
+            "cron_invalid": { "enum": ["block", "warn", "off"] }
+          }
+        }
+      }
+    },
     "cleanup": {
       "type": "object",
       "description": "Per-project cleanup configuration for /cleanup-merged.",

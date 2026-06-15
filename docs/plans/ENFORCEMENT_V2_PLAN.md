@@ -1,7 +1,7 @@
 ---
 title: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
 created: 2026-06-12
-status: "active"
+status: "complete"
 ---
 
 # Plan: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
@@ -697,13 +697,13 @@ Drafter classification notes (bind the implementer):
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Enforcement library: predicate, toggles, warn-channel probe (GATING), schema | ⬚ | | |
-| 2 — Small-hook retarget (7 hooks) + bypass parity ×5 | ⬚ | | |
-| 3 — Big-hook retarget (generic + project) + tag tripwire + bypass parity ×18 | ⬚ | | |
-| 4 — Cascade v2: workflow keys + raise-only floors | ⬚ | | |
-| 5 — move-to-worktree helper (stash-free dirty-main carry) | ⬚ | | |
-| 6 — Config-UX: personal-config offer, decline marker, update nudge | ⬚ | | |
-| 7 — Docs rewrite + conformance sweep | ⬚ | | |
+| 1 — Enforcement library: predicate, toggles, warn-channel probe (GATING), schema | ✅ Done | 4433ee8 | Lib green; suite 7860/7860; 70/70 unit; drift 47/47; warn-probe→NEEDS-ATTENDED (Phase 7) |
+| 2 — Small-hook retarget (7 hooks) + bypass parity ×5 | ✅ Done | 9986a14 | Verified PASS; suite 7941/7941; drift 101; bypass-parity ×5; autonomous protection byte-identical |
+| 3 — Big-hook retarget (generic + project) + tag tripwire + bypass parity ×18 | ✅ Done | 3e9154c | Verified PASS (keep-hard destructive set block-always incl. watched; deny envelopes byte-identical) — generic 19 + project 17 gate_with_reason sites; row-50 tamper added; tag + registry-sync tripwires (anti-vacuous demo'd); bypass-parity ×18 + watched-silent + opt-in-warn + SPOOF + stale-pipeline; suite 8061/8061; drift 119; AC parity-floor 25 |
+| 4 — Cascade v2: workflow keys + raise-only floors | ✅ Done | a4c4103 | Verified PASS; suite 8077/8077; raise-only floors proven (user cannot lower main_protected/min_model); fail-closed on malformed user cfg; 3-copy Python lockstep; Test15 9/14/500 |
+| 5 — move-to-worktree helper (stash-free dirty-main carry) | ✅ Done | c3c8778 | Verified PASS; suite 8123/8123; main never data-lost on failure (rc7 unmerged untouched / rc8 verify-mismatch preserved); stash-free; split+index-blobs preserved; preflight untouched (SD8) |
+| 6 — Config-UX: personal-config offer, decline marker, update nudge | ✅ Done | e2f8a18 | Verified PASS; suite 8143/8143; config-never-seed (personal scaffold empty, byte-pinned); decline-marker suppression; update nudge via config-key-versions.tsv |
+| 7 — Docs rewrite + conformance sweep | ✅ Done | e169f69 | Verified PASS; suite 8145/8145; docs match amended model; managed.md lockstep; 0 stale prose; registry-sync 37/37; nits fixed |
 
 ---
 

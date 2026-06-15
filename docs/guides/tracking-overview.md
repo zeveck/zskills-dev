@@ -103,10 +103,17 @@ The hook applies the same tracking checks at three points where code could
 otherwise reach a branch — `git commit`, `git cherry-pick`, and `git push`. At
 each, if your session belongs to a pipeline and the change includes code files,
 the hook looks for unfulfilled requirements or an implementation that was never
-verified, and blocks the operation if it finds one. (Separately, when your
-project sets `main_protected: true`, the hook also refuses any commit,
-cherry-pick, or push directly to `main` — that is a different rule from
-tracking, but you may see both kinds of `BLOCKED:` message.)
+verified, and blocks the operation if it finds one. Note these gates follow
+zskills' enforcement model (**stay quiet when watched; block when
+autonomous; coaching is opt-in**): in a watched, non-pipeline session they
+are silent by default, and they block when the session is autonomous (or a
+pipeline is live). (Separately, when your project sets
+`main_protected: true`, the same model applies to direct-to-`main` writes:
+an autonomous/unwatched session is blocked from committing, cherry-picking,
+or pushing directly to `main`, while an attended human is unrestricted and
+silent — that is a different rule from tracking, but you may see both kinds
+of `BLOCKED:` message. Override either per check via the `hooks.*` block in
+`.claude/zskills-config.json`.)
 
 ## Clearing stale tracking
 

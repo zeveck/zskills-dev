@@ -27,6 +27,23 @@ if [ -z "${REPO_ROOT:-}" ]; then
   REPO_ROOT="$(cd "$_HH_LIB_DIR/../.." && pwd)"
 fi
 
+# DA9 (CASCADE v2, ENFORCEMENT_V2 Phase 4): sandbox HOME for every suite that
+# sources this harness. After Phase 4 the floor-reading hooks
+# (block-unsafe-{generic,project}, block-main-edits, block-agents) read the
+# user tier ${HOME}/.claude/zskills-config.json (RAISE-ONLY). A dev machine's
+# personal config (which Phase 6 actively promotes creating) must not flip
+# these suites' outcomes. An empty TMP_HOME guarantees no user-tier config.
+# Honour a HOME the caller already sandboxed (idempotent).
+if [ -z "${TMP_HOME:-}" ]; then
+  TMP_HOME="$(mktemp -d /tmp/zskills-hooks-harness-home-XXXXXX)"
+  export HOME="$TMP_HOME"
+  # The fixtures run `git init/commit` in temp repos; an empty TMP_HOME has no
+  # ~/.gitconfig, so seed a throwaway identity (and safe.directory=* so git ops
+  # against any checkout — incl. the real repo a few cases touch — don't trip
+  # the dubious-ownership guard the real ~/.gitconfig normally suppresses).
+  printf '[user]\n\tname = zskills-test\n\temail = zskills-test@example.com\n[safe]\n\tdirectory = *\n' > "$TMP_HOME/.gitconfig"
+fi
+
 # Hook-path globals the factored helpers (and the Phase-1b sub-suites) close
 # over. Three are already absolute in the monolith; PROJECT_HOOK is defined
 # RELATIVE there (cwd-fragile — line 974 `hooks/block-unsafe-project.sh.template`)

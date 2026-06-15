@@ -4,6 +4,9 @@
 #
 # Sourceable, side-effect-free (defines variables + functions only). Defines:
 #   - the init-done / setup-confirmed marker paths (project-root-relative),
+#   - the config-offer decline-marker paths + writer/reader (ENFORCEMENT_V2
+#     Phase 6, #1160 — project-scope under .zskills/, personal-scope under
+#     ~/.claude/; atomic tmp+mv),
 #   - the presence predicate + the ONLY marker writers (atomic tmp+mv,
 #     lock-LAST per the #394 contract, #1079 0-byte-healable),
 #   - the FROZEN legacy-residue detection constants (the D20 sentinel prefix,
@@ -31,6 +34,24 @@
 # Single definition; every writer/gate/fixture derives from these two vars.
 ZSKILLS_INIT_DONE_REL=".zskills/init-done"
 ZSKILLS_SETUP_CONFIRMED_REL=".zskills/setup-confirmed"
+
+# ── Config-offer decline markers (ENFORCEMENT_V2 Phase 6, #1160) ───────────
+# Two decline scopes, one per interview question (DA14 — a decline lives at
+# the scope of the thing declined). Once written, the update arm stops
+# re-asking the corresponding offer; the update report stays the single
+# config-news channel.
+#
+# PROJECT decline — the project-config offer. Gitignored, per-project
+# (lives under .zskills/, never the project's .claude/ — agent writes there
+# trigger permission prompts). One `project: <ISO date>` line.
+ZSKILLS_CONFIG_DECLINED_REL=".zskills/config-offer-declined"
+# PERSONAL decline — the user-tier personal-config offer. USER scope:
+# declining the user-global personal config in one project suppresses it in
+# EVERY project (a per-project marker would re-ask N times for one global
+# file). Written under ~/.claude/, the same surface the accept path writes.
+# One ISO-date line. Resolved against $HOME at point of use, not stored
+# project-relative.
+ZSKILLS_PERSONAL_CONFIG_DECLINED_NAME="zskills-config.declined"
 
 # zskills_init_done_present <project-root>
 #   True (0) when the init-done marker exists AND is non-empty. A 0-byte
@@ -97,6 +118,68 @@ zskills_write_init_markers() {
     return 1
   fi
   return 0
+}
+
+# zskills_write_config_declined <scope> <root>
+#   Atomic (tmp+mv) writer for a config-offer decline marker (ENFORCEMENT_V2
+#   Phase 6, #1160). <scope> selects which question was declined:
+#     project   — writes <root>/.zskills/config-offer-declined with a single
+#                 `project: <ISO date>` line (gitignored, per-project).
+#     personal  — writes <root>/.claude/zskills-config.declined with a single
+#                 ISO-date line. <root> for the personal scope is $HOME (the
+#                 caller passes "$HOME"); the marker is USER-global so a
+#                 decline in one project suppresses the offer everywhere.
+#   Idempotent: re-running rewrites the marker with a fresh date (a re-offer
+#   only fires when the marker is ABSENT, so a rewrite is harmless). Returns
+#   1 on a write failure, leaving no partial file.
+zskills_write_config_declined() {
+  local scope="$1" root="$2" rel tmp line
+  case "$scope" in
+    project)
+      rel="$ZSKILLS_CONFIG_DECLINED_REL"
+      line="project: $(date -Iseconds 2>/dev/null)"
+      ;;
+    personal)
+      rel=".claude/$ZSKILLS_PERSONAL_CONFIG_DECLINED_NAME"
+      line="$(date -Iseconds 2>/dev/null)"
+      ;;
+    *)
+      echo "zskills_write_config_declined: unknown scope '$scope'" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$root/$(dirname "$rel")" || return 1
+  tmp="$root/$rel.zskills-tmp.${BASHPID:-$$}"
+  if ! printf '%s\n' "$line" > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv "$tmp" "$root/$rel"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  return 0
+}
+
+# zskills_config_declined <scope> <root>
+#   Presence predicate for a decline marker. For the project scope the file
+#   must additionally carry a `project:` line (so a marker is meaningful even
+#   if a future scope shares the file). Returns 0 when the offer should be
+#   suppressed.
+zskills_config_declined() {
+  local scope="$1" root="$2"
+  case "$scope" in
+    project)
+      [ -f "$root/$ZSKILLS_CONFIG_DECLINED_REL" ] \
+        && grep -q '^project:' "$root/$ZSKILLS_CONFIG_DECLINED_REL" 2>/dev/null
+      ;;
+    personal)
+      [ -f "$root/.claude/$ZSKILLS_PERSONAL_CONFIG_DECLINED_NAME" ]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # ── Working-Python-3 resolver (needed by the seed-shape matcher below) ─────

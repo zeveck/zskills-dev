@@ -684,9 +684,18 @@ T14_TZ=$(
   || fail "Test 14: empty-project-value precedence" "got '$T14_TZ', expected 'UTC'"
 rm -rf "$T14" "$U14"
 
-# --- Test 15: execution.* + zskills_version are PROJECT-TIER-ONLY -----------
+# --- Test 15: CASCADE v2 (ENFORCEMENT_V2 Phase 4) re-spec ------------------
+# RE-SPEC (Invariant 5 — intended behavior change of the subject, per #1159
+# scope-trim): Test 15a's subject changes. Under the OLD doctrine ALL of
+# execution.* was project-tier-only, so the user fixture's
+# max_concurrent_worktrees=9 was IGNORED (expected 3/14/500). Under CASCADE
+# v2 max_concurrent_worktrees is a PLAIN-CASCADE workflow key, so when the
+# project does NOT set it the user value (9) IS effective — NEW expected
+# 9/14/500; the dashboard_completed_* keys stay project-tier-only (still
+# ignored from the user tier). 15b (zskills_version) is byte-unchanged. 15c
+# (project mcw=5 wins) is unchanged.
 echo ""
-echo "=== Test 15: execution.* and zskills_version never read from the user tier ==="
+echo "=== Test 15: CASCADE v2 — mcw cascades from user; dashboard_* + zskills_version stay project-only ==="
 T15=$(mktemp -d /tmp/zskills-resolve-cfg-t15-XXXXXX)
 U15=$(mktemp -d /tmp/zskills-resolve-cfg-u15-XXXXXX)
 mkdir -p "$U15/.claude"
@@ -700,7 +709,8 @@ cat > "$U15/.claude/zskills-config.json" <<'UCFG'
   }
 }
 UCFG
-# No project config: user-tier execution.* + zskills_version must be ignored.
+# No project config: max_concurrent_worktrees NOW cascades from the user tier;
+# dashboard_completed_* + zskills_version must still be ignored.
 T15_OUT=$(
   HOME="$U15" CLAUDE_PROJECT_DIR="$T15" \
   bash -c '. "'"$HELPER"'" && printf "%s\n" "$ZSKILLS_MAX_CONCURRENT_WORKTREES" "$ZSKILLS_DASHBOARD_COMPLETED_DAYS" "$ZSKILLS_DASHBOARD_COMPLETED_LIMIT" "$ZSKILLS_VERSION"'
@@ -709,15 +719,17 @@ T15_MCW=$(printf '%s\n' "$T15_OUT" | sed -n '1p')
 T15_DCD=$(printf '%s\n' "$T15_OUT" | sed -n '2p')
 T15_DCL=$(printf '%s\n' "$T15_OUT" | sed -n '3p')
 T15_VER=$(printf '%s\n' "$T15_OUT" | sed -n '4p')
-if [ "$T15_MCW" = "3" ] && [ "$T15_DCD" = "14" ] && [ "$T15_DCL" = "500" ]; then
-  pass "Test 15a: user-tier execution.* ignored (defaults 3/14/500 hold)"
+# RE-SPEC: OLD expected 3/14/500 (all user execution.* ignored); NEW expected
+# 9/14/500 (mcw cascades; dashboard_* stay project-only).
+if [ "$T15_MCW" = "9" ] && [ "$T15_DCD" = "14" ] && [ "$T15_DCL" = "500" ]; then
+  pass "Test 15a (re-spec): user-tier mcw cascades (9); dashboard_* still project-only (14/500)"
 else
-  fail "Test 15a: execution.* project-tier-only" "mcw='$T15_MCW' dcd='$T15_DCD' dcl='$T15_DCL'"
+  fail "Test 15a (re-spec): mcw cascade + dashboard_* project-only" "mcw='$T15_MCW' dcd='$T15_DCD' dcl='$T15_DCL' (expected 9/14/500)"
 fi
 [ -z "$T15_VER" ] \
   && pass "Test 15b: user-tier zskills_version ignored (\$ZSKILLS_VERSION empty)" \
   || fail "Test 15b: zskills_version project-tier-only" "got '$T15_VER'"
-# Project tier still sets them (control arm).
+# Project tier still wins (control arm): project mcw=5 over user mcw=9.
 mkdir -p "$T15/.claude"
 echo '{ "execution": { "max_concurrent_worktrees": 5 } }' > "$T15/.claude/zskills-config.json"
 T15_MCW2=$(
@@ -725,9 +737,107 @@ T15_MCW2=$(
   bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_MAX_CONCURRENT_WORKTREES"'
 )
 [ "$T15_MCW2" = "5" ] \
-  && pass "Test 15c: PROJECT-tier execution.max_concurrent_worktrees=5 still effective" \
+  && pass "Test 15c: PROJECT-tier execution.max_concurrent_worktrees=5 wins over user 9" \
   || fail "Test 15c: project execution control arm" "got '$T15_MCW2', expected '5'"
 rm -rf "$T15" "$U15"
+
+# --- Test 16: CASCADE v2 — landing/branch_prefix plain cascade -------------
+echo ""
+echo "=== Test 16: CASCADE v2 — landing/branch_prefix plain cascade (no resolver default) ==="
+T16=$(mktemp -d /tmp/zskills-resolve-cfg-t16-XXXXXX)
+U16=$(mktemp -d /tmp/zskills-resolve-cfg-u16-XXXXXX)
+mkdir -p "$T16/.claude" "$U16/.claude"
+# 16a: user sets landing/branch_prefix, project silent → user value effective.
+echo '{ "execution": { "landing": "pr", "branch_prefix": "u/" } }' > "$U16/.claude/zskills-config.json"
+echo '{ "execution": { } }' > "$T16/.claude/zskills-config.json"
+T16A=$(
+  HOME="$U16" CLAUDE_PROJECT_DIR="$T16" \
+  bash -c '. "'"$HELPER"'" && printf "%s|%s" "$ZSKILLS_CFG_LANDING" "$ZSKILLS_CFG_BRANCH_PREFIX"'
+)
+[ "$T16A" = "pr|u/" ] \
+  && pass "Test 16a: user landing/branch_prefix effective when project silent (pr|u/)" \
+  || fail "Test 16a: user-fill cascade" "got '$T16A', expected 'pr|u/'"
+# 16b: project sets landing/branch_prefix → project wins.
+echo '{ "execution": { "landing": "direct", "branch_prefix": "p/" } }' > "$T16/.claude/zskills-config.json"
+T16B=$(
+  HOME="$U16" CLAUDE_PROJECT_DIR="$T16" \
+  bash -c '. "'"$HELPER"'" && printf "%s|%s" "$ZSKILLS_CFG_LANDING" "$ZSKILLS_CFG_BRANCH_PREFIX"'
+)
+[ "$T16B" = "direct|p/" ] \
+  && pass "Test 16b: project landing/branch_prefix wins over user (direct|p/)" \
+  || fail "Test 16b: project wins cascade" "got '$T16B', expected 'direct|p/'"
+# 16c: both unset → EMPTY (no resolver default — consumer keeps own default).
+echo '{ "execution": { } }' > "$T16/.claude/zskills-config.json"
+echo '{ "execution": { } }' > "$U16/.claude/zskills-config.json"
+T16C=$(
+  HOME="$U16" CLAUDE_PROJECT_DIR="$T16" \
+  bash -c '. "'"$HELPER"'" && printf "[%s][%s]" "$ZSKILLS_CFG_LANDING" "$ZSKILLS_CFG_BRANCH_PREFIX"'
+)
+[ "$T16C" = "[][]" ] \
+  && pass "Test 16c: both tiers unset → landing/branch_prefix EMPTY (no resolver default)" \
+  || fail "Test 16c: no-resolver-default contract" "got '$T16C', expected '[][]'"
+rm -rf "$T16" "$U16"
+
+# --- Test 17: CASCADE v2 — raise-only safety floors ------------------------
+echo ""
+echo "=== Test 17: CASCADE v2 — main_protected/min_model raise-only floors ==="
+T17=$(mktemp -d /tmp/zskills-resolve-cfg-t17-XXXXXX)
+U17=$(mktemp -d /tmp/zskills-resolve-cfg-u17-XXXXXX)
+mkdir -p "$T17/.claude" "$U17/.claude"
+# 17a: user main_protected:true + project false → ZSKILLS_MAIN_PROTECTED=true (raise).
+echo '{ "execution": { "main_protected": true } }' > "$U17/.claude/zskills-config.json"
+echo '{ "execution": { "main_protected": false } }' > "$T17/.claude/zskills-config.json"
+T17A=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_MAIN_PROTECTED"'
+)
+[ "$T17A" = "true" ] \
+  && pass "Test 17a: user main_protected:true RAISES project false → true" \
+  || fail "Test 17a: main_protected raise-only floor" "got '$T17A', expected 'true'"
+# 17b: user min_model:opus + project sonnet → opus (raise).
+echo '{ "agents": { "min_model": "opus" } }' > "$U17/.claude/zskills-config.json"
+echo '{ "agents": { "min_model": "sonnet" } }' > "$T17/.claude/zskills-config.json"
+T17B=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_MIN_MODEL"'
+)
+[ "$T17B" = "opus" ] \
+  && pass "Test 17b: user min_model opus RAISES project sonnet → opus" \
+  || fail "Test 17b: min_model raise" "got '$T17B', expected 'opus'"
+# 17c: user min_model:haiku + project sonnet → sonnet (raise-only, never lowers).
+echo '{ "agents": { "min_model": "haiku" } }' > "$U17/.claude/zskills-config.json"
+echo '{ "agents": { "min_model": "sonnet" } }' > "$T17/.claude/zskills-config.json"
+T17C=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_MIN_MODEL"'
+)
+[ "$T17C" = "sonnet" ] \
+  && pass "Test 17c: user min_model haiku CANNOT lower project sonnet → sonnet" \
+  || fail "Test 17c: min_model raise-only never lowers" "got '$T17C', expected 'sonnet'"
+# 17d: project min_model:auto + user sonnet → auto (display-lattice tie→project).
+echo '{ "agents": { "min_model": "sonnet" } }' > "$U17/.claude/zskills-config.json"
+echo '{ "agents": { "min_model": "auto" } }' > "$T17/.claude/zskills-config.json"
+T17D=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_MIN_MODEL"'
+)
+[ "$T17D" = "auto" ] \
+  && pass "Test 17d: project auto vs user sonnet → auto (display tie→project)" \
+  || fail "Test 17d: min_model tie→project" "got '$T17D', expected 'auto'"
+# 17e: malformed user file → all floors/cascade fall back to project/built-ins.
+printf 'garbage{{{ not json' > "$U17/.claude/zskills-config.json"
+echo '{ "execution": { "landing": "direct", "main_protected": false }, "agents": { "min_model": "sonnet" } }' > "$T17/.claude/zskills-config.json"
+T17E=$(
+  HOME="$U17" CLAUDE_PROJECT_DIR="$T17" \
+  bash -c '. "'"$HELPER"'" && printf "%s|%s|%s|%s" "$ZSKILLS_CFG_LANDING" "$ZSKILLS_MAIN_PROTECTED" "$ZSKILLS_MIN_MODEL" "$ZSKILLS_MAX_CONCURRENT_WORKTREES"'
+)
+# Malformed user file ignored: landing=direct (project), main_protected empty
+# (project says false, no user true to raise), min_model=sonnet (project),
+# mcw=3 (default). Per-tier fail-closed never disarms a floor / never errors.
+[ "$T17E" = "direct||sonnet|3" ] \
+  && pass "Test 17e: malformed user file IGNORED → project/built-in values hold" \
+  || fail "Test 17e: per-tier fail-closed" "got '$T17E', expected 'direct||sonnet|3'"
+rm -rf "$T17" "$U17"
 
 rm -rf "$EMPTY_HOME"
 

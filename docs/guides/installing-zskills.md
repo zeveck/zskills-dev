@@ -143,9 +143,12 @@ Landing mode is how an agent's finished work reaches your `main` branch. There
 are three choices:
 
 - **`locked-main-pr`** — Work happens in a worktree on a feature branch; once
-  verified, the branch is pushed and a pull request is opened. `main` is locked,
-  so agents can't commit or push to it directly. Pick this when you want code
-  review on agent changes, or a checkpoint before `main` moves.
+  verified, the branch is pushed and a pull request is opened. `main` is locked
+  for **agents**: an autonomous/unwatched session can't commit, cherry-pick, or
+  push to it directly (an attended human is unrestricted — git and the
+  permission prompt cover you, and you can opt the gates back to strict per
+  check via `hooks.main_protection.*`). Pick this when you want code review on
+  agent changes, or a checkpoint before `main` moves.
 
 - **`cherry-pick`** — Work happens in a worktree on a feature branch; once a
   commit is verified, it's cherry-picked back to `main`. Lower ceremony than
@@ -212,6 +215,8 @@ commit).
 | `.zskills/init-done`, `.zskills/setup-confirmed` | init, always | 🚫 Gitignored runtime state — never commit |
 | `.claude/zskills-config.json` | init, only if you accept the config offer | ✅ Commit — it's the project's shared settings |
 | `.claude/zskills-config.schema.json` | alongside the config | ✅ Commit — gives every teammate editor autocomplete |
+| `~/.claude/zskills-config.json` (empty personal-tier scaffold) | init, only if you accept the **personal** config offer | 🚫 Outside the repo — never committed; personal cross-project defaults (see [the config cascade](zskills-config.md#the-config-cascade)) |
+| `~/.claude/zskills-config.schema.json` | alongside the personal scaffold | 🚫 Outside the repo — never committed |
 
 **`/update-zskills` install:**
 

@@ -146,6 +146,14 @@ exec_field_replace() {
 # zskills-resolve-config.sh:88. The bash =~ engine is single-line but
 # [^}] matches newlines, so this works on both compact and canonical
 # multi-line JSON.
+#
+# CASCADE v2 (ENFORCEMENT_V2 Phase 4) — DELIBERATELY NOT MIGRATED to the
+# cascaded landing/main_protected resolver exports (R5): this probe must read
+# the PROJECT FILE directly to decide whether to REWRITE that file. Using the
+# cascaded effective value would skip needed project-file writes whenever the
+# USER tier already matches — the project file would be left without the key.
+# Keep these reads project-file-only. (The R5-exclusion conformance tripwire
+# asserts this file never references the cascaded landing export by name.)
 CONFIG_BODY=$(cat "$CONFIG")
 CURRENT_LANDING=""
 CURRENT_PROTECTED=""
