@@ -1,10 +1,10 @@
 ---
-title: Enforcement v2 — Warn When Watched, Block When Autonomous, Project-Tunable Per Check
+title: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
 created: 2026-06-12
 status: "active"
 ---
 
-# Plan: Enforcement v2 — Warn When Watched, Block When Autonomous, Project-Tunable Per Check
+# Plan: Enforcement v2 — Quiet When Watched, Block When Autonomous, Opt-In Coaching, Per-Check Tunable
 
 ## Overview
 
@@ -13,10 +13,28 @@ status: "active"
 #1148 (closed by #1167) motivated the false-positive scrutiny that produced
 this redesign's teachable rule.
 
+**Owner-amendment round (2026-06-15): zero-config quiet-when-attended.** The
+owner sanctioned relitigating the originally-settled teachable rule and the
+main-protection split (old Settled decisions 3 & 7) to land a hard headline
+guarantee: **on a fresh user-level install with NO project files and NO user
+files, an attended human gets NO nagging — no warnings AND no blocks on a
+routine git workflow — while EVERY autonomous/unwatched safety guarantee is
+preserved byte-for-byte.** The teachable rule below and the demotable-default
+flip in Phase 1's mode resolution implement that; the rest of the plan is
+re-threaded for consistency. See "Design-history dispositions" for the
+REJECTED user-tier posture-knob variant and why the SHIPPED BUILT-IN DEFAULT
+was chosen instead.
+
 One teachable rule drives everything in this plan:
 
-> **Warn when a human can see it; block when no one's watching; projects can
-> override per-check.**
+> **Stay QUIET when watched (no nagging); BLOCK when no one's watching;
+> coaching is OPT-IN; projects/users override per-check.**
+
+(ONE named exception to "quiet when watched": the config-tamper gate
+`config_hooks_tamper` WARNS — visibly, non-blocking — when watched, because
+disarming the protection system itself is durable and cross-session and must
+never happen invisibly. Autonomous still BLOCKS; every other demotable check
+is silent-when-watched. See Settled decision 13.)
 
 Concretely:
 
@@ -34,25 +52,41 @@ Concretely:
   a fresh `.zskills/inflight/` sentinel arm at the main root; bare
   `.zskills/tracking/` dir existence is deliberately NOT a signal — stale
   finished-pipeline subdirs accumulate there for weeks, verified in the
-  dogfood repo); otherwise they WARN — emit the deny text as a warning and
-  allow. Extraction of `permission_mode` is spoof-proof by construction
-  (unescaped-quote anchoring; see Phase 1) so command content can never
-  demote enforce→warn. The warn envelope is DECISION-LESS by hard
-  invariant (it never carries a `permissionDecision` — Settled decision
-  2), so the permission prompt a watched session would otherwise get
-  still fires: the warn arm is always backed by the active permission
-  gate, never substituted for it.
+  dogfood repo); otherwise they are WATCHED, and a WATCHED demotable check
+  is **SILENT by shipped default** — it does NOTHING (no warning, no block,
+  the permission prompt the session would normally get still fires from the
+  harness). Coaching is OPT-IN: a project or user that wants the old
+  warn-when-watched behavior sets the per-check toggle to `"warn"`, or
+  `"block"` for strictness. Extraction of `permission_mode` is spoof-proof
+  by construction (unescaped-quote anchoring; see Phase 1) so command
+  content can never demote enforce→silent. **Safety argument for the
+  flip:** the attended arm of a demotable check NEVER blocked — under the
+  old rule it warned-and-allowed — so silencing it cannot open a hole. The
+  command that ran (warned) under the old rule still runs (silently) under
+  the new one; the only change is the absence of nagging text. The warn
+  machinery is retained for the opt-in `"warn"` value, and the warn
+  envelope stays DECISION-LESS by hard invariant (it never carries a
+  `permissionDecision` — Settled decision 2), so when warn IS opted into,
+  the permission prompt still fires: the warn arm is always backed by the
+  active permission gate, never substituted for it.
 - **Every warn/deny message names its own switch.** Each message ends with
   its toggle path + effective source, e.g.
-  `[hooks.git_discipline.push_to_main — block|warn|off in .claude/zskills-config.json; currently: attended default]`.
-- **Project-only per-check toggles.** A new `hooks` block in
+  `[hooks.git_discipline.push_to_main — block|warn|off in .claude/zskills-config.json; currently: attended default (silent)]`.
+- **Per-check toggles (PROJECT-ONLY).** A new `hooks` block in
   `.claude/zskills-config.json`: per-group `enabled` booleans acting as
   ceilings + per-check tristate `"block" | "warn" | "off"`. Groups:
   `git_destructive, fs_destructive, process_kill, git_discipline,
-  main_protection, pr_discipline, tracking`. Fail-closed: missing
-  config / parse error / Python unavailable → shipped defaults (current
-  behavior). No user-tier hook config; no posture knob (deliberately
-  deferred).
+  main_protection, pr_discipline, tracking`. The tristate is how coaching
+  is opted into: `"warn"` restores warn-when-watched on a demotable check;
+  `"block"` makes it strict (deny even when watched); `"off"` silences it
+  entirely. The SHIPPED default for a demotable check is silent-when-watched
+  / block-when-autonomous (no literal value — class-derived). Fail-closed:
+  missing config / parse error / Python unavailable → shipped defaults. The
+  shipped default is itself the zero-config quiet posture (Settled decision
+  0); there is no user-tier hook config and no posture KNOB (the
+  posture-knob variant is REJECTED — see Design-history). The toggle reads
+  are main-root-only and the toggle surface is itself tamper-gated (Settled
+  decision 13).
 - **Cascade v2 (#1159, per its scope-trim comment).** The user tier
   `~/.claude/zskills-config.json` gains (a) a plain project > user >
   built-ins cascade for THREE workflow keys (`execution.landing`,
@@ -60,14 +94,31 @@ Concretely:
   (b) RAISE-ONLY floors for EXACTLY TWO safety keys
   (`execution.main_protected` — true wins over false; `agents.min_model`
   — stricter tier wins). `zskills_version` stays project-only.
-- **Main-write semantics (#1165).** "Locked main means no COMMIT, not no
-  write": `block-main-edits`' Edit/Write gate demotes to WARN in watched
-  sessions; the commit / cherry-pick / push gates on main stay HARD always.
-  The tool asymmetry this removes is real (#1165 N4): Bash writes to main
-  already pass the hooks, so demoting Edit/Write REMOVES the asymmetry
-  rather than opening a new hole. A first-class **move-to-worktree helper**
-  ships so dirty-main work can be carried into a worktree without `git
-  stash` (hard-denied) and with a sanctioned restore of main.
+- **Main-protection semantics (#1165, REVISED this round — rewrites old
+  Settled decision 7).** ALL the on-main gates — commit, cherry-pick, push,
+  AND Edit/Write — JOIN the demotable set: watched → SILENT, autonomous →
+  BLOCK. NEW `main_protected` semantics, stated VERBATIM (this exact wording
+  is reused in Settled decision 7 and the docs phase):
+
+  > **`main_protected:true` = block AUTONOMOUS/unwatched direct-to-main
+  > (force agents through the worktree/PR flow); attended/watched humans are
+  > UNRESTRICTED and SILENT, regardless of `main_protected`'s value.**
+
+  CRITICAL and explicit: main-protection is silent-when-attended EVEN WHEN
+  `main_protected=true`. The fork ships `main_protected:true` + `landing:pr`,
+  so attended users hit these gates constantly; the evaluator's argument
+  stands — git already protects main and an attended human should be able to
+  write to main. Rationale, recorded: git + Claude Code's permission-prompt
+  layer cover attended safety; `main_protected`'s real job is gating
+  AGENTS, never the watching human. The tool asymmetry #1165 N4 flagged is
+  resolved as a byproduct (Bash writes to main already passed the hooks;
+  now Edit/Write/commit/push all behave identically). A project that wants
+  the old hard-deny-even-attended behavior on any of these sets the
+  per-check toggle to `"block"` (Settled decision 6). A first-class
+  **move-to-worktree helper** ships so dirty-main work can be carried into a
+  worktree without `git stash` (hard-denied) and with a sanctioned restore
+  of main — still useful for attended agents preferring the worktree flow,
+  and the sanctioned escape for autonomous sessions.
 - **Config-UX batch (#1160).** The init interview gains a clearly-separated
   second question offering a PERSONAL (user-tier) config — accept writes an
   EMPTY scaffold (never seeded values); declines are recorded at the scope
@@ -78,12 +129,28 @@ Concretely:
 
 **Falsifiable end state:**
 
-1. **Watched warn.** In a session with `permission_mode: "default"` and no
-   live pipeline markers, `git add .` on main produces a USER-VISIBLE
-   WARNING (on the warn channel pinned by the Phase 1 gating probe) ending
-   in `[hooks.git_discipline.git_add_all — …]` and the command RUNS. The
-   same input with `permission_mode: "bypassPermissions"` produces the
-   deny envelope.
+0. **Zero-config quiet (the headline).** On a fresh user-level install with
+   NO config of any kind (no project `.claude/zskills-config.json`, no
+   `~/.claude/zskills-config.json`), in an attended session
+   (`permission_mode: "default"`, no live pipeline markers), a routine git
+   workflow — `git add .`, commit, push to main under `main_protected:true`,
+   and Edit-on-main — emits NO warnings AND NO blocks. The IDENTICAL
+   commands with `permission_mode: "bypassPermissions"` are denied exactly
+   as today (the deny envelope + current STOP text). NAMED EXCEPTION (DA4):
+   the zero-config "no nagging" claim is about ROUTINE git workflow, NOT
+   config-tampering — editing the main config's `hooks` block while watched
+   emits a WARN (visible, non-blocking; `config_hooks_tamper`'s shipped
+   watched-default is `warn`, the one demotable check that is not silent),
+   and the SAME edit under `permission_mode: "bypassPermissions"` is denied.
+1. **Watched silent (shipped default) / opt-in warn.** In a session with
+   `permission_mode: "default"` and no live pipeline markers, `git add .` on
+   main produces NO output and the command RUNS (silent shipped default).
+   With the project toggle `hooks.git_discipline.git_add_all: "warn"`, the
+   same input produces a USER-VISIBLE WARNING (on the warn channel pinned by
+   the Phase 1 gating probe) ending in `[hooks.git_discipline.git_add_all —
+   …]` and the command still RUNS. The same input with
+   `permission_mode: "bypassPermissions"` produces the deny envelope under
+   every value.
 2. **Bypass parity.** For all 23 predicate-demotable emission sites, a
    parity test feeds `permission_mode: "bypassPermissions"` input and
    asserts the deny envelope still fires with the current STOP text (plus
@@ -92,8 +159,12 @@ Concretely:
    real field `bypassPermissions` or absent) also still denies.
    Autonomous-mode protection is never weakened.
 3. **Toggles.** Project `hooks.git_discipline.git_add_all: "off"` → silent
-   allow; `"block"` → deny even watched; group `enabled: false` → whole
-   group off.
+   allow; `"warn"` → opt-in warn-when-watched (the coaching value); `"block"`
+   → deny even watched; group `enabled: false` → whole group off. The
+   main-protection demotion is testable the same way: with no toggle,
+   watched commit/push/cherry-pick/Edit on a `main_protected:true` project →
+   silent allow; the same under `bypassPermissions` → deny; `"block"` →
+   deny even watched.
 4. **Cascade v2.** User-tier `execution.landing: "pr"` is effective in a
    project whose config has no `landing`; project value wins when present.
    Project `main_protected: false` + user `true` → protected (floor).
@@ -118,6 +189,16 @@ Concretely:
 
 ## Settled decisions (do not relitigate)
 
+0. **Zero-config quiet-when-attended is the headline guarantee (owner
+   mandate, 2026-06-15).** On a fresh user-level install with NO project
+   files and NO user files, an attended human gets NO nagging — no warnings
+   AND no blocks — on a routine git workflow, while EVERY
+   autonomous/unwatched safety guarantee is preserved unchanged. This is
+   delivered by the SHIPPED BUILT-IN DEFAULT for demotable-when-watched
+   being SILENT (not warn). It is NOT a user-tier posture knob (that variant
+   is REJECTED — see Design-history dispositions). The amendment ONLY
+   reduces attended-mode noise on never-blocking arms; it touches no
+   autonomous/bypass/tamper machinery.
 1. The predicate is the Probe-B-pinned form with a LIVE pipeline arm:
    enforce iff `permission_mode == "bypassPermissions"` OR field
    absent/unrecognized (fail-safe) OR a zskills pipeline is LIVE —
@@ -144,13 +225,20 @@ Concretely:
    worktrees keep it until deletion), so a session living in an
    abandoned worktree stays enforce-mode — that fails TOWARD
    enforcement, worktrees are pipeline artifacts, and the main session
-   is unaffected. Warn otherwise. No other inputs (no TTY sniffing, no
+   is unaffected. WATCHED otherwise (a watched demotable check is SILENT
+   by shipped default; warn is opt-in via the per-check toggle). No other
+   inputs (no TTY sniffing, no
    env vars, no transcript heuristics).
 2. **Warn channel = decide-then-pin via the Phase 1 GATING probe, and
-   the warn envelope is DECISION-LESS under every pinned form.** The
-   warn-mode audience is the HUMAN (the predicate fires warn precisely
-   when a human is watching), so the warning must demonstrably reach the
-   user — WITHOUT touching the permission system. HARD INVARIANT: the
+   the warn envelope is DECISION-LESS under every pinned form.** Warn is
+   now the OPT-IN coaching value (a per-check `"warn"` toggle), not the
+   shipped demotable default (Settled decision 0 — the default is silent),
+   but the warn channel still has to be PROVEN user-visible: the moment a
+   project opts a check into `"warn"` while watched, that warning must
+   reach the human. So the Phase 1 GATING probe stays. The warn-mode
+   audience is the HUMAN (warn fires when a human is watching AND has opted
+   in), so the warning must demonstrably reach the user — WITHOUT touching
+   the permission system. HARD INVARIANT: the
    warn path never emits a `permissionDecision` (no
    `hookSpecificOutput` decision at all). A `permissionDecision:
    "allow"` would BYPASS the permission system for exactly the
@@ -172,12 +260,23 @@ Concretely:
    grammar pinned in the Phase 1 probe spec); else W-B is pinned via
    its own two-branch evidence ladder (also pinned in Phase 1); if
    NEITHER form demonstrably reaches the user, that is a
-   Failure-Protocol STOP (the design premise is falsified — surface, do
-   not ship demotions). Warn-mode text is human-addressed: no
-   agent-directed advice (agent guidance belongs in deny mode, which
-   IS model-visible via `permissionDecisionReason`).
-3. Hook toggles are **PROJECT-ONLY**. No user-tier hook config, no posture
-   knob — deliberately deferred, not forgotten.
+   Failure-Protocol STOP (the OPT-IN warn feature's premise is falsified
+   — surface, do not ship a warn value that silently never renders; the
+   silent default and the deny arm are unaffected). Warn-mode text is
+   human-addressed: no agent-directed advice (agent guidance belongs in
+   deny mode, which IS model-visible via `permissionDecisionReason`).
+3. **Teachable rule: stay QUIET when watched (no nagging); BLOCK when no
+   one's watching; coaching is OPT-IN; projects/users override per-check.**
+   Hook toggles stay **PROJECT-ONLY** (no user-tier hook config). The
+   "users override" clause of the teachable rule is satisfied by the
+   zero-config SILENT shipped default — a user needs to write NOTHING to be
+   quiet (Settled decision 0); explicit per-check overrides remain a
+   project-tier reviewed decision. There is NO user-tier posture KNOB: the
+   posture-knob variant is REJECTED (Design-history dispositions record why
+   — it would reintroduce user-tier hook config, the user-tier file is not
+   covered by the tamper gate, and it would silence main-protection by
+   class rather than per-check). The quiet default is the SHIPPED BUILT-IN
+   DEFAULT, not a posture setting and not a user-tier file.
 4. Group keys are named **exactly**: `git_destructive`, `fs_destructive`,
    `process_kill`, `git_discipline`, `main_protection`, `pr_discipline`,
    `tracking`. Do not rename, merge, or add groups.
@@ -189,9 +288,29 @@ Concretely:
    reviewed config made a deliberate choice. The hard/demotable class
    controls only the UNSET default (hard → block always; demotable →
    predicate-driven).
-7. `block-main-edits`' Edit/Write gate is predicate-demotable; the
-   commit / cherry-pick / push gates on main are NOT (keep-hard list in the
-   Toggle-key registry below).
+7. **Main-protection is FULLY demotable (REVISED this round — supersedes
+   the original "commit/cherry-pick/push stay keep-hard" decision).** ALL
+   on-main gates — `block-main-edits`' Edit/Write gate AND the
+   commit / cherry-pick / push gates in block-unsafe-{generic,project} —
+   are predicate-demotable: watched → SILENT (shipped default),
+   autonomous → BLOCK. The registry rows (push_to_main, commit_on_main,
+   cherry_pick_on_main, main_edit, config_hooks_tamper) are ALL classed
+   `demotable`. NEW `main_protected` semantics, stated VERBATIM:
+
+   > **`main_protected:true` = block AUTONOMOUS/unwatched direct-to-main
+   > (force agents through the worktree/PR flow); attended/watched humans
+   > are UNRESTRICTED and SILENT, regardless of `main_protected`'s value.**
+
+   This is silent-when-attended EVEN WHEN `main_protected=true` — the fork
+   ships `main_protected:true` + `landing:pr` and attended users hit these
+   gates constantly. Rationale: git + Claude Code's permission-prompt layer
+   cover attended safety; `main_protected`'s real job is gating AGENTS,
+   never the watching human. A project wanting hard-deny-even-attended on
+   any of these sets the per-check toggle to `"block"` (Settled decision 6).
+   (Resolving this contradiction with the original registry — which already
+   classed every main-protection row `demotable` — is part of the
+   amendment; the registry was correct, the original decision-7 carve-out
+   was the inconsistency, now removed.)
 8. The move-to-worktree helper is **copy-based** (diff + apply + untracked
    copy), never stash-based. `git stash` stays hard-denied. The sanctioned
    restore of main is **helper-mediated**: the helper performs the restore
@@ -232,20 +351,37 @@ Concretely:
     so a worktree-rooted session editing the MAIN root's config by
     absolute path is still gated (Phase 2 pins the insertion point);
     direct Bash writes naming the file as a write DESTINATION are gated
-    by the row-50 arm in block-unsafe-generic. Both are demotable: deny
-    in enforce mode; WARN when watched — a watching human seeing their
-    agent flip its own toggles is the design's answer, stated
-    explicitly. Self-protection: `config_hooks_tamper` is EXEMPT from
+    by the row-50 arm in block-unsafe-generic. Both are demotable, BUT
+    `config_hooks_tamper` is the ONE NAMED EXCEPTION to the silent
+    shipped watched-default (owner amendment 2026-06-15, round-1 review
+    DA4): in enforce/autonomous mode it DENIES like every demotable
+    check, but its shipped WATCHED default is **`warn`** (visible,
+    non-blocking), NOT silent. Rationale: the tamper gate protects the
+    protection system itself; a config-disarm's effect is durable and
+    cross-session, so it must never happen INVISIBLY — but a deliberately
+    -configuring human is not blocked. Every OTHER demotable check is
+    silent-when-watched; the tamper gate alone warns-when-watched by
+    default. (block-when-autonomous remains the real protection; the
+    warn-when-watched signal makes the flip actively visible to the
+    present human at the moment of the write rather than merely
+    transcript-visible after the fact.) A project that finds even the
+    warn too noisy sets `config_hooks_tamper` to `"off"` (a reviewed
+    project decision); one that wants hard-deny-even-attended sets
+    `"block"` for strictness; the explicit `"warn"` value is identical to
+    the shipped watched-default and so is rarely needed. Either way the
+    warn names the flip to the watching human. Self-protection:
+    `config_hooks_tamper` is EXEMPT from
     its group's `enabled` ceiling (a `main_protection.enabled: false`
     write cannot silently disarm the tamper check itself), and flipping
     its own per-check toggle is itself a tamper-gated write — the gate
     evaluates under the PRE-write config, so an autonomous agent cannot
     turn it off (the write denies before the new value takes effect);
-    a watched session can warn through it, and that watched-write →
-    persistent-autonomous-effect asymmetry is accepted with rationale
-    (the warn names the flip to the watching human; every warn/deny
-    text for this check carries the recovery line naming the
-    human-mediated re-enable path). **Threat model, stated:** this gate
+    a watched session passes through it (warning by the named-exception
+    default, or silent only if the project explicitly set `"off"`), and
+    that watched-write → persistent-autonomous-effect
+    asymmetry is accepted with rationale (the deny/warn text for this
+    check carries the recovery line naming the human-mediated re-enable
+    path). **Threat model, stated:** this gate
     is anti-casual, not anti-adversarial. Residual surface accepted
     with rationale: Bash-mediated writes that never name the file as a
     literal destination (variable destinations, programmatic writes,
@@ -267,7 +403,9 @@ Concretely:
 
 | Decision | Disposition |
 |---|---|
-| #308 (block-main-edits hard deny on Edit/Write to main) | **REVISED** — the original rationale ("orchestrator on main bypasses worktree discipline") is re-satisfied by warn-when-watched + the still-hard commit/cherry-pick/push gates; #1165 N4 showed the hard Edit/Write deny was an asymmetry, not a defense (Bash writes already passed). The allowlist, containment logic, and worktree-self check survive byte-for-byte. |
+| **Owner-amendment 2026-06-15: zero-config quiet-when-attended** | **ADOPTED** — the SHIPPED BUILT-IN DEFAULT for demotable-when-watched flips warn→SILENT, and ALL main-protection gates (commit/cherry-pick/push/Edit) join the demotable set. Delivers the headline zero-config guarantee (Settled decision 0). |
+| **REJECTED variant: user-tier posture KNOB (e.g. `~/.claude/zskills-config.json: {"enforcement_posture":"quiet"}`)** | **REJECTED — named here so it is not re-proposed.** A user-tier posture knob was considered as the quiet mechanism and rejected: (1) it CONTRADICTS the no-user-tier-hook-config decision (Settled decision 3) by reintroducing user-tier control over hook behavior; (2) the user-tier file is NOT covered by the tamper gate (Settled decision 13 gates only the MAIN-root project config), so a posture knob there would be an ungated disarm surface; (3) it would silence main-protection BY CLASS (one knob flips a whole posture) rather than per-check, losing the reviewed-per-check granularity. The chosen mechanism is the shipped built-in default — zero files, zero knob, nothing for the user to set or for an agent to flip. |
+| #308 (block-main-edits hard deny on Edit/Write to main) | **REVISED (twice).** Original rationale ("orchestrator on main bypasses worktree discipline") is re-satisfied by the predicate: autonomous sessions still BLOCK all on-main writes; only attended sessions are silent (and a watching human plus git/permission-prompt cover attended safety). The 2026-06-15 amendment extended the demotion to commit/cherry-pick/push as well (old Settled decision 7's keep-hard carve-out is removed — see Settled decision 7). #1165 N4 showed the hard Edit/Write deny was an asymmetry, not a defense (Bash writes already passed). The allowlist, containment logic, and worktree-self check survive byte-for-byte. |
 | INSTALL_REDESIGN Phase 5 PROJECT-ONLY carve-outs (`block-agents.sh` ≈L6–12 header; `block-unsafe-generic.sh` ≈L34 push-gate carve-out; resolver Pass-1 comment ≈L209–210) | **REVERSED for floors only** — the original rationale was "a user file silently LOWERING a project's protection inverts trust." Raise-only floors preserve that exact property: the user tier can only RAISE `main_protected`/`min_model`, never lower. The carve-out comments are rewritten to state the floor contract. |
 | docs/guides/zskills-config.md ≈L83–89 ("`execution.*` never cascades from the user tier … documented behavior, not a bug") | **INVERTS** — Phase 7 rewrites the paragraph: 3 workflow keys cascade plainly, 2 safety keys are raise-only floors, the rest of `execution.*` (and `zskills_version`) stays project-only. |
 | #1120 (config seed `landing: "direct"`) | **SURVIVES** — defaults unchanged. |
@@ -283,8 +421,10 @@ Concretely:
   `hooks/_lib/` that every later phase inlines. Building it with its own
   unit suite before touching any hook means each hook retarget is a
   mechanical integration, not a design step. Phase 1 also carries the
-  GATING warn-channel probe (Settled decision 2): no demotion lands
-  anywhere until the warn channel is proven user-visible.
+  GATING warn-channel probe (Settled decision 2): no OPT-IN `"warn"` value
+  ships until the warn channel is proven user-visible (the silent default
+  and the deny arm need no probe — silence emits nothing and deny is the
+  status quo; the probe gates only the coaching value).
 - **Phase 2 — the seven small hooks before the two big ones.** The
   integration pattern (inline helper, gate wrapper, tag, parity test,
   stamp/mirror lockstep) is proven on a 238-line hook before it is applied
@@ -372,7 +512,12 @@ directly, never `checkout --ours/--theirs`.
    (escaped in the fixture JSON, as the harness necessarily serializes
    it) with the real top-level field `bypassPermissions` — still deny;
    and a sibling with the real field ABSENT — still deny (fail-safe).
-   These tests may never be deleted or loosened by later phases.
+   These tests may never be deleted or loosened by later phases. **The 23
+   sites INCLUDE every main-protection row (push_to_main, commit_on_main,
+   cherry_pick_on_main, main_edit, config_hooks_tamper) — now that those
+   are demotable (Settled decision 7), their bypass-parity cases assert
+   the autonomous deny is intact: the owner-amendment reduces ONLY attended
+   noise; autonomous/unwatched on-main writes BLOCK exactly as before.**
 5. **Tests are never weakened.** Every re-specified assertion (Test 15a,
    block-main-edits C-cases, etc.) is an intended behavior change of the
    subject, stated as such in the commit message with the old and new
@@ -414,8 +559,11 @@ directly, never `checkout --ours/--theirs`.
 > the Phase 3 conformance tripwire mechanically enforces lib ↔ schema; this
 > table is the drafting source of truth. Class `hard` = unset default is
 > block-always (predicate never demotes); `demotable` = unset default is
-> block-when-enforce / warn-when-watched. Explicit per-check toggle values
-> override class in BOTH cases (Settled decision 6).
+> block-when-enforce / **SILENT-when-watched** (owner amendment 2026-06-15
+> — was warn-when-watched; warn is now the OPT-IN `"warn"` toggle value,
+> not the default). Explicit per-check toggle values override class in BOTH
+> cases (Settled decision 6). All five main-protection rows are `demotable`
+> (Settled decision 7, REVISED — no main-protection keep-hard carve-out).
 >
 > 37 distinct `hooks.<group>.<check>` keys cover 47 emission sites
 > (rows 1–36 and 39–47 are today's keyed sites; rows 49–50 are the NEW
@@ -483,35 +631,59 @@ Drafter classification notes (bind the implementer):
   pipeline fires — it is pipeline-scheduling correctness, and no other
   group fits. It stays hard: a warned-through malformed cron is a cron
   that silently never fires.
+- **Main-protection rows (#18, #28, #31, #33–36, #49–50) are ALL demotable
+  (Settled decision 7, REVISED).** Under the shipped default a WATCHED
+  session is SILENT on commit/cherry-pick/push/Edit to main even when
+  `main_protected:true`; an AUTONOMOUS/unwatched session BLOCKS exactly as
+  today. There is NO main-protection keep-hard carve-out anymore. A project
+  wanting hard-deny-even-attended on any of these sets the per-check toggle
+  to `"block"`; one wanting the old nag sets `"warn"`. Rationale: git +
+  the permission-prompt layer cover attended safety; `main_protected`'s job
+  is gating AGENTS.
 - The claim gates (#39–41) are demotable: they are tracking-discipline
-  (the warn text surfaces the foreign claim and a watching human
-  adjudicates), matching the #1159 demotable set ("tracking-discipline
-  gates"). The hard cross-session protections (claims releases, marker
-  trees) remain guarded by the fs_destructive checks. Honest caveat: in
-  the two-concurrent-WATCHED-sessions incident class (#877/#865 — two
-  terminals, or interactive + cron fire) the warn fires in the stealing
-  session while the harmed pipeline lives in the other; no single human
-  sees both sides, so warn-and-allow can still create the double claim.
-  The classing is inherited from #1159 (settled); projects wanting hard
+  (an autonomous session is denied; a WATCHED session is SILENT by default
+  — or, if opted into `"warn"`, the warn text surfaces the foreign claim
+  and a watching human adjudicates), matching the #1159 demotable set
+  ("tracking-discipline gates"). The hard cross-session protections (claims
+  releases, marker trees) remain guarded by the fs_destructive checks.
+  Honest caveat: in the two-concurrent-WATCHED-sessions incident class
+  (#877/#865 — two terminals, or interactive + cron fire) both watched
+  sessions are SILENT by default and warn-and-allow (when opted in) fires
+  in the stealing session while the harmed pipeline lives in the other; no
+  single human sees both sides, so the double claim can still occur. The
+  classing is inherited from #1159 (settled); projects wanting hard
   cross-session exclusion set `issue_unclaimed`/`plan_unclaimed` to
   `"block"` (Settled decision 6) — say so in the docs (Phase 7).
 - `no_verify` (#17) is hard despite living in git_discipline: bypassing
   pre-commit hooks defeats every other gate in this table.
 - `config_hooks_tamper` (#49–50, Settled decision 13) sits in
   `main_protection` because the gated file is the main root's config (the
-  toggle loader never reads worktree copies). It is demotable: a watched
-  human SEEING their agent rewrite the toggle file is the warn-mode
-  design working as intended; an autonomous agent doing it is denied.
-  Self-protection, pinned precisely (it is NOT absolute): (a) the check
-  is EXEMPT from the `main_protection.enabled` group ceiling (mode
-  resolution special-case, Phase 1) — a ceiling write cannot silently
+  toggle loader never reads worktree copies). It is demotable for
+  tri-state / class purposes (its UNSET-enforce default is block; explicit
+  toggle values override per Settled decision 6) BUT it is the **ONE NAMED
+  EXCEPTION** to the silent shipped watched-default (owner amendment
+  2026-06-15, DA4): an autonomous agent rewriting the toggle file is
+  DENIED; a WATCHED session is **WARNED by shipped default** (NOT silent
+  — the warn names the flip to the present human at the moment of the
+  write, because a config-disarm's effect is durable and cross-session
+  and must never happen invisibly), and the command still runs (the
+  human is not blocked). The lib's mode resolver therefore returns `warn`
+  for `config_hooks_tamper` when watched+unset, where every OTHER demotable
+  check returns `silent` (Phase 1 mode-resolver special-case + unit test).
+  A project finding even the warn too noisy sets the check to `"off"`; one
+  wanting hard-deny-even-attended sets `"block"`. The autonomous deny is
+  the real self-protection. Self-protection, pinned precisely (it is NOT
+  absolute):
+  (a) the check is EXEMPT from the `main_protection.enabled` group ceiling
+  (mode resolution special-case, Phase 1) — a ceiling write cannot silently
   take the tamper check down with the group; (b) flipping
   `config_hooks_tamper`'s own per-check value is itself a tamper-gated
   write evaluated under the PRE-write config, so an autonomous session
   cannot disarm it (deny fires before the new value exists); (c) a
-  WATCHED session can warn through the flip, and the flipped value then
+  WATCHED session passes the flip (warned by the named-exception default,
+  or silent only if explicitly set `"off"`), and the flipped value then
   persists into autonomous sessions — accepted asymmetry, with the
-  mitigation that every warn/deny text for this check ends with the
+  mitigation that every deny/warn text for this check ends with the
   recovery line: how to re-enable (delete the key or set `"block"` in
   `.claude/zskills-config.json` via a human-reviewed edit). The deny
   text must name that human-mediated path so an autonomous agent
@@ -637,11 +809,32 @@ hook behavior changes in this phase (no hook sources the helper yet).
   # zskills_enforcement_mode — args: $1=group $2=check $3=class(hard|demotable) $4=predicate-result
   #   ($4 is the tri-valued predicate echo; both enforce-* values are the
   #   enforce arm for mode resolution — they differ only in _ZSK_ENF_SOURCE)
-  #   echoes "block" | "warn" | "off" and sets _ZSK_ENF_SOURCE to one of:
+  #   echoes "block" | "warn" | "silent" | "off" and sets _ZSK_ENF_SOURCE
+  #   to one of:
   #   "project config: block|warn|off" | "group disabled in project config" |
   #   "autonomous default" ($4==enforce-autonomous) |
   #   "pipeline-active default" ($4==enforce-pipeline) |
-  #   "attended default" ($4==watched).
+  #   "attended default (silent)" ($4==watched, demotable, unset — every
+  #     demotable check EXCEPT config_hooks_tamper) |
+  #   "attended default (warn — tamper exception)" ($4==watched,
+  #     check==config_hooks_tamper, unset — the ONE named-exception arm).
+  #   THE "silent" RETURN IS THE OWNER-AMENDMENT (2026-06-15) ZERO-CONFIG
+  #   QUIET DEFAULT: a demotable check that is unset, watched, and not
+  #   group-disabled emits NOTHING (no warn, no block). The caller treats
+  #   "silent" exactly like "off" for emission purposes (it does NOT
+  #   accumulate a warning and does NOT block) — the only difference is
+  #   _ZSK_ENF_SOURCE, kept distinct so a future opt-in or a debug trace
+  #   can tell "shipped-silent default" from "project turned it off".
+  #   NAMED EXCEPTION (DA4): config_hooks_tamper is the ONE demotable check
+  #   whose UNSET + WATCHED arm returns "warn", NOT "silent" — the tamper
+  #   gate's effect is durable + cross-session, so a config-disarm must be
+  #   VISIBLE to the watching human at write time, never invisible. Its
+  #   enforce/autonomous arm still returns "block" like every demotable
+  #   check (the named exception is ONLY the watched-unset default).
+  #   "warn" is therefore reachable via (a) an explicit per-check "warn"
+  #   value (the opt-in coaching value) on ANY check, OR (b) the
+  #   config_hooks_tamper watched-unset named-exception default — never as
+  #   the watched-unset default of any OTHER demotable check.
   #   Resolution order:
   #     group enabled == false                → off   (group ceiling)
   #       EXCEPT check == config_hooks_tamper — the tamper check is
@@ -649,10 +842,17 @@ hook behavior changes in this phase (no hook sources the helper yet).
   #       ceiling write must not take the tamper gate down with it);
   #       only its own explicit per-check value can turn it off, and
   #       writing that value is itself tamper-gated at write time
-  #     per-check explicit value              → that value
+  #     per-check explicit value              → that value (block|warn|off)
   #     unset + class == hard                 → block
   #     unset + demotable + $4 == enforce-*   → block
-  #     unset + demotable + $4 == watched     → warn
+  #     unset + demotable + $4 == watched
+  #            + check == config_hooks_tamper → warn    (NAMED EXCEPTION,
+  #                                              DA4 — tamper gate is the
+  #                                              ONE warn-when-watched
+  #                                              shipped default)
+  #     unset + demotable + $4 == watched
+  #            + check != config_hooks_tamper → silent  (OWNER-AMENDMENT
+  #                                              quiet default; was "warn")
 
   # zskills_enforcement_tag — args: $1=group $2=check
   #   echoes "[hooks.$1.$2 — block|warn|off in .claude/zskills-config.json; currently: ${_ZSK_ENF_SOURCE}]"
@@ -717,7 +917,13 @@ hook behavior changes in this phase (no hook sources the helper yet).
   Python invocation per hook fire.
 
 - [ ] **Warn-channel visibility probe — GATING (Settled decision 2).**
-  Headless, scriptable; attended only on the W-B fallback branch (below):
+  Headless, scriptable; attended only on the W-B fallback branch (below).
+  Note (owner amendment): warn is now the OPT-IN `"warn"` coaching value,
+  not the demotable default — so this probe GATES the opt-in warn feature
+  (a `"warn"` toggle must demonstrably render), NOT the silent default or
+  the deny arm. It remains GATING: shipping a `"warn"` value that never
+  surfaces would be a silent lie, so no `"warn"`-emitting code path lands
+  until the channel is proven.
   1. Build a scratch consumer dir with a throwaway
      `.claude/settings.json` registering a one-off PreToolUse/Bash probe
      hook that emits Form W-A verbatim — the DECISION-LESS JSON
@@ -758,13 +964,16 @@ hook behavior changes in this phase (no hook sources the helper yet).
      file — process-level propagation, NOT proof of interactive
      visibility — W-B may be pinned ONLY after a one-time ATTENDED
      confirmation: surface to the user (Failure-Protocol-style pause),
-     have them run one watched `git add .` in the scratch consumer
-     interactively and confirm the warning renders; record the
+     have them run one watched `git add .` in the scratch consumer with
+     `hooks.git_discipline.git_add_all: "warn"` set (the opt-in warn value
+     — without it the shipped default is SILENT and nothing renders by
+     design) and confirm the warning renders; record the
      confirmation verbatim. Quote the observed record/evidence in the
      phase report either way.
   5. NEITHER form demonstrably visible → Failure-Protocol STOP: the
-     watched-warn premise is falsified; surface to the user before any
-     demotion lands.
+     OPT-IN warn feature's premise is falsified; surface to the user
+     before any `"warn"`-emitting code path lands (the SILENT default and
+     the deny arm are unaffected and may proceed).
   6. **Multi-hook composition legs (same scratch dir, GATING; legs run
      with whichever form steps 4–5 PINNED, not W-A unconditionally):**
      (a) register TWO warn-emitting probe hooks (distinct tokens, each
@@ -865,16 +1074,36 @@ hook behavior changes in this phase (no hook sources the helper yet).
   config_root × {inside main checkout, inside a linked worktree (echoes
   the MAIN root, not the worktree), non-git dir with CLAUDE_PROJECT_DIR,
   ZSKILLS_ENF_CONFIG_ROOT override wins};
-  mode resolution × {hard unset → block on all three predicate values;
-  demotable unset → block/block/warn by predicate value; explicit
-  off/warn/block override both classes; group `enabled:false` ceiling
+  mode resolution × {hard unset → block on all three predicate values
+  (enforce-autonomous / enforce-pipeline / watched ALL → block — a hard
+  check is never silent, even watched);
+  demotable unset (any demotable check EXCEPT config_hooks_tamper, e.g.
+  git_add_all) → block/block/**silent** by predicate value
+  (enforce-autonomous→block, enforce-pipeline→block, watched→**silent**;
+  the OWNER-AMENDMENT zero-config quiet default — assert the watched arm
+  returns the literal `silent`, NOT `warn`);
+  TAMPER NAMED EXCEPTION (DA4) — `config_hooks_tamper` unset →
+  block/block/**warn** by predicate value (enforce-autonomous→block,
+  enforce-pipeline→block, watched→**warn**; assert the watched arm
+  returns the literal `warn`, NOT `silent` — config_hooks_tamper is the
+  ONE demotable check whose watched-unset shipped default is warn, and
+  its `_ZSK_ENF_SOURCE` is `attended default (warn — tamper exception)`);
+  explicit
+  off/warn/block override both classes (an explicit `"warn"` on a
+  demotable check while WATCHED → `warn`, proving warn is reachable
+  by opt-in; an explicit `"off"` on `config_hooks_tamper` while WATCHED →
+  `off`, proving the named exception is overridable by reviewed project
+  choice); group `enabled:false` ceiling
   beats per-check block; CEILING EXEMPTION —
   `main_protection.enabled:false` + `config_hooks_tamper` unset →
-  config_hooks_tamper still resolves per predicate (NOT off), while
+  config_hooks_tamper still resolves per predicate (warn watched / block
+  autonomous, NOT off — the named-exception watched default survives the
+  ceiling exemption), while
   sibling main_protection checks go off; explicit
   `config_hooks_tamper:"off"` → off (Settled decision 6 honored)};
   _ZSK_ENF_SOURCE × {autonomous default,
-  pipeline-active default, attended default, each explicit-toggle
+  pipeline-active default, attended default (silent),
+  attended default (warn — tamper exception), each explicit-toggle
   source}; fail-closed × {no config file, malformed JSON,
   `ZSKILLS_PYTHON=/bin/false` simulated-unavailable → defaults};
   warn accumulation × {two warns in one scan → ONE flush emission
@@ -1020,13 +1249,23 @@ two roots per hook, never conflated:**
     field contains `"hooks"` — a full-file Write of a config carrying a
     hooks block is IN scope BY DESIGN even when the hooks block is
     unchanged (an autonomous agent rewriting the toggle file wholesale
-    is precisely what this gates; a watched session gets one warn —
-    accepted noise, stated here so nobody "fixes" it). Route through
+    is precisely what this gates; a watched session gets ONE WARN by the
+    named-exception shipped default — DA4: config_hooks_tamper is the ONE
+    demotable check that warns-when-watched rather than going silent,
+    because a config-disarm's effect is durable + cross-session and must
+    be VISIBLE at write time — or, if the project explicitly sets
+    `config_hooks_tamper:"off"`, nothing — accepted, stated here so nobody
+    "fixes" it back to silent).
+    Route through
     `zskills_enforcement_mode main_protection config_hooks_tamper
-    demotable "$PRED"` with a STOP text naming the tamper hazard + tag
+    demotable "$PRED"` and switch on its return: `silent`/`off` → fall
+    through untouched; `warn` → accumulate the warn (the named-exception
+    watched default routes HERE for config_hooks_tamper); `block` → deny.
+    The
+    STOP text names the tamper hazard + tag
     + the RECOVERY LINE (Settled decision 13: name the human-mediated
     re-enable/change path — "config changes to the hooks block need a
-    human-reviewed edit or committed project review") in BOTH warn and
+    human-reviewed edit or committed project review") in BOTH the warn and
     deny variants. Edits to the config NOT touching a `"hooks"` key
     fall through untouched.
   - After the existing allowlist (≈L201–206), before the deny emission
@@ -1034,13 +1273,18 @@ two roots per hook, never conflated:**
     (ENF_ROOT = config_root for toggles/predicate-$2; MAIN_ROOT doubles
     as ENF_LOCAL for this Edit/Write hook — see the root pins),
     `MODE=$(zskills_enforcement_mode main_protection main_edit demotable "$PRED")`.
-    `off` → exit 0. `warn` → `zskills_enforcement_warn` with the existing
+    `silent` (the zero-config watched default — owner amendment) → exit 0
+    emitting NOTHING; `off` → exit 0 (also nothing). `warn` (opt-in only)
+    → `zskills_enforcement_warn` with the existing
     STOP text (s/STOP: Edit\/Write to main is blocked/Edit\/Write to main
     is normally blocked/) + tag, then `zskills_enforcement_flush_warnings`
     and exit 0. `block` → existing deny envelope, message now ending with
     the tag. Warn-arm text is human-addressed (Settled decision 2): keep
     the factual body + tag; the `/do pr` / `/run-plan` recommendations
-    stay in the DENY arm only.
+    stay in the DENY arm only. NOTE: under the shipped default a watched
+    Edit/Write on a `main_protected:true` project hits the `silent` arm —
+    this is the zero-config quiet headline; do NOT reintroduce a watched
+    warning here.
   - The existing config gate (≈L154–165, fail-OPEN `"main_protected": true`
     literal grep) is UNTOUCHED in this phase (Phase 4 adds the user-tier
     floor read).
@@ -1048,16 +1292,32 @@ two roots per hook, never conflated:**
     in the commit message): C1/C2/C15–C17 deny cases now run with
     `permission_mode: "bypassPermissions"` injected into the fixture input
     (still DENY — these become 1 of the 5 parity cases via C1; keep all
-    five as deny-under-bypass). NEW cases: watched (default, no markers) →
-    allow + warn-channel output contains `[hooks.main_protection.main_edit`
-    (assert on the Phase-1-pinned channel: the systemMessage JSON for W-A,
-    stderr for W-B); watched + `.zskills/tracked` present → DENY; watched +
-    a stale `.zskills/tracking/<id>/` subdir but NO tracked file → allow +
-    warn (the DA2 fixture); toggle `"off"` → silent allow; toggle
+    five as deny-under-bypass). NEW cases (owner amendment — the demotable
+    default is SILENT, not warn): **watched (default, no markers, no toggle)
+    → allow + EMITS NOTHING** (assert NO warn-channel output: the
+    systemMessage JSON is absent for W-A / stderr empty for W-B, and grep
+    for `[hooks.main_protection.main_edit` → 0 — this is the zero-config
+    quiet headline case, ec0); **toggle `"warn"` + watched → allow +
+    warn-channel output contains `[hooks.main_protection.main_edit`** (the
+    OPT-IN coaching path, asserted on the Phase-1-pinned channel: the
+    systemMessage JSON for W-A, stderr for W-B); watched + `.zskills/tracked`
+    present (pipeline-active) → DENY; watched +
+    a stale `.zskills/tracking/<id>/` subdir but NO tracked file, no toggle
+    → allow + EMITS NOTHING (the DA2 fixture — silent default); toggle
+    `"off"` → silent allow; toggle
     `"block"` + watched → DENY; toggle `"warn"` + bypass → allow + warn
-    (explicit override honored, Settled decision 6); tamper arm —
+    (explicit override honored in BOTH arms, Settled decision 6 — an
+    explicit per-check value overrides class regardless of predicate; this
+    is the documented behavior and is unchanged by the amendment); tamper
+    arm —
     Edit of `.claude/zskills-config.json` with `"hooks"` in new_string ×
-    {bypass → DENY (parity case), watched → warn, no-`"hooks"` edit →
+    {bypass → DENY (parity case), **watched no-toggle → WARN allow** (the
+    DA4 named-exception default — assert warn-channel output contains
+    `[hooks.main_protection.config_hooks_tamper`, NOT silent — this is the
+    ONE demotable check that warns-when-watched by default),
+    watched + tamper explicit `"warn"` → warn (identical to default),
+    watched + tamper explicit `"off"` → SILENT allow (the named exception
+    is overridable by reviewed project choice), no-`"hooks"` edit →
     falls through to the main_edit arm,
     **`main_protected` ABSENT/false → tamper arm STILL fires** (the
     placement's headline property — without this fixture a one-block-
@@ -1077,8 +1337,9 @@ two roots per hook, never conflated:**
 - [ ] **block-fix-issue-unclaimed.sh** (2 sites → `hooks.tracking.issue_unclaimed`,
   demotable) and **block-run-plan-unclaimed.sh** (1 site →
   `hooks.tracking.plan_unclaimed`, demotable): same integration pattern;
-  warn arm allows worktree creation with the foreign-claim/no-claim text
-  as a warning. Although these two hooks parse stdin with Python
+  the watched default is SILENT (allows worktree creation, emits nothing);
+  the opt-in `"warn"` value allows with the foreign-claim/no-claim text as
+  a warning; autonomous → block. Although these two hooks parse stdin with Python
   elsewhere, their `permission_mode` read uses the SAME inlined lib
   predicate as every other hook (the unescaped-quote regex is
   spoof-proof; one drift-gated extraction path, not two). Both are
@@ -1089,7 +1350,8 @@ two roots per hook, never conflated:**
   `tests/test-block-fix-issue-unclaimed-ownership.sh`
   and `tests/test-plan-claim-hook-deny.sh`: existing deny cases gain
   `permission_mode: "bypassPermissions"` in fixture stdin (parity cases
-  ×3 across the two hooks), plus one watched→warn case each.
+  ×3 across the two hooks), plus one watched-no-toggle→SILENT (allow, emit
+  nothing) case and one toggle-`"warn"`+watched→warn case each.
 - [ ] **Keep-hard small hooks — tags + toggle honoring only** (predicate
   is consulted but unset-default stays block):
   - `block-stale-skill-version.sh` → tag `hooks.git_discipline.stale_skill_version`
@@ -1147,6 +1409,14 @@ two roots per hook, never conflated:**
 
 ### Acceptance Criteria
 
+- [ ] **Zero-config quiet (partial, owner amendment — Settled decision 0):**
+  with NO project config and TMP_HOME with NO user config, a watched
+  (`permission_mode:"default"`, no markers) Edit on a `main_protected:true`
+  project EMITS NOTHING (no warn-channel output, no deny). The IDENTICAL
+  fixture under `bypassPermissions` DENIES with the current STOP text.
+  (The full git-workflow zero-config criterion — add/commit/push — lands
+  in Phase 3 where those gates are demoted; Phase 7 carries the
+  end-to-end census.)
 - [ ] All 5 bypass-parity cases pass:
   `bash tests/test-block-main-edits.sh && bash tests/test-block-fix-issue-unclaimed-ownership.sh && bash tests/test-plan-claim-hook-deny.sh`.
 - [ ] Tag presence spot-check (Settled decision 14 forms; the Phase 3
@@ -1201,8 +1471,8 @@ VERBATIM (keeping their `${VAR:-…}` env-override guards) above that
 first emission site; the later per-section `${VAR:-…}` re-computations
 (the file already recomputes them at ≈L994/1001 and ≈L1060/1067) then
 no-op idempotently. A missed hoist fails LOUD (unset/empty root at the
-first watched-warn fixture), but pin it anyway — don't rely on the
-failure. The hook's two-root split is therefore unchanged; the
+first watched-default / opt-in-warn fixture), but pin it anyway — don't
+rely on the failure. The hook's two-root split is therefore unchanged; the
 predicate simply consumes both existing roots, computed earlier. For block-unsafe-generic
 (which resolves no root outside the push arm, ≈L1118–1122) both helper
 calls are new: it inlines `extract_cd_target` +
@@ -1252,10 +1522,15 @@ list, same commit) and calls `zskills_enforcement_config_root` for
   **appends `$(zskills_enforcement_tag "$1" "$2")` to the message
   itself** (Settled decision 14 — sites pass bare group/check args; the
   tag is built in exactly one place), returns (continues scanning) on
-  warn/off — accumulating via `zskills_enforcement_warn` — and falls
+  `silent`/`off` WITHOUT accumulating anything, accumulates via
+  `zskills_enforcement_warn` and continues on `warn` (the opt-in coaching
+  value), and falls
   through to `block_with_reason` on block, where any already-accumulated
   warnings are APPENDED to the deny's permissionDecisionReason per the
-  lib's pinned deny-path rule (nothing silently dropped). Warn must NOT
+  lib's pinned deny-path rule (nothing silently dropped). `silent` is the
+  zero-config watched default for these demotable sites (owner amendment)
+  — it emits NOTHING, exactly like `off` (only `_ZSK_ENF_SOURCE` differs).
+  Warn must NOT
   exit the scan loop early, or a single warned check would mask a later
   hard check in the same command; the hook's final allow path calls
   `zskills_enforcement_flush_warnings`. Drift-gate iteration list updated
@@ -1263,9 +1538,17 @@ list, same commit) and calls `zskills_enforcement_config_root` for
   Extend `tests/test-hooks-misc.sh` (or the suite that pins these gates —
   re-derive by grepping for the message substrings): every existing deny
   case for the 16 hard sites unchanged; the 3 demotable sites gain
-  bypass-parity (deny under `bypassPermissions`) + watched→warn cases,
-  including the SPOOF parity case of Invariant 4 (counterfeit
-  permission_mode literal in the command string).
+  bypass-parity (deny under `bypassPermissions`) + watched-no-toggle +
+  toggle-`"warn"`+watched cases, including the SPOOF parity case of
+  Invariant 4 (counterfeit permission_mode literal in the command string).
+  The watched-no-toggle expectation is per-check: **git_add_all and
+  push_to_main → SILENT (allow, emit nothing); config_hooks_tamper (row 50)
+  → WARN (allow + warn-channel output naming
+  `[hooks.main_protection.config_hooks_tamper`)** — the DA4 named
+  exception: config_hooks_tamper is the ONE demotable check that
+  warns-when-watched by default, so assert WARN, NOT silent, for its
+  watched-no-toggle case (and `"off"` → silent allow proves it is
+  overridable).
 - [ ] **Commit 2 — block-unsafe-project.sh:** same pattern for 17 sites
   (15 demotable, 2 hard per the registry). The tracking gates (≈L336–361)
   route through `hooks.tracking.*`. **The demotion is REAL and testable
@@ -1282,17 +1565,22 @@ list, same commit) and calls `zskills_enforcement_config_root` for
   `cd /tmp/wt && git commit`) keep every tracking gate enforced, while
   a FINISHED pipeline's leftover `requires.*`/`step.*` markers under
   `.zskills/tracking/<id>/` — with the tracked marker already removed —
-  produce warn in a watched session. That second state is the
-  watched→warn tracking-gate fixture: markers present, NO tracked file
-  at either root, NO fresh sentinel, `permission_mode: "default"` →
-  warn + allow.
+  produce the WATCHED state in a watched session, which is SILENT by the
+  shipped default (owner amendment). That second state is the
+  watched-default tracking-gate fixture: markers present, NO tracked file
+  at either root, NO fresh sentinel, `permission_mode: "default"`, no
+  toggle → SILENT + allow (emits nothing); with the gate opted into
+  `"warn"` → warn + allow.
   Stamp bump + mirror +
   **`.sh.template` regenerated byte-equal, same commit** + drift-gate
   iteration list updated (R15). Extend
   `tests/test-hooks-main-protected.sh` + `tests/test-hooks-misc.sh`:
   parity cases for all 15 demotable sites (incl. one SPOOF case),
-  watched→warn cases for at least `commit_on_main`, `push_to_main`,
-  `tests_not_run`, and the stale-pipeline tracking-gate fixture above.
+  watched-no-toggle → SILENT cases for at least `commit_on_main`,
+  `push_to_main`, `tests_not_run` (these are the on-main / git-discipline
+  gates whose zero-config silence is the headline), a toggle-`"warn"`
+  opt-in case for at least one of them, and the stale-pipeline
+  tracking-gate fixture above.
 - [ ] **Commit 3 — conformance tripwires** in
   `tests/test-skill-conformance.sh` (model: the gate allow/block-list
   tripwire ≈L1734–1777 — sed-extracted lists + anti-vacuous emptiness
@@ -1355,6 +1643,14 @@ list, same commit) and calls `zskills_enforcement_config_root` for
 
 ### Acceptance Criteria
 
+- [ ] **Zero-config quiet — full git workflow (owner amendment, Settled
+  decision 0):** with NO project config and TMP_HOME with NO user config, a
+  watched (`permission_mode:"default"`, no markers) `git add .`, commit on
+  `main_protected:true`, and push to `main_protected:true` each ALLOW and
+  EMIT NOTHING (no warn-channel output, no deny). The IDENTICAL inputs under
+  `bypassPermissions` each DENY with the current STOP text. Quote the
+  silent-allow assertions and the bypass-deny assertions in the phase
+  report.
 - [ ] Both tripwires pass AND fail correctly: demonstrate the anti-vacuous
   arm by temporarily breaking one tag in a scratch copy (not committed)
   and showing the tripwire FAILs — quote the failure line in the phase
@@ -2033,26 +2329,46 @@ sweep proving no stale prose or untagged emission survives.
     dashboard keys project-only. The ≈L83–89 paragraph ("…documented
     behavior, not a bug") INVERTS — replace with the floor contract and
     one worked example per direction (user raises; user cannot lower).
-  - New **`hooks` toggle section**: the teachable rule verbatim, the
-    7 groups, the tristate semantics, group `enabled` ceilings (and the
+  - New **`hooks` toggle section**: the teachable rule verbatim ("stay
+    QUIET when watched (no nagging); BLOCK when no one's watching; coaching
+    is OPT-IN; projects/users override per-check"), the zero-config
+    quiet headline (Settled decision 0 — a fresh install with no config
+    nags an attended human about NOTHING), the
+    7 groups, the tristate semantics (`"warn"` = opt-in coaching,
+    `"block"` = strict, `"off"` = silent; the SHIPPED demotable default is
+    SILENT-when-watched / BLOCK-when-autonomous, with the ONE NAMED
+    EXCEPTION that `config_hooks_tamper`'s shipped watched-default is WARN
+    not silent — DA4: a config-disarm must be visible at write time),
+    group `enabled` ceilings
+    (and the
     `config_hooks_tamper` ceiling EXEMPTION + self-protection property,
-    Settled decision 13), the unset-default classes, fail-closed
+    Settled decision 13), the unset-default classes (demotable → silent
+    watched / block autonomous, EXCEPT config_hooks_tamper → warn watched /
+    block autonomous; hard → block always), fail-closed
     behavior, the main-root-only toggle read + tamper gate + its
-    anti-casual threat model, the claim-gate two-watched-sessions
+    anti-casual threat model, the new `main_protected` semantics VERBATIM
+    (Settled decision 7 — block autonomous direct-to-main; attended humans
+    unrestricted and silent regardless of `main_protected`'s value), the
+    claim-gate two-watched-sessions
     caveat with the `"block"` override recipe (registry drafter note),
     and a worked example config. Reference the toggle-key registry's
     key names — list all 37 (this list is tripwire-locked; see the
     DA16 item below).
   - Per-field resolution table (≈L298+): rows for the 5 cascade-v2 keys
     + the `hooks` block.
-- [ ] **`CLAUDE_TEMPLATE.md` ≈L387–394 reword + managed.md lockstep:**
-  "When `main_protected: true`, agents cannot commit, cherry-pick, or
-  push to main" stays true (those gates are hard) but gains the
-  Edit/Write nuance: locked main means no COMMIT, not no write — watched
-  sessions get warnings on main edits; autonomous sessions are blocked;
-  per-check overrides live in `hooks.*`. The Tracking Enforcement
-  paragraph (≈L392–394) gains one sentence: tracking gates warn in
-  watched non-pipeline sessions and block otherwise. Mention
+- [ ] **`CLAUDE_TEMPLATE.md` ≈L387–394 reword + managed.md lockstep
+  (owner amendment — this paragraph changes MEANING, not just nuance):**
+  the old "When `main_protected: true`, agents cannot commit, cherry-pick,
+  or push to main" is REPLACED with the new `main_protected` semantics
+  VERBATIM: **`main_protected:true` = block AUTONOMOUS/unwatched
+  direct-to-main (force agents through the worktree/PR flow);
+  attended/watched humans are UNRESTRICTED and SILENT, regardless of
+  `main_protected`'s value.** State the teachable rule (stay quiet when
+  watched; block when autonomous; coaching opt-in; per-check overrides in
+  `hooks.*`) and the zero-config quiet headline. The Tracking Enforcement
+  paragraph (≈L392–394) gains one sentence: tracking gates are SILENT in
+  watched non-pipeline sessions by default (warn only if opted in) and
+  block otherwise. Mention
   move-to-worktree as the sanctioned dirty-main escape. Then
   `/update-zskills --rerender`-equivalent: regenerate
   `.claude/rules/zskills/managed.md` via `scripts/render-managed-rules.py`
@@ -2083,17 +2399,22 @@ sweep proving no stale prose or untagged emission survives.
     DA16 extension above).
   - Bypass-parity census: report the 23 parity case names suite-by-suite.
   - `bash tests/run-all.sh` full green.
-- [ ] **Optional attended check (non-gating, and no longer load-bearing):**
-  one live watched session (`ZSKILLS_LIVE_ATTENDED=1` discipline) runs
-  `git add .` in a main_protected scratch consumer and confirms the
-  WARNING text is visible interactively. The warn channel's
-  user-visibility was already PROVEN by the GATING Phase 1 probe
-  (Settled decision 2; if the W-B(b) branch was taken, an attended
-  confirmation already happened in Phase 1) — this check only confirms
-  the same channel in a live interactive session vs. the probe's
-  headless stream. If not run,
+- [ ] **Two optional attended checks (non-gating, and no longer
+  load-bearing):**
+  (1) **Zero-config quiet confirmation** — one live watched session
+  (`ZSKILLS_LIVE_ATTENDED=1` discipline) with NO `hooks.*` toggle set runs
+  `git add .` (and an Edit-on-main) in a `main_protected:true` scratch
+  consumer and confirms NO warning and NO block renders (the headline:
+  the attended human is nagged about nothing). (2) **Opt-in warn channel
+  confirmation** — set `hooks.git_discipline.git_add_all: "warn"` and re-run
+  `git add .`, confirming the WARNING text now renders interactively. The
+  warn channel's user-visibility was already PROVEN by the GATING Phase 1
+  probe (Settled decision 2; if the W-B(b) branch was taken, an attended
+  confirmation already happened in Phase 1) — check (2) only confirms the
+  same channel in a live interactive session vs. the probe's headless
+  stream. If either is not run,
   record ATTENDED-PENDING in the tracker notes AND file a follow-up
-  issue (R17) so the confirmation isn't silently dropped.
+  issue (R17) so the confirmations aren't silently dropped.
 
 ### Design & Constraints
 
@@ -2109,6 +2430,17 @@ sweep proving no stale prose or untagged emission survives.
 ### Acceptance Criteria
 
 - [ ] Stale-prose sweep returns 0 hits (quote the command + output).
+- [ ] **Stale main-protection prose sweep (owner amendment):**
+  `git grep -n "agents cannot commit, cherry-pick, or" -- docs/ CLAUDE_TEMPLATE.md .claude/rules/`
+  → 0 hits (the old unconditional-block wording is gone; the new
+  block-autonomous / silent-attended `main_protected` semantics replace it).
+- [ ] **Zero-config quiet — end-to-end census (owner amendment, Settled
+  decision 0):** re-state the Phase 3 zero-config proof as a release gate —
+  with NO project config and NO user config, an attended session's routine
+  workflow (`git add .`, commit, push to `main_protected:true`, Edit on
+  main) emits NO warnings and NO blocks; the identical commands under
+  `bypassPermissions` deny exactly as today. Report the suite + case names
+  that assert it.
 - [ ] `bash tests/test-managed-md-up-to-date.sh` passes.
 - [ ] All conformance tripwires pass (tag format ×9 hooks with pinned
   counts 19/17/2/2/2/1/1/3/2 — generic/project/main-edits/agents/
@@ -2131,6 +2463,28 @@ research (codebase surfaces + patterns/prior-art, file:line-anchored) →
 this draft → adversarial review rounds (senior reviewer + devil's
 advocate per round — combined into one seat for the round-3 convergence
 check — findings deduped via an overlap map) → refiner pass per round.
+
+**Owner-amendment round (2026-06-15) — sanctioned relitigation of the
+originally-settled teachable rule and main-protection split.** The owner
+mandated a zero-config quiet-when-attended posture. Changes landed this
+round: (1) teachable rule flipped warn-when-watched → SILENT-when-watched
+with OPT-IN coaching (Overview, Settled decisions 0/2/3, registry header);
+(2) the SHIPPED demotable default for watched flips warn → `silent` (a new
+4th `zskills_enforcement_mode` return value, Phase 1; consuming hooks in
+Phases 2–3 treat it like `off` — emit nothing); (3) main-protection
+commit/cherry-pick/push/Edit ALL became demotable (Settled decision 7
+rewritten — the original keep-hard carve-out was inconsistent with the
+registry, which already classed those rows demotable, so the
+reclassification removed a contradiction rather than moving rows: the
+demotable-site/key/hard counts are UNCHANGED at 23/16/26); (4) the
+user-tier posture-knob variant is REJECTED and named as such
+(Design-history); (5) a zero-config Settled decision 0 + acceptance
+criteria added (Phases 2/3/7); (6) the warn-channel probe re-scoped to
+gate the OPT-IN warn value (not the default); (7) the bypass/autonomous/
+tamper/fail-closed safety spine is UNCHANGED — bypass-parity still asserts
+autonomous deny on all 23 sites including the newly-demoted main-protection
+rows. The autonomous/unwatched safety guarantees are byte-identical; only
+attended-mode noise on never-blocking arms was removed.
 
 Verification notes from drafting: every load-bearing anchor in this plan
 was re-verified against the worktree at draft time (block-main-edits deny
@@ -2197,8 +2551,16 @@ decision 1).
 | 1 | 18 (R1–R18: 0 CRIT / 9 MAJ / 9 MIN) | 16 (DA1–DA16: 5 CRIT / 6 MAJ / 5 MIN) | 34/34 addressed (32 fixed, 1 moot-by-redesign, 1 fixed-via-sibling) |
 | 2 | 9 (R2-1…R2-9: 1 CRIT / 5 MAJ / 3 MIN) | 11 (DA1–DA11: 3 CRIT / 5 MAJ / 3 MIN) | 20/20 addressed (3 cross-seat overlaps: R2-1≡DA2 warn-allow bypass; R2-4≡DA3 root anchor; R2-8≡DA10 count drift) — every empirical claim reproduced before fixing |
 | 3 | combined seat (reviewer + devil's advocate): 0 CRIT / 0 MAJ / 5 MINOR / 2 NIT (F1–F7) | — (combined into the reviewer seat) | 7/7 fixed in the convergence-fold refiner pass |
+| Owner-amendment (2026-06-15) | OWNER MANDATE (not adversarial): zero-config quiet-when-attended — teachable-rule flip (warn→silent default, opt-in coaching), main-protection fully demotable (rewrites old Settled decision 7), posture-knob REJECTED, zero-config Settled decision 0 + ACs | n/a (directed change) | all sections re-threaded for consistency; counts unchanged (23/16/26); autonomous/bypass/tamper spine preserved |
+| Amendment review (2026-06-15) | 1 (NIT-1: 0 CRIT / 0 MAJ / 1 MINOR — example tag missing "(silent)" qualifier) | 7 (DA1–DA7: 0 CRIT / 2 MAJ / 5 MIN; DA1/2/3/6/7 = verified-preservation confirmations, no defect) | DA4 (MAJOR) FIXED — config_hooks_tamper made the ONE named exception to the silent watched-default: its shipped watched-default is now WARN (decision 13 + registry note + lib mode-resolver + unit test + zero-config AC all re-threaded; counts unmoved — class stays demotable, only the watched DEFAULT differs). DA5 (MAJOR) JUSTIFIED — push_to_main stays silent-when-attended per owner decision (residual recorded below). NIT-1 fixed (example tag now `attended default (silent)`). DA1/2/3/6/7 confirmations require no change. |
 
-Converged at round 3.
+Converged at round 3; amended once post-convergence by owner directive
+(2026-06-15), then run through one adversarial review round
+(2026-06-15: reviewer 1 MINOR, DA 2 MAJOR / 5 MINOR) — DA4 fixed
+(tamper-gate named-exception warn default), DA5 justified as a recorded
+residual, NIT-1 fixed. The amendment reduces attended-mode noise only
+(with the tamper gate held visible-when-watched) and preserves every
+autonomous/unwatched safety guarantee.
 
 ### Remaining concerns
 
@@ -2206,23 +2568,43 @@ Honest residuals carried to execution — each is documented in-body with
 its rationale and mitigation; none is a plan-text contradiction:
 
 1. **PreToolUse systemMessage legality is unknown until the Phase 1
-   probe** — the warn design rides on it; the probe's
-   Failure-Protocol STOP branch (neither form demonstrably visible) is
-   real, not theoretical.
+   probe** — the OPT-IN `"warn"` value rides on it (the silent default and
+   the deny arm do not); the probe's Failure-Protocol STOP branch (neither
+   form demonstrably visible) gates only the warn value, not the
+   zero-config quiet posture.
 2. **Bash-mediated variable-destination config writes remain ungated** —
    the row-50 tamper gate is anti-casual and transcript-visible only; a
    write that never names the config file as a literal destination
    passes (accepted per Settled decision 13's threat model).
-3. **Watched-session warn-through of the tamper gate persists into later
-   autonomous sessions** — a config edit warned-through while watched
-   keeps its effect when no one is watching (accepted asymmetry;
-   recovery-line mitigation).
+3. **Watched-session pass-through of the tamper gate persists into later
+   autonomous sessions** — under the named-exception shipped default
+   (DA4) a watched config edit WARNS (visible, non-blocking — not silent;
+   the tamper gate is the one demotable check held visible-when-watched)
+   yet still passes and keeps its effect when no one is watching (accepted
+   asymmetry; the autonomous deny is the real protection; the warn makes
+   the flip visible to the present human at write time; recovery-line
+   mitigation; a project can set `"off"` to silence or `"block"` to
+   hard-deny). This is a narrower residual than the silent variant the
+   amendment originally proposed.
 4. **The sub-agent `permission_mode` VALUE is unpinned** — Probe B
    verified field PRESENCE only; the LOCAL-root tracked arm is the
    operative protection for worktree pipeline agents.
 5. **Claim-gate demotion leaves a two-watched-sessions double-claim
-   window** — two concurrently watched sessions can both warn-through
-   the same claim (documented `"block"` recipe for projects that care).
+   window** — two concurrently watched sessions can both pass the same
+   claim (silently by default, or warn-through if opted into `"warn"`);
+   the window is WIDER under the silent default than under the old
+   warn-default (no nag in either session), accepted per the owner mandate
+   (documented `"block"` recipe for projects that care).
 6. **The probe pin has no CI canary** — drift on CLI upgrade is covered
    only by the manual recheck script (`tests/manual/warn-channel-probe.sh`)
    plus the dated assumption note in the lib header.
+7. **`push_to_main` is silent-when-attended by owner decision** — if
+   `git push` is permission-allowlisted in the consumer's
+   `.claude/settings.json` (a common convention), an attended agent can
+   push to a `main_protected:true` main with no friction (no hook warning
+   AND no permission prompt). Accepted (review round DA5, JUSTIFIED — owner
+   decision): git-recoverable; `main_protected`'s job is gating AUTONOMOUS
+   agents, not the watching human; the push was already allowed-with-warning
+   pre-amendment, so the amendment removes only the warning, not a block. A
+   project wanting the warn or hard-deny back sets
+   `hooks.main_protection.push_to_main` to `"warn"` / `"block"`.
