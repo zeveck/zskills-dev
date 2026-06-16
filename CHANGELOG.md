@@ -8,6 +8,17 @@
 
 ## Unreleased
 
+### Breaking: `auto` no longer requests auto-merge
+
+The `auto` positional token now means "unattended mode" only — it runs
+without pausing for approval but does **not** auto-merge the PR. Use the
+new `automerge` token for unattended + auto-merge (the previous `auto`
+behavior). `automerge` implies `auto`. `auto merge` (two words) is also
+accepted.
+
+Affected skills: `/run-plan`, `/do`, `/commit`, `/fix-issues`,
+`/draft-tests`, `/draft-plan`, `/refine-plan`, `/work-on-plans`.
+
 ### Plugin-lane install redesign — zero files required, one file when wanted (INSTALL_REDESIGN)
 
 - **The plugin install no longer writes anything into your project by

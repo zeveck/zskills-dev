@@ -1,7 +1,7 @@
 ---
 name: draft-tests
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [auto] [<guidance>]"
+argument-hint: "<plan-file> [rounds N] [auto|automerge] [<guidance>]"
 description: >-
   Draft test specifications into an existing plan through iterative
   adversarial review. Appends a `### Tests` subsection per pending phase
@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.06.15+bcc06e"
+  version: "2026.06.15+f151ef"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [<guidance>] — Adversarial Test-Spec Drafter
@@ -175,8 +175,15 @@ fi
 
 ```bash
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 ```

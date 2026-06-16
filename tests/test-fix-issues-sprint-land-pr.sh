@@ -395,7 +395,12 @@ patch_block_capturing_land_args() {
   local src="$1" out="$2" capture_file="$3"
   patch_block "$src" "$out"
   awk -v out="$capture_file" '
-    /\[ "\$\{AUTO:-false\}" = "true" \] && LAND_ARGS=/ {
+    /\[ "\$\{AUTO_FLAG:-0\}" = "1" \] && LAND_ARGS=/ {
+      print
+      print "printf \"%s\" \"$LAND_ARGS\" > " out
+      next
+    }
+    /\[ "\$\{AUTOMERGE_FLAG:-0\}" = "1" \] && LAND_ARGS=/ {
       print
       print "printf \"%s\" \"$LAND_ARGS\" > " out
       next
@@ -413,17 +418,17 @@ test_A5_auto_true_emits_flag() {
   export PREPARED_RESULT_FILE="$CASE_DIR/result.txt"
   export PREPARED_BODY_FILE="$CASE_DIR/body.txt"
   mk_result_file "$PREPARED_RESULT_FILE" "STATUS=merged"
-  export AUTO="true"
+  export AUTO_FLAG="1"
   run_block "A-5cap" "$patched" "$CASE_DIR/bin"
   if [ -f "$cap" ] && grep -q -- '--auto' "$cap"; then
     pass "A5: AUTO=true → LAND_ARGS contains --auto"
   else
     fail "A5: AUTO=true → LAND_ARGS contains --auto" "rc=$LAST_RC captured=$(cat "$cap" 2>/dev/null || echo missing) stderr=$(head -5 "$TMP_ROOT/A-5cap.err" 2>/dev/null)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO_FLAG AUTOMERGE_FLAG WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
-# Case A6: AUTO=false — LAND_ARGS must NOT contain --auto.
+# Case A6: AUTO_FLAG=0 — LAND_ARGS must NOT contain --auto.
 test_A6_auto_false_no_flag() {
   setup_case_a "6" "gnu"
   local patched="$CASE_DIR/block.sh"
@@ -433,18 +438,18 @@ test_A6_auto_false_no_flag() {
   export PREPARED_RESULT_FILE="$CASE_DIR/result.txt"
   export PREPARED_BODY_FILE="$CASE_DIR/body.txt"
   mk_result_file "$PREPARED_RESULT_FILE" "STATUS=merged"
-  export AUTO="false"
+  export AUTO_FLAG="0"
   run_block "A-6cap" "$patched" "$CASE_DIR/bin"
   if [ -f "$cap" ] && ! grep -q -- '--auto' "$cap"; then
     pass "A6: AUTO=false → LAND_ARGS does NOT contain --auto"
   else
     fail "A6: AUTO=false → LAND_ARGS does NOT contain --auto" "captured=$(cat "$cap" 2>/dev/null || echo missing)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO_FLAG AUTOMERGE_FLAG WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
-# Case A7: AUTO unset + `set -u` — block must NOT crash, LAND_ARGS no --auto.
-#   This pins the fix from issue #337 secondary: `[ "${AUTO:-false}" = ... ]`
+# Case A7: AUTO_FLAG unset + `set -u` — block must NOT crash, LAND_ARGS no --auto.
+#   This pins the fix from issue #337 secondary: `[ "${AUTO_FLAG:-0}" = ... ]`
 #   defaults under set -u; the prior `[ "$AUTO" = "true" ]` would have
 #   triggered `unbound variable`.
 test_A7_auto_unset_no_crash() {
@@ -456,7 +461,7 @@ test_A7_auto_unset_no_crash() {
   export PREPARED_RESULT_FILE="$CASE_DIR/result.txt"
   export PREPARED_BODY_FILE="$CASE_DIR/body.txt"
   mk_result_file "$PREPARED_RESULT_FILE" "STATUS=merged"
-  unset AUTO || true
+  unset AUTO_FLAG AUTOMERGE_FLAG || true
   run_block "A-7cap" "$patched" "$CASE_DIR/bin"
   local err; err=$(cat "$TMP_ROOT/A-7cap.err" 2>/dev/null || echo "")
   if [ "$LAST_RC" -eq 0 ] && ! echo "$err" | grep -qi 'unbound variable' \

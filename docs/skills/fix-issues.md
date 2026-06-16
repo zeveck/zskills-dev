@@ -10,14 +10,14 @@
 <div class="flow-step"><p><strong>Implementer subagents</strong> fix them in parallel worktrees</p></div>
 <div class="flow-step"><p><strong>Verifier subagents</strong> verify each fix</p></div>
 <div class="flow-step"><p>The <strong>original agent</strong> writes a sprint report</p></div>
-<div class="flow-step optional"><p>With <strong>auto</strong> it lands and merges each fix; otherwise it stops at the report for you to land via <code>/fix-report</code></p></div>
+<div class="flow-step optional"><p>With <strong>automerge</strong> it lands and merges each fix; with bare <strong>auto</strong> it lands but does not merge; otherwise it stops at the report for you to land via <code>/fix-report</code></p></div>
 </div>
 
 </details>
 
 ## What it does
 
-`/fix-issues N` runs a batch bug-fixing sprint over your GitHub issues. You give it a count `N`, and it prioritizes that many open issues, fixes each one in its own isolated worktree, runs the test suite before anything is committed, and writes a sprint report you can hand off to `/fix-report`. With the `auto` flag it lands each fix for you (via `/land-pr` in PR mode); without it, it asks for approval at the key gates first.
+`/fix-issues N` runs a batch bug-fixing sprint over your GitHub issues. You give it a count `N`, and it prioritizes that many open issues, fixes each one in its own isolated worktree, runs the test suite before anything is committed, and writes a sprint report you can hand off to `/fix-report`. With the `automerge` flag it lands and auto-merges each fix (via `/land-pr` in PR mode); with bare `auto` it lands but stops at pr-ready for human review; without either, it asks for approval at the key gates first.
 
 Each issue is fixed and committed separately, so the history stays clean and one bad fix never blocks the others. Before fixing anything, the agent reads each issue's full body — not just the title — so the fix matches what the issue actually asked for.
 
@@ -38,10 +38,10 @@ The same command also schedules itself to run again (`every SCHEDULE`), keeps yo
 
 ## Typical usage
 
-The most common way to run `/fix-issues` is as a recurring, autonomous queue worker: a small count, `auto`, and a schedule. For example, fix one issue every 30 minutes from the dashboard queue and land each as a PR:
+The most common way to run `/fix-issues` is as a recurring, autonomous queue worker: a small count, `automerge`, and a schedule. For example, fix one issue every 30 minutes from the dashboard queue and land and merge each as a PR:
 
 ```
-/fix-issues 1 every 30m dashboard auto
+/fix-issues 1 every 30m dashboard automerge
 ```
 
 A one-time burst is just as common — fix several issues now, each as its own PR:
@@ -72,7 +72,8 @@ Running `/fix-issues` with no count and no subcommand doesn't start a sprint —
 | `N` | Yes (sprints) | Number of issues to fix (e.g., `30`) |
 | `focus` | No | Prioritize a specific domain (`new`, `correctness`, `codegen`, `ui`, `tests`, or any domain found in your trackers) |
 | `dashboard` | No | Pick the issues from the dashboard's Ready queue instead of the default priority order |
-| `auto` | No | Run without stopping for confirmation: skip the issue-list approval, land each fix, and merge the sprint-report PR |
+| `auto` | No | Run without stopping for confirmation: skip the issue-list approval, land each fix. Does not auto-merge; see `automerge`. |
+| `automerge` | No | Run unattended and auto-merge each fix once CI passes. Implies `auto`. |
 | `every SCHEDULE` | No | Self-schedule recurring runs (`4h`, `30m`, `day at 9am`, `weekday at 9am`) |
 | `now` | No | Run immediately (with `every`: run now AND schedule) |
 | `pr` | No | Land each fix as its own pull request on a named branch |
@@ -162,4 +163,5 @@ Flag a previously-skipped issue so the next sprint re-evaluates it from scratch 
 - A scheduled sprint lasts only as long as the session that created it -- re-run `/fix-issues ... every ...` to restart it after the session ends
 - `every SCHEDULE` always runs autonomously, so adding it implies `auto` even if you don't type `auto`
 - When you don't specify `pr` or `direct`, the landing style falls back to your project's configured default, or to cherry-picking the fix back to main if nothing is configured
+- `auto` runs unattended but does not merge; use `automerge` for unattended + auto-merge.
 - The sprint always runs the full test suite before any fix is committed, and never weakens a test to make it pass

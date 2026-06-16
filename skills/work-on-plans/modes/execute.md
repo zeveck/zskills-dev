@@ -459,6 +459,13 @@ For each ready entry in `plans.ready[0:N]`:
    - Phase mode → `Skill: { skill: "run-plan", args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto" }`
    - Finish mode → `Skill: { skill: "run-plan", args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto finish" }`
 
+   When the user passed `automerge` to `/work-on-plans` (`AUTOMERGE=1`),
+   insert ` automerge` immediately after `auto` in the args above — e.g.
+   `args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto automerge"` (phase) or
+   `args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto automerge finish"` (finish) —
+   so `/run-plan` requests auto-merge on the PR. Without `automerge`, the
+   plain `auto` directives above stand and the PR settles at pr-ready.
+
    Where `$ZSKILLS_PLANS_DIR/<FILE>.md` is `SLUG_TO_FILE[$SLUG]` rendered as a
    path relative to `$MAIN_ROOT`. **Do not pass a landing-mode flag.**
    `/run-plan` resolves its own landing mode (currently `pr` per

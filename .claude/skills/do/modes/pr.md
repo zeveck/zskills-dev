@@ -420,10 +420,9 @@ description.
 - `$LANDED_SOURCE = "do"`
 - `$WORKTREE_PATH` set (the per-task worktree from Step A5)
 - `--auto` is gated on the positional `auto` token (issue #297 — matches
-  /run-plan, /fix-issues). Without `auto`, auto-merge stays
-  OFF and the PR settles at `pr-ready` after CI passes; with `auto`,
-  `LAND_ARGS` includes `--auto` and `/land-pr`'s existing auto-merge
-  path takes over.
+  /run-plan, /fix-issues). `--automerge` is gated on the `automerge`
+  token. Without `automerge`, the PR settles at `pr-ready` after CI
+  passes; with `automerge`, `/land-pr` requests auto-merge.
 - `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (do's body is fixed at PR
   creation; no per-phase update like /run-plan does)
 - `<CALLER_REBASE_CONFLICT_HANDLER>` = no agent-assisted resolution
@@ -486,9 +485,10 @@ LAND_OUTCOME=__init__
 LANDED_SOURCE="do"
 LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --tracking-id=$TASK_SLUG"
 # Issue #297: positional `auto` token (parsed in pre-flight pre-parse)
-# opts /do pr into /land-pr's auto-merge path. Mirrors
-# /run-plan, /fix-issues.
+# opts /do pr into unattended mode. `automerge` additionally requests
+# auto-merge via /land-pr. Mirrors /run-plan, /fix-issues.
 [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
+[ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /do pr.
@@ -593,7 +593,7 @@ while :; do
       else
         LAND_OUTCOME=pr-ready
       fi
-      break ;;  # /land-pr already requested merge if --auto
+      break ;;  # /land-pr already requested merge if --automerge
     pending)
       LAND_OUTCOME=pr-ready
       break ;;  # settle at pr-ready

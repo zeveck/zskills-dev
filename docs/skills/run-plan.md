@@ -22,7 +22,7 @@
 <div class="flow-step"><p>A <strong>verifier subagent</strong> verifies it, and the commit accumulates on the one branch</p></div>
 <div class="flow-step"><p>The <strong>original agent</strong> re-fires the next phase as a fresh turn, looping until the plan is done</p></div>
 <div class="flow-step"><p>After the last phase, the <strong>original agent</strong> opens one PR for the whole plan</p></div>
-<div class="flow-step optional"><p>With <strong>auto</strong> it requests merge; plain <strong>finish</strong> pauses between every phase and leaves the PR for you to merge</p></div>
+<div class="flow-step optional"><p>With <strong>automerge</strong> it requests merge; <strong>auto</strong> runs unattended without merging; plain <strong>finish</strong> pauses between every phase and leaves the PR for you to merge</p></div>
 </div>
 
 </details>
@@ -75,13 +75,14 @@ Run `/run-plan plans/X.md` on its own to do just the next phase interactively. A
 | `phase` | No | A specific phase to run, e.g. `4a`. If omitted, the next incomplete phase is detected automatically |
 | `finish` | No | Run all remaining phases in order until the plan is complete |
 | `status` | No | Show plan progress (read-only — no work is done) |
-| `auto` | No | Run without pausing for approval, and auto-merge the PR in PR mode (see below) |
+| `auto` | No | Run without pausing for approval (unattended mode). Does not auto-merge; see `automerge` |
+| `automerge` | No | Unattended + auto-merge the PR once CI passes. Implies `auto`. |
 | `pr` | No | Land each phase via a pull request on a feature branch |
 | `direct` | No | Work directly on `main`, with no PR and no cherry-pick |
 | `every SCHEDULE` | No | Run on a recurring schedule (`4h`, `30m`, `day at 9am`) |
 | `now` | No | Run immediately (with `every`: run now and schedule) |
 
-`auto` makes the run autonomous: it skips the approval prompts and human-review pauses (the between-phase pause, drift findings, staleness checks, and verifier-fail review) so the skill can run unattended. Where a phase lands as a pull request, `auto` also auto-merges that PR. In cherry-pick or direct mode there is no PR to merge, so `auto` only removes the pauses.
+`auto` makes the run autonomous: it skips the approval prompts and human-review pauses (the between-phase pause, drift findings, staleness checks, and verifier-fail review) so the skill can run unattended. Where a phase lands as a pull request, bare `auto` creates the PR but does NOT auto-merge; add `automerge` to also request auto-merge. In cherry-pick or direct mode there is no PR to merge, so the distinction is irrelevant.
 
 Landing mode is resolved in this order: an explicit `pr` or `direct` argument wins; otherwise the `execution.landing` default in `.claude/zskills-config.json` is used; otherwise it falls back to cherry-pick (work in a worktree, cherry-pick the result to `main`). `direct` mode is rejected when `execution.main_protected` is `true` — use `pr` instead.
 
@@ -124,7 +125,7 @@ Report when the next scheduled run will fire, as both a relative ("~2h 15m") and
 ## Common Patterns
 
 - **Single phase:** `/run-plan plans/X.md` — run the next incomplete phase interactively.
-- **Full autonomous execution:** `/run-plan plans/X.md finish auto pr` — run every remaining phase, each as an auto-merged PR.
+- **Full autonomous execution:** `/run-plan plans/X.md finish automerge pr` — run every remaining phase, each as an auto-merged PR.
 - **Scheduled execution:** `/run-plan plans/X.md auto every 4h now` — schedule recurring runs and start immediately.
 - **Check progress:** `/run-plan plans/X.md status` — see which phases are done, in progress, or blocked.
 - **Resume early:** `/run-plan now` — trigger the active schedule without waiting for the next fire.
@@ -137,3 +138,4 @@ Report when the next scheduled run will fire, as both a relative ("~2h 15m") and
 - A phase whose dependencies aren't done yet stops the run cleanly and reports which prerequisite is missing.
 - The schedule is session-scoped — it ends when the session ends.
 - A failing phase stops the run there; `auto` mode tries one fix cycle before giving up.
+- `auto` runs unattended but does not merge; use `automerge` for unattended + auto-merge.

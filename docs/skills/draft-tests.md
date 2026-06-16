@@ -59,7 +59,8 @@ A bare plan name (no slash) is resolved against the project's plans directory, s
 |----------|----------|-------------|
 | `plan-file` | Yes | Path to the existing plan file. A path containing `/` is used as-is; a bare name resolves against the project's plans directory. |
 | `rounds N` | No | Maximum number of review/refine cycles. Defaults to 3. |
-| `auto` | No | After the spec-augmented plan is committed, open a pull request, watch CI, and merge automatically. Without `auto`, the change is committed but no PR is opened. |
+| `auto` | No | After the spec-augmented plan is committed, open a pull request and watch CI. Does NOT auto-merge; see `automerge`. |
+| `automerge` | No | Same as `auto`, plus auto-merge the PR once CI passes. Implies `auto`. |
 | `guidance` | No | Any extra words become focus guidance that steers what the review pressure-tests (e.g. "focus on integration tests"). |
 
 The plan file is detected as the first argument that contains `/` or ends in `.md`. `rounds` must be followed by a number to count; `rounds` with no number after it is treated as guidance. The `auto` token is matched case-insensitively as a standalone word. Anything left over is joined into the guidance text — guidance shapes what the review looks at, it is not taken as fact, so the same verify-before-acting discipline still applies.
@@ -82,7 +83,7 @@ If no plan file is found, `/draft-tests` reports the usage line and stops.
 - **Add tests after drafting a plan:** `/draft-tests plans/X.md` — run it on a freshly drafted plan to add test specs before `/run-plan` executes it.
 - **Steer the focus:** `/draft-tests plans/X.md focus on error handling and edge cases` — guide what the review pressure-tests.
 - **More review depth:** `/draft-tests plans/X.md rounds 5` — allow more review/refine cycles for a thorny test surface.
-- **Draft and ship:** `/draft-tests plans/X.md auto` — commit the spec-augmented plan, open a PR, and merge it automatically.
+- **Draft and ship:** `/draft-tests plans/X.md automerge` — commit the spec-augmented plan, open a PR, and auto-merge it once CI passes.
 
 ## Tips & Gotchas
 
@@ -90,4 +91,5 @@ If no plan file is found, `/draft-tests` reports the usage line and stops.
 - Completed phases are never modified. A gap in already-completed work is surfaced as a new backfill phase at the end of the plan, not by editing the finished phases.
 - The test specs go inside the plan's phases; there is no separate test document to maintain and nothing extra to wire up for `/run-plan`.
 - Sections after the last phase are left exactly as they were, so trailing notes and appendices survive untouched.
-- `auto` controls whether the result lands automatically — the same `auto` token used by `/draft-plan`, `/run-plan`, `/do`, `/fix-issues`, and `/refine-plan`. It does not skip or shorten the review.
+- `auto` opens a PR and watches CI but does not merge; `automerge` does both. The same tokens are used by `/draft-plan`, `/run-plan`, `/do`, `/fix-issues`, and `/refine-plan`. Neither skips or shortens the review.
+- `auto` runs unattended but does not merge; use `automerge` for unattended + auto-merge.

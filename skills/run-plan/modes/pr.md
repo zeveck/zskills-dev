@@ -351,19 +351,26 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 #   $WORKTREE_PATH = the plan-scoped PR-mode worktree (one per plan, reused across all phases in finish/finish-auto modes; see Issue #191)
 #   $AUTO          = "true" when $AUTO_FLAG=1 (i.e. /run-plan was invoked with `auto`,
 #                    or with the `finish auto` composite alias). Controls whether
-#                    `--auto` is appended to the /land-pr arg vector (auto-merge
-#                    the resulting PR).
+#                    `--auto` is appended to the /land-pr arg vector (unattended mode).
+#   $AUTOMERGE     = "true" when $AUTOMERGE_FLAG=1 (i.e. /run-plan was invoked with
+#                    `automerge`). Controls whether `--automerge` is appended (auto-merge).
 #   $BODY_FILE     = constructed above
 #   $BRANCH_NAME   = the plan-scoped feature branch (one per plan; phase number does NOT appear in branch name)
 #   $PR_TITLE      = constructed above
 LANDED_SOURCE="run-plan"
 # Bind $AUTO from the canonical $AUTO_FLAG bash variable: if `auto` was on
 # the invocation (standalone or via the `finish auto` composite alias), pass
-# `--auto` to /land-pr.
+# `--auto` to /land-pr. Bind $AUTOMERGE from $AUTOMERGE_FLAG: if `automerge`
+# was on the invocation, pass `--automerge` to /land-pr.
 if [ "${AUTO_FLAG:-0}" = "1" ]; then
   AUTO="true"
 else
   AUTO="false"
+fi
+if [ "${AUTOMERGE_FLAG:-0}" = "1" ]; then
+  AUTOMERGE="true"
+else
+  AUTOMERGE="false"
 fi
 
 while :; do
@@ -394,11 +401,12 @@ while :; do
   #     skills/run-plan/scripts/sync-pr-body-progress.sh:146-155.
   #   - gh-pr-edit-failed: WARN-and-continue.
 
-  # Build /land-pr arg vector. --body-file is required; --auto and
-  # --worktree-path are conditional.
+  # Build /land-pr arg vector. --body-file is required; --auto,
+  # --automerge, and --worktree-path are conditional.
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE"
   [ -n "$WORKTREE_PATH" ] && LAND_ARGS="$LAND_ARGS --worktree-path=$WORKTREE_PATH"
   [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+  [ "${AUTOMERGE:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --automerge"
   # Pass --tracking-id so /land-pr writes fulfilled.land-pr.<id> on
   # successful merge, satisfying the requires.land-pr.<id> marker written
   # at /run-plan skill entry. Only /run-plan PR mode passes this — the 3
@@ -541,7 +549,7 @@ while :; do
 
   case "$CI_STATUS" in
     pass|none|skipped)
-      break ;;  # /land-pr already requested merge if --auto
+      break ;;  # /land-pr already requested merge if --automerge
     pending)
       break ;;  # settle at pr-ready; user / cron can resume with --pr
     not-monitored)

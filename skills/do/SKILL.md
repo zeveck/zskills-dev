@@ -1,13 +1,13 @@
 ---
 name: do
-argument-hint: "<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [--rounds N] [auto|automerge] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Worktree/direct/pr landing modes via flag
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.15+0cc69f"
+  version: "2026.06.15+0ab24d"
 ---
 
 # /do \<description> [--rounds N] [auto] [every SCHEDULE] [now] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -247,8 +247,16 @@ fi
 #   - Phase 4 (Land) as the gate to push/cherry-pick+push (direct/worktree modes)
 # Note: Phase 3 dispatches /verify-changes unconditionally for code
 # changes (issue #713) — AUTO_FLAG no longer gates verification.
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+# 'auto merge' (two words) also counts as automerge
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 # Issue-number parse (claim-work-item Phase 2 / W2.2). Collect ALL `#N`
@@ -962,6 +970,8 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--no-claim($|[[:space:]])/ /' \

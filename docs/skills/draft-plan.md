@@ -24,7 +24,7 @@ The payoff is downstream. `/run-plan` executes a plan faithfully, so the quality
 
 The output is a single plan file with a structure `/run-plan` understands: an overview, a progress tracker, and numbered phases, each with goals, specific work items, design and constraints, and testable acceptance criteria. The file ends with a "Plan Quality" section recording how many rounds ran, whether the plan converged, and any concerns left unresolved.
 
-When run on a repository that protects its main branch, `/draft-plan` does its work in an isolated worktree and commits the finished plan there on a feature branch, rather than leaving it as a loose file. If you pass `auto`, it then opens a pull request for the plan and merges it once checks pass; without `auto`, the commit stays on the branch and you land it yourself.
+When run on a repository that protects its main branch, `/draft-plan` does its work in an isolated worktree and commits the finished plan there on a feature branch, rather than leaving it as a loose file. If you pass `auto`, it then opens a pull request for the plan and monitors CI; without `auto`, the commit stays on the branch and you land it yourself. Add `automerge` to also request auto-merge once checks pass.
 
 If the research turns up a task too broad to spec well in one plan -- too many phases, or sub-problems that share nothing -- `/draft-plan` will say so and recommend `/research-and-plan` to decompose it into focused sub-plans instead.
 
@@ -43,10 +43,10 @@ You can name the output file (otherwise the path is derived from the description
 /draft-plan rounds 5 Redesign the solver architecture
 ```
 
-When you want the plan to land automatically once it is drafted, add `auto`. This is the shape used when chaining straight into execution -- draft the plan, land it, then run it:
+When you want the plan to land unattended once it is drafted, add `auto`. To also auto-merge after CI passes, add `automerge` (implies `auto`). This is the shape used when chaining straight into execution -- draft the plan, land it, then run it:
 
 ```
-/draft-plan plans/THERMAL_PLAN.md auto Implement the thermal domain
+/draft-plan plans/THERMAL_PLAN.md automerge Implement the thermal domain
 ```
 
 For work where the design itself is still open, start with an interactive conversation before any drafting: `brainstorm` for co-designing a fuzzy idea, or `quiz` for a requirements interview when you know roughly what you want but need the precise requirements drawn out.
@@ -67,7 +67,7 @@ For work where the design itself is still open, start with an interactive conver
 ## Arguments
 
 ```
-/draft-plan [output FILE] [rounds N] [auto] [brainstorm|quiz] <description...>
+/draft-plan [output FILE] [rounds N] [auto] [automerge] [brainstorm|quiz] <description...>
 ```
 
 | Argument | Required | Description |
@@ -75,13 +75,14 @@ For work where the design itself is still open, start with an interactive conver
 | `description` | Yes | What the plan should accomplish, in natural language. Can be brief ("add dark mode") or a detailed multi-paragraph brief. Everything after the recognized leading flags is the description. |
 | `output FILE` | No | Where to write the plan file. Defaults to a path derived from the description. May be given as `output <path>` or as a bare leading `*.md` token before the description begins. |
 | `rounds N` | No | Maximum review-and-refine cycles. Defaults to 3. The process stops early if a round converges with no substantive new issues. |
-| `auto` | No | After the plan is committed, open a pull request, run checks, and merge it. Without `auto`, the plan is committed on the feature branch and you land it manually. Recognized anywhere in the arguments. |
+| `auto` | No | After the plan is committed, open a pull request and monitor CI. Without `auto`, the plan is committed on the feature branch and you land it manually. Recognized anywhere in the arguments. |
+| `automerge` | No | Implies `auto`. Additionally requests auto-merge on the PR once CI passes. Without `automerge`, the PR is opened but merge is left to you. |
 | `brainstorm` | No | Run an interactive design dialogue before drafting, then feed what you decided into the research. Recognized only as a leading flag, before the description begins. |
 | `quiz` | No | Run an interactive requirements interview before drafting, then seed the research with the requirements it captures. Recognized only as a leading flag, before the description begins. |
 
 `brainstorm` and `quiz` are mutually exclusive -- both are pre-draft interviews, and asking for both at once is an error rather than a silent drop of one. Because they are recognized only at the front of the arguments, a description word like "build a quiz app" does not trigger either mode; to enable a mode you must lead with the flag, not append it.
 
-`auto` mirrors the same token in `/run-plan`, `/do`, and `/fix-issues`. It controls only whether the plan lands automatically -- it does not skip the review rounds or the brainstorm/quiz dialogue.
+`auto` mirrors the same token in `/run-plan`, `/do`, and `/fix-issues`. It controls only whether the plan lands unattended -- it does not skip the review rounds or the brainstorm/quiz dialogue. `automerge` adds auto-merge on top.
 
 ## Examples
 
@@ -89,7 +90,7 @@ For work where the design itself is still open, start with an interactive conver
 /draft-plan Add dark mode support to the editor
 /draft-plan output plans/DARK_MODE.md Add dark mode support
 /draft-plan rounds 5 Redesign the solver architecture
-/draft-plan plans/THERMAL_PLAN.md auto Implement the thermal domain
+/draft-plan plans/THERMAL_PLAN.md automerge Implement the thermal domain
 /draft-plan brainstorm Add a settings panel             # interactive design dialogue first
 /draft-plan quiz Add dark mode support                  # interactive requirements interview first
 /draft-plan output p.md quiz rounds 5 Add dark mode     # quiz in the leading flag cluster, any order

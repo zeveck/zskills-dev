@@ -1,7 +1,7 @@
 ---
 name: run-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [phase|finish|status] [auto] [every SCHEDULE] [now] | stop | next"
+argument-hint: "<plan-file> [phase|finish|status] [auto|automerge] [every SCHEDULE] [now] | stop | next"
 description: >-
   Execute the next phase of a plan: parse status, dispatch implementation
   in a worktree, verify via a separate agent, update progress, write the
@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.15+2e2498"
+  version: "2026.06.15+86e095"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -148,10 +148,20 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][iI][nN][iI][sS][hH]($|[[:space:]]) ]];
   fi
 fi
 
+# AUTOMERGE_FLAG: set by `automerge` token or `auto merge` (two words).
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+
 # AUTO_FLAG: set by standalone `auto` (regardless of finish), OR by the
-# `finish auto` composite (backward-compatible alias per D2-RP).
+# `finish auto` composite (backward-compatible alias per D2-RP), OR by
+# `automerge` (which implies auto).
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 

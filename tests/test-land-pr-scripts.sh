@@ -571,7 +571,7 @@ cleanup_fixture "$F"
 F=$(new_fixture mode9)
 prep_gh "$F/state-gh" pr_merge 1 exit 1
 prep_gh "$F/state-gh" pr_merge 1 stderr 'pull request auto-merge is not allowed on this repository'
-run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --auto-flag true --ci-status pass
+run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --automerge-flag true --ci-status pass
 if [ "$SUT_RC" -eq 0 ] \
    && [[ "$SUT_OUT" == *"MERGE_REQUESTED=false"* ]] \
    && [[ "$SUT_OUT" == *"MERGE_REASON=auto-merge-disabled-on-repo"* ]]; then
@@ -587,7 +587,7 @@ cleanup_fixture "$F"
 F=$(new_fixture mode10)
 prep_gh "$F/state-gh" pr_merge 1 exit 1
 prep_gh "$F/state-gh" pr_merge 1 stderr 'HTTP 502 Bad Gateway'
-run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --auto-flag true --ci-status pass
+run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --automerge-flag true --ci-status pass
 if [ "$SUT_RC" -eq 30 ] \
    && [[ "$SUT_OUT" == *"MERGE_REASON=gh-error"* ]] \
    && [[ "$SUT_OUT" =~ CALL_ERROR_FILE=([^[:space:]]+) ]] \
@@ -642,10 +642,10 @@ fi
 cleanup_fixture "$F"
 
 # ----------------------------------------------------------------------
-# Idempotency 3 — merge --auto-flag=false → no gh call, MERGE_REQUESTED=false
+# Idempotency 3 — merge --automerge-flag=false → no gh call, MERGE_REQUESTED=false
 # ----------------------------------------------------------------------
 F=$(new_fixture idem3)
-run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --auto-flag false --ci-status pass
+run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --automerge-flag false --ci-status pass
 if [ "$SUT_RC" -eq 0 ] \
    && [[ "$SUT_OUT" == *"MERGE_REQUESTED=false"* ]] \
    && [[ "$SUT_OUT" == *"MERGE_REASON=auto-not-requested"* ]] \
@@ -660,7 +660,7 @@ cleanup_fixture "$F"
 # Idempotency 4 — merge --ci-status=pending → not requested
 # ----------------------------------------------------------------------
 F=$(new_fixture idem4)
-run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --auto-flag true --ci-status pending
+run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr 42 --automerge-flag true --ci-status pending
 if [ "$SUT_RC" -eq 0 ] \
    && [[ "$SUT_OUT" == *"MERGE_REQUESTED=false"* ]] \
    && [[ "$SUT_OUT" == *"MERGE_REASON=ci-not-passing"* ]] \
@@ -704,7 +704,7 @@ fi
 cleanup_fixture "$F"
 
 F=$(new_fixture argerr4)
-run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr abc --auto-flag true --ci-status pass
+run_sut "$F" bash "$SCRIPTS_DIR/pr-merge.sh" --pr abc --automerge-flag true --ci-status pass
 if [ "$SUT_RC" -eq 2 ]; then
   pass "[argerr4] pr-merge.sh non-numeric --pr exits 2"
 else

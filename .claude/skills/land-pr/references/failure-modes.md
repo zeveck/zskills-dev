@@ -236,5 +236,5 @@ idempotency contract is co-tested with the detection contract.
   for `gh pr edit` = 0).
 - **monitor pending → re-poll**: first invocation returns `CI_STATUS=pending`;
   second invocation (after CI completes) returns `CI_STATUS=pass`.
-- **merge no-op when --auto-flag=false**: emits `MERGE_REQUESTED=false
+- **merge no-op when --automerge-flag=false**: emits `MERGE_REQUESTED=false
   MERGE_REASON=auto-not-requested`, never invokes `gh pr merge`.

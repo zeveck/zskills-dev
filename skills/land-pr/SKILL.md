@@ -2,9 +2,9 @@
 name: land-pr
 user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
-argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
+argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--automerge] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.06.15+e1f067"
+  version: "2026.06.15+1fd1a2"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -51,7 +51,9 @@ Phase 6 verify caller skills follow it.
 
 Parse `$ARGUMENTS` using the bash-regex idiom that matches `/do`
 and `/commit`. Required: `--branch`, `--title`, `--body-file`, `--result-file`.
-Optional: `--auto` (bool, default false), `--worktree-path`,
+Optional: `--auto` (bool, default false — unattended mode),
+`--automerge` (bool, default false — request auto-merge; implies `--auto`),
+`--worktree-path`,
 `--landed-source` (default `land-pr`), `--ci-timeout` (default 600),
 `--no-monitor` (skip CI poll, return after create), `--pr <num>` (resume
 mode: skip rebase/push/create, jump to monitor), `--issue <num>`
@@ -73,6 +75,7 @@ TITLE=""
 BODY_FILE=""
 RESULT_FILE=""
 AUTO_FLAG=false
+AUTOMERGE_FLAG=false
 WORKTREE_PATH=""
 LANDED_SOURCE="land-pr"
 CI_TIMEOUT=600
@@ -91,6 +94,7 @@ while [ $i -lt ${#ARGS[@]} ]; do
     --body-file)      i=$((i+1)); BODY_FILE="${ARGS[$i]:-}" ;;
     --result-file)    i=$((i+1)); RESULT_FILE="${ARGS[$i]:-}" ;;
     --auto)           AUTO_FLAG=true ;;
+    --automerge)      AUTOMERGE_FLAG=true; AUTO_FLAG=true ;;
     --worktree-path)  i=$((i+1)); WORKTREE_PATH="${ARGS[$i]:-}" ;;
     --landed-source)  i=$((i+1)); LANDED_SOURCE="${ARGS[$i]:-}" ;;
     --ci-timeout)     i=$((i+1)); CI_TIMEOUT="${ARGS[$i]:-}" ;;
@@ -449,9 +453,9 @@ This step closes that loop: detect BEHIND, rebase locally onto current
 churn when many PRs are landing rapidly.
 
 **Skip conditions (skip the whole Step 6b loop):**
-- `$AUTO_FLAG != true` — BEHIND recovery is only useful when auto-merge
-  is requested. Without `--auto`, BEHIND is the caller's problem to
-  resolve manually.
+- `$AUTO_FLAG != true` — BEHIND recovery is only useful when the caller
+  is running unattended. Without `--auto`, BEHIND is the caller's problem
+  to resolve manually.
 - `$STATUS` already set to a failure terminus (`rebase-conflict`,
   `push-failed`, `create-failed`, `monitor-failed`, `rebase-failed`,
   `merge-failed`) — Step 6b shouldn't run after upstream failures.
@@ -641,9 +645,9 @@ if [ -z "$STATUS" ] \
 fi
 ```
 
-### Step 7 — Merge (gated on `--auto`)
+### Step 7 — Merge (gated on `--automerge`)
 
-Always run `pr-merge.sh` — it owns the auto/CI gating internally.
+Always run `pr-merge.sh` — it owns the automerge/CI gating internally.
 
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -654,7 +658,7 @@ else
 fi
 if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "rebase-failed" ] && [ "$STATUS" != "push-failed" ] && [ "$STATUS" != "create-failed" ] && [ "$STATUS" != "behind-thrash" ] && [ "$STATUS" != "auto-rebase-conflict" ] && [ "$STATUS" != "auto-rebase-blocked" ]; then
   MERGE_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-merge.sh" \
-    --pr "$PR_NUMBER" --auto-flag "$AUTO_FLAG" --ci-status "${CI_STATUS:-not-monitored}")
+    --pr "$PR_NUMBER" --automerge-flag "$AUTOMERGE_FLAG" --ci-status "${CI_STATUS:-not-monitored}")
   MERGE_RC=$?
 
   while IFS='=' read -r KEY VALUE; do

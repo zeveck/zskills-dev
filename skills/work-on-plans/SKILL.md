@@ -1,17 +1,18 @@
 ---
 name: work-on-plans
 disable-model-invocation: true
-argument-hint: "N|all [phase|finish] [every SCHEDULE] [now] [continue] | stop | next | (no args = list ready queue)"
+argument-hint: "N|all [phase|finish] [automerge] [every SCHEDULE] [now] [continue] | stop | next | (no args = list ready queue)"
 description: >-
   Batch-execute the prioritized ready queue from the dashboard: reads
   .zskills/monitor-state.json (plans.ready) and dispatches /run-plan auto
   per entry (mode resolves to `finish` by default; `phase` opts out),
-  honoring each plan's queued mode. N|all composes with every SCHEDULE +
-  now for the queue-worker pattern (N plans per fire). Also manages the
-  queue (add/rank/remove/default) and recurring schedules. Mirrors
-  /fix-issues for bugs.
+  honoring each plan's queued mode. With `automerge`, also requests
+  auto-merge on the PR after CI passes. N|all composes with every
+  SCHEDULE + now for the queue-worker pattern (N plans per fire). Also
+  manages the queue (add/rank/remove/default) and recurring schedules.
+  Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.06.15+7314ac"
+  version: "2026.06.19+9e9931"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
@@ -126,6 +127,15 @@ by name (order insensitive, no positional meaning):
 
 - `phase` → `MODE_OVERRIDE=phase` (mutex with `finish`)
 - `finish` → `MODE_OVERRIDE=finish` (mutex with `phase`)
+- `automerge` → `AUTOMERGE=1` (pass `automerge` to `/run-plan`;
+  requests auto-merge on the PR after CI passes)
+- `auto` (or the two-word `auto merge`) → **usage error**, exit 2. The
+  skill always runs unattended, so `auto` carries no meaning here, and
+  `auto` must NOT silently merge — that would auto-merge a whole batch of
+  PRs and break the universal rule that bare `auto` never requests a
+  merge in any skill. Only `automerge` is accepted as the merge token.
+  Print:
+  > /work-on-plans does not accept `auto` (it always runs unattended). Use `automerge` to auto-merge each PR after CI passes, or omit it to leave PRs at pr-ready for review.
 - `continue` → `CONTINUE_ON_FAILURE=1`
 - `every` followed by a SCHEDULE expression → `SCHEDULE` captured;
   register a recurring cron (see Step 7 — `every`). **Composes with

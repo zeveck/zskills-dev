@@ -130,13 +130,15 @@ LAND_OUTCOME=__init__
 LANDED_SOURCE="commit"
 LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --tracking-id=$BRANCH_SLUG"
 
-# Auto-merge gate (issue #236) — append `--auto` when the caller passed
+# Auto gate (issue #236) — append `--auto` when the caller passed
 # the positional `auto` token (parsed in skills/commit/SKILL.md and
 # propagated as $AUTO_FLAG=1). Mirrors /run-plan, /fix-issues, /do.
-# Without the token, `/land-pr` runs through PR creation +
+# `--automerge` additionally requests auto-merge on the PR.
+# Without `automerge`, `/land-pr` runs through PR creation +
 # CI poll + fix-cycle but does NOT call `gh pr merge --auto --squash`;
 # the PR settles at `pr-ready` for human review.
 [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
+[ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /commit pr.
@@ -235,7 +237,7 @@ while :; do
       else
         LAND_OUTCOME=pr-ready
       fi
-      break ;;  # /land-pr already requested merge if --auto (gated on AUTO_FLAG per issue #236)
+      break ;;  # /land-pr already requested merge if --automerge (gated on AUTOMERGE_FLAG per issue #236)
     pending)
       LAND_OUTCOME=pr-ready
       break ;;  # settle at pr-ready
@@ -327,11 +329,12 @@ rm -f "$TRACK_DIR/requires.land-pr.$BRANCH_SLUG"
 ```
 
 **PR mode does NOT:**
-- Auto-merge **unless the positional `auto` token is passed** (issue #236
-  — `/commit pr auto` or, via config-default-to-pr, `/commit auto`).
-  Without `auto`, `LAND_ARGS` omits `--auto` and the PR settles at
-  `pr-ready` after CI passes; with `auto`, `--auto` is appended and
-  `/land-pr` invokes `gh pr merge --auto --squash`.
+- Auto-merge **unless the positional `automerge` token is passed**
+  (issue #236 — `/commit pr automerge` or, via config-default-to-pr,
+  `/commit automerge`). With bare `auto`, `LAND_ARGS` includes `--auto`
+  (unattended mode) but omits `--automerge`, so the PR settles at
+  `pr-ready` after CI passes. With `automerge`, `--automerge` is appended
+  and `/land-pr` invokes `gh pr merge --auto --squash`.
 - Write `.zskills/landed` markers (`/commit pr` has no worktree)
 - Run Phases 1–5 (all commits must already exist — clean tree is required)
 

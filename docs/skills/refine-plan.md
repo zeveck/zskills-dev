@@ -29,7 +29,7 @@ If the plan has no remaining phases — everything is already done — `/refine-
 ## Usage
 
 ```
-/refine-plan <plan-file> [rounds N] [auto] [guidance...]
+/refine-plan <plan-file> [rounds N] [auto] [automerge] [guidance...]
 ```
 
 ## Typical usage
@@ -43,7 +43,7 @@ The common form is just the plan file: point `/refine-plan` at the plan you are 
 /refine-plan plans/FEATURE_PLAN.md auto
 ```
 
-You can add trailing free-text guidance to steer what the review pressure-tests (for example, a known change since an earlier phase landed). Add `auto` to have the refined plan opened as a pull request and merged once it passes CI, instead of leaving it committed for you to land yourself.
+You can add trailing free-text guidance to steer what the review pressure-tests (for example, a known change since an earlier phase landed). Add `auto` to have the refined plan opened as a pull request and CI monitored, instead of leaving it committed for you to land yourself. Add `automerge` to also request auto-merge once CI passes.
 
 ## Companion skills
 
@@ -59,10 +59,11 @@ The natural flow is `/draft-plan` (create) → `/run-plan` (execute) → `/refin
 |----------|----------|-------------|
 | `plan-file` | Yes | Path to the plan `.md` file to refine. A bare filename is resolved against your plans directory; a path with a `/` is used as-is. |
 | `rounds N` | No | Maximum review/refine cycles. Default is 2. The process exits early if a round converges (no substantive new issues). |
-| `auto` | No | After the refined plan is committed, open a pull request, monitor CI, and auto-merge. Without `auto`, the refined plan is committed but no PR is opened — you land it yourself. |
+| `auto` | No | After the refined plan is committed, open a pull request and monitor CI. Without `auto`, the refined plan is committed but no PR is opened — you land it yourself. |
+| `automerge` | No | Implies `auto`. Additionally requests auto-merge on the PR once CI passes. Without `automerge`, the PR is opened but merge is left to you. |
 | `guidance...` | No | Any trailing free text becomes guidance that steers what the review focuses on. It is treated as priming for the review, not as fact to act on blindly. |
 
-The default of 2 rounds is lighter than `/draft-plan`'s 3, because this is a refinement pass on an existing plan rather than blank-slate creation. The `auto` token mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and `/draft-plan`.
+The default of 2 rounds is lighter than `/draft-plan`'s 3, because this is a refinement pass on an existing plan rather than blank-slate creation. The `auto` and `automerge` tokens mirror those in `/run-plan`, `/do`, `/fix-issues`, and `/draft-plan`.
 
 ## Examples
 
@@ -80,7 +81,7 @@ The default of 2 rounds is lighter than `/draft-plan`'s 3, because this is a ref
 - **Mid-execution refresh:** `/refine-plan plans/X.md` — bring the remaining phases in line with what the completed phases actually built.
 - **With context:** `/refine-plan plans/X.md the API signature changed since an earlier phase` — steer the review toward a known change.
 - **More review rounds:** `/refine-plan plans/X.md rounds 3` — push for an extra adversarial pass on a high-stakes plan.
-- **Refine and land:** `/refine-plan plans/X.md auto` — refine, then open and auto-merge the PR.
+- **Refine and land:** `/refine-plan plans/X.md automerge` — refine, then open and auto-merge the PR.
 
 ## Tips & Gotchas
 

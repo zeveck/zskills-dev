@@ -95,20 +95,26 @@ else
 fi
 
 # ── Surface 2: AUTO_FLAG regex (extract-and-run) ────────────────────
-# Extract the self-contained AUTO_FLAG fence and run it verbatim.
+# Extract the self-contained AUTOMERGE_FLAG + AUTO_FLAG fence and run it
+# verbatim. The AUTO_FLAG condition references $AUTOMERGE_FLAG (automerge
+# implies auto), so the extracted unit MUST begin at the AUTOMERGE_FLAG=0
+# init — otherwise the eval below hits an unbound $AUTOMERGE_FLAG under
+# `set -u`. Capture from AUTOMERGE_FLAG=0 through the first `fi` that
+# follows AUTO_FLAG=0.
 AUTO_BLOCK=$(awk '
-  /^AUTO_FLAG=0$/{capture=1}
+  /^AUTOMERGE_FLAG=0$/{capture=1}
   capture {print}
-  capture && /^fi$/{exit}
+  /^AUTO_FLAG=0$/{seen_auto=1}
+  capture && seen_auto && /^fi$/{exit}
 ' "$SKILL")
 
 if [ -z "$AUTO_BLOCK" ]; then
-  fail "auto-flag: could not extract AUTO_FLAG fence" "awk extract empty"
+  fail "auto-flag: could not extract AUTOMERGE_FLAG/AUTO_FLAG fence" "awk extract empty"
 else
-  pass "auto-flag: AUTO_FLAG fence extracted from SKILL.md"
+  pass "auto-flag: AUTOMERGE_FLAG/AUTO_FLAG fence extracted from SKILL.md"
   check_auto() { # $1=ARGUMENTS $2=expected(0/1) $3=label
     local ARGUMENTS="$1"
-    local AUTO_FLAG
+    local AUTO_FLAG AUTOMERGE_FLAG
     eval "$AUTO_BLOCK"
     if [ "$AUTO_FLAG" = "$2" ]; then
       pass "auto-flag: $3 -> AUTO_FLAG=$2"
@@ -122,6 +128,7 @@ else
   check_auto "automatic dark mode" 0 "'automatic' (no boundary) rejected"
   check_auto "engage autopilot" 0 "'autopilot' (no boundary) rejected"
   check_auto "use auto-land mode" 0 "'auto-land' (no whitespace boundary) rejected"
+  check_auto "automerge Build the thing" 1 "'automerge' implies auto (AUTO_FLAG=1)"
 fi
 
 # ── Surface 3: STEERING_MODE leading-cluster selector (extract-and-run) ──

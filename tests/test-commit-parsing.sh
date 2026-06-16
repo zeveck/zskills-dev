@@ -60,8 +60,8 @@ echo "=== /commit arg-parser — extract-and-run (Phase 3) ==="
 # argument-hint advertises the positional [auto] token (issue #236). Kept as
 # a presence-grep because it asserts a frontmatter UX contract, not parser
 # behavior — but the behavioral AUTO_FLAG cases below are the real guard.
-if grep -qE '^argument-hint: ".*\[auto\].*"' "$SKILL"; then
-  pass "0  argument-hint advertises positional [auto] (issue #236, migrated)"
+if grep -qE '^argument-hint: ".*\[auto' "$SKILL"; then
+  pass "0  argument-hint advertises positional [auto (issue #236, migrated)"
 else
   fail "0  argument-hint [auto]" "missing — issue #236"
 fi

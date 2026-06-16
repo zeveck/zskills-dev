@@ -161,9 +161,10 @@ Issue #581: in projects with `execution.landing: pr` +
 `main_protected: true`, the plan with appended test specs is committed
 in the worktree (above) but never reaches main without a `/land-pr`
 dispatch. When the user passed the `auto` positional token, dispatch
-`/land-pr` so the branch pushes, a PR opens, CI runs, and auto-merge
-lands the test-spec-augmented plan on main. Without `auto`, the
-worktree commit stands and the caller lands manually.
+`/land-pr` so the branch pushes, a PR opens, and CI runs. With
+`automerge`, auto-merge lands the test-spec-augmented plan on main;
+with bare `auto`, the PR settles at pr-ready for human review. Without
+either token, the worktree commit stands and the caller lands manually.
 
 ```bash
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
@@ -196,6 +197,7 @@ devil's-advocate + refiner). Completed phases were NOT modified
       CI will run skill-conformance / hook / fixture suites
 BODY
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=draft-tests --worktree-path=$TOPLEVEL --tracking-id=draft-tests.$SLUG --auto"
+  [ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
   # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
 
