@@ -1,6 +1,6 @@
 # /fix-issues — PR Mode (Per-Issue)
 
-Land each verified fix via one PR per issue with rebase, push, CI polling, and auto-merge on success.
+Land each verified fix via one PR per issue with rebase, push, CI polling, and optional auto-merge on success.
 ### PR mode landing
 
 When `LANDING_MODE == pr`, landing replaces cherry-pick with **per-issue
@@ -12,7 +12,7 @@ caller loop `continue`s to the next issue.
 
 **Auto-flag gating.** Rebase, push, PR creation, **CI polling, and the fix cycle ALL run regardless of `$AUTO`** — they're either low-risk (review-surfacing) or reversible (the fix cycle pushes commits to the feature branch, which the user can revert). Goal: by the time the user reviews the PR, it is as clean as the agent could get it.
 
-Only the final `gh pr merge --auto --squash` call is gated on `$AUTO` — and that gate now lives inside `/land-pr`'s `pr-merge.sh` (Phase 1B WI 1.6). **Only `gh pr merge --auto --squash` is gated on `auto`.** Without `auto`, the PR settles at status `pr-ready` after CI passes (or `pr-ci-failing` after fix-cycle exhaustion) and waits for human review and merge on GitHub.
+Only the final `gh pr merge --auto --squash` call is gated on `$AUTOMERGE` — and that gate now lives inside `/land-pr`'s `pr-merge.sh`. **Only `gh pr merge --auto --squash` is gated on `automerge`.** Without `automerge`, the PR settles at status `pr-ready` after CI passes (or `pr-ci-failing` after fix-cycle exhaustion) and waits for human review and merge on GitHub.
 
 **Per-issue /land-pr dispatch.** `/fix-issues pr` no longer owns
 rebase, push, PR creation, CI polling, the fix cycle, the merge call,
@@ -34,8 +34,8 @@ have verified commits on `fix/issue-NNN`.
 `/fix-issues pr` customizations of the canonical pattern:
 - `$LANDED_SOURCE = "fix-issues"`
 - `$WORKTREE_PATH = $ISSUE_WORKTREE` (per-issue worktree)
-- `$AUTO = $AUTO` (auto-merge gated on caller's `--auto` flag, passed
-  through to `/land-pr` via `--auto`)
+- `$AUTO_FLAG` (unattended mode, passed through to `/land-pr` via
+  `--auto`); `$AUTOMERGE_FLAG` (auto-merge, passed via `--automerge`)
 - `$ISSUE_NUM = $ISSUE_NUM` (passed through via `--issue=$ISSUE_NUM`;
   `/land-pr` writes it into the `.zskills/landed` marker's `issue:` field)
 - `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (per-issue body is composed
@@ -135,7 +135,8 @@ BODY
 
   LANDED_SOURCE="fix-issues"
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --issue=$ISSUE_NUM --tracking-id=$ISSUE_NUM"
-  [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+  [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
+  [ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
   while :; do
     # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /fix-issues pr.
@@ -228,7 +229,7 @@ BODY
         else
           LAND_OUTCOME=pr-ready
         fi
-        break ;;  # /land-pr already requested merge if --auto
+        break ;;  # /land-pr already requested merge if --automerge
       pending)
         LAND_OUTCOME=pr-ready
         break ;;  # settle at pr-ready

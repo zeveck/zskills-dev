@@ -1,7 +1,7 @@
 ---
 name: refine-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [auto] [<guidance>]"
+argument-hint: "<plan-file> [rounds N] [auto|automerge] [<guidance>]"
 description: >-
   Refine an in-progress plan by reviewing remaining phases against
   completed work. Dispatches reviewer + devil's-advocate agents to surface
@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.06.15+60b6fe"
+  version: "2026.06.15+d087ba"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [<guidance>] — Adversarial Plan Refiner
@@ -164,8 +164,16 @@ parse the rest of the skill reads (`ROUNDS_MAX`, `AUTO_FLAG`, `GUIDANCE`).
 
 # auto — whitespace-anchored, case-insensitive (consumed; not guidance).
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
+# automerge — whitespace-anchored, case-insensitive (consumed; not guidance).
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 
@@ -779,6 +787,7 @@ Log\` and \`## Plan Review\` sections appended.
       run skill-conformance / hook / fixture suites
 BODY
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=refine-plan --worktree-path=$TOPLEVEL --tracking-id=refine-plan.$SLUG --auto"
+  [ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
   # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
 

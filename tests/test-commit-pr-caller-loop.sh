@@ -296,11 +296,13 @@ fi
 
 # ── Migrated from test-commit.sh Case 5 (prose-gate documentation) ──────
 # The pre-#236 blanket "Auto-merge (no `--auto` passed to `/land-pr`)" must be
-# gone; the gated prose ("unless the positional `auto` token is passed") must
-# document the gate. Behavioral cases 12/13 prove the gate WORKS; this keeps
-# the doc invariant the old test-commit.sh Case 5 asserted.
+# gone; the gated prose ("unless the positional `automerge` token is passed")
+# must document the gate. (Post auto/automerge split: `automerge` is the token
+# that gates the merge request; bare `auto` is unattended-only.) Behavioral
+# cases 12/13 prove the gate WORKS; this keeps the doc invariant the old
+# test-commit.sh Case 5 asserted.
 OLD_BLANKET=$(grep -cE 'Auto-merge \(no `--auto` passed to `/land-pr`\)' "$PR_MODE" 2>/dev/null)
-NEW_GATED=$(grep -cE 'unless the positional `auto` token is passed' "$PR_MODE" 2>/dev/null)
+NEW_GATED=$(grep -cE 'unless the positional `automerge` token is passed' "$PR_MODE" 2>/dev/null)
 if [ "${OLD_BLANKET:-0}" -eq 0 ] && [ "${NEW_GATED:-0}" -ge 1 ]; then
   pass "16 modes/pr.md 'PR mode does NOT' note documents the auto gate (migrated, #236)"
 else

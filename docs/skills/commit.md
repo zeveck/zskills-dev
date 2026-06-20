@@ -73,8 +73,8 @@ The common cases, from lightest to heaviest:
 - `/commit pr` — push the current branch and open a pull request to main.
   This is the recommended way for you to land work as a PR (it requires a
   clean working tree, so commit first).
-- `/commit pr auto` — the same, plus request that the PR auto-merge once
-  CI passes.
+- `/commit pr automerge` — the same, plus request that the PR auto-merge
+  once CI passes.
 
 To land a feature branch as a PR, `/commit pr` is the path to reach for. It
 is one of the supported entry points for opening pull requests; you do not
@@ -109,9 +109,14 @@ which must come first.
 | `scope` | A free-text hint (e.g. `skill updates`, `parser reset button fix`) that guides which files count as related. Advisory — the skill still reads the diffs. |
 | `push` | Commit, then push to the remote. |
 | `land` | Cherry-pick the current worktree's commits onto main, run tests, and record that the work has landed. Only valid when you are in a worktree. |
-| `auto` | In PR mode, request that the pull request auto-merge once CI passes. Has no effect with `push` or `land`. |
+| `auto` | In PR mode, run unattended. Does not auto-merge; see `automerge`. |
+| `automerge` | In PR mode, request that the pull request auto-merge once CI passes. Implies `auto`. Has no effect with `push` or `land`. |
 
 If you give no mode token at all, `/commit` reads your project's configured
 default landing behavior to decide what to do — on a project that lands
 through pull requests, a bare `/commit` behaves like `/commit pr`.
+
+## Tips & Gotchas
+
+- `auto` runs unattended but does not merge; use `automerge` for unattended + auto-merge.
 

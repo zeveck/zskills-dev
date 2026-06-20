@@ -1,13 +1,13 @@
 ---
 name: draft-plan
 disable-model-invocation: false
-argument-hint: "[output FILE] [rounds N] [auto] [brainstorm|quiz] <description...>"
+argument-hint: "[output FILE] [rounds N] [auto|automerge] [brainstorm|quiz] <description...>"
 description: >-
   Draft a high-quality plan through iterative adversarial review:
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.15+e152b7"
+  version: "2026.06.15+ac57fe"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -167,8 +167,15 @@ fi
 
 ```bash
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 ```
@@ -960,6 +967,7 @@ concerns.
       run skill-conformance / hook / fixture suites
 BODY
      LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=draft-plan --worktree-path=$TOPLEVEL --tracking-id=draft-plan.$SLUG --auto"
+     [ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
      # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
 

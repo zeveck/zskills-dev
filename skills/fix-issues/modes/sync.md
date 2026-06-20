@@ -316,7 +316,7 @@ EOF
    # `gh issue close` calls. The CI-monitor-suppression flag remains
    # omitted (CI monitoring is desired; the orchestrator awaits resting
    # state).
-   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID --auto"
+   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID --auto --automerge"
 
    # Echo the pipeline id for transcript-propagation (matches /do pr's
    # tier-2 idiom at `skills/do/modes/pr.md:203`). Do NOT env-export

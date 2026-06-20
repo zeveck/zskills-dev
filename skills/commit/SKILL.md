@@ -7,9 +7,9 @@ description: >-
   other agents' work, and optionally pushes, lands worktree commits, or
   opens a PR via /land-pr. Positional auto enables auto-merge (PR mode
   only).
-argument-hint: "[pr] [scope] [push|land] [auto]"
+argument-hint: "[pr] [scope] [push|land] [auto|automerge]"
 metadata:
-  version: "2026.06.15+cf08df"
+  version: "2026.06.15+dc691a"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -41,17 +41,23 @@ FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
 # The token never falls through to SCOPE_HINT (stripped in both PR-mode
 # parse paths). Setting AUTO_FLAG outside PR mode is a no-op — `push`
 # and `land` modes do not consult it.
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])([aA][uU][tT][oO])($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])([aA][uU][tT][oO])($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 if [[ "$FIRST_TOKEN" == "pr" ]]; then
   # PR subcommand mode
   SCOPE_HINT=$(echo "$ARGUMENTS" | cut -d' ' -f2-)  # rest after 'pr' (may be empty)
-  # Strip the positional `auto` token from SCOPE_HINT so it does not leak
-  # into the PR title / scope-hint downstream. Match `auto` as a
-  # whitespace-bounded token (case-insensitive).
-  SCOPE_HINT=$(echo "$SCOPE_HINT" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
+  # Strip the positional `auto` and `automerge` tokens from SCOPE_HINT so
+  # they do not leak into the PR title / scope-hint downstream.
+  SCOPE_HINT=$(echo "$SCOPE_HINT" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]])/\1\2/g' | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]])/\1\2/g' | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
   # ... see Phase 6 (PR mode) below
 fi
 ```
@@ -104,9 +110,9 @@ if [ "$HAS_EXPLICIT_MODE" -eq 0 ]; then
       # Treat as `/commit pr` — drop into PR subcommand mode below.
       # SCOPE_HINT keeps any scope words from $ARGUMENTS (no `pr` prefix
       # to strip, since the user didn't type it). Strip the positional
-      # `auto` token (AUTO_FLAG was already set above) so it does not
-      # leak into the PR title / downstream scope-hint usage.
-      SCOPE_HINT=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
+      # `auto` and `automerge` tokens (flags already set above) so they
+      # do not leak into the PR title / downstream scope-hint usage.
+      SCOPE_HINT=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]])/\1\2/g' | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]])/\1\2/g' | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
       DEFAULT_MODE="pr"
       ;;
     direct|"")

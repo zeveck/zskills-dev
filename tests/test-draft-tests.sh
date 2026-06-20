@@ -107,8 +107,8 @@ fi
 
 expect_skill_matches "AC-1.1: frontmatter name"               '^name:[[:space:]]+draft-tests'
 expect_skill_matches "AC-1.1: frontmatter disable-model-invocation" '^disable-model-invocation:[[:space:]]+false'
-expect_skill_matches "AC-1.1: frontmatter argument-hint with [auto] [<guidance>]" \
-  '^argument-hint:[[:space:]]+"<plan-file>[[:space:]]+\[rounds N\][[:space:]]+\[auto\][[:space:]]+\[<guidance>\]"'
+expect_skill_matches "AC-1.1: frontmatter argument-hint with [auto|automerge] [<guidance>]" \
+  '^argument-hint:[[:space:]]+"<plan-file>[[:space:]]+\[rounds N\][[:space:]]+\[auto|automerge\][[:space:]]+\[<guidance>\]"'
 expect_skill_matches "AC-1.1: frontmatter description"        '^description:'
 
 # ----------------------------------------------------------------------

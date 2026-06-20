@@ -609,10 +609,10 @@ check_in_file fix-issues modes/sprint.md "summary referenced from no-actionable 
   'per-fire user-facing summary'
 check_in_file .claude/skills/fix-issues modes/sprint.md "mirror has 6th bucket"               'Author decision needed'
 check_in_file .claude/skills/fix-issues modes/sprint.md "mirror has summary section heading"  'Per-fire user-facing summary'
-# WI 4.6 RELOCATE: the `if [ "$AUTO_FLAG" != "true" ]` literal guard
+# WI 4.6 RELOCATE: the `if [ "$AUTOMERGE_FLAG" != "true" ]` literal guard
 # now lives in /land-pr's pr-merge.sh (Phase 1B WI 1.6). Verify it
 # stays there.
-check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTO_FLAG guard" 'if \[ "\$AUTO_FLAG" != "true" \]; then'
+check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTOMERGE_FLAG guard" 'if \[ "\$AUTOMERGE_FLAG" != "true" \]; then'
 
 # Guard recently-reverted content (see #704, #729, #735).
 # These blocks have been lost-then-restored across rapid PR landings; pin
@@ -682,7 +682,21 @@ for skill in draft-plan refine-plan draft-tests; do
   check_fixed "$skill" "AUTO_FLAG gates dispatch" '${AUTO_FLAG:-0}" = "1"'
   check_fixed "$skill" "Skill tool dispatch line" 'Skill: { skill: "land-pr"'
   check_fixed "$skill" "--auto flag passed to land-pr" '--auto'
-  check       "$skill" "argument-hint contains auto" 'argument-hint:.*\[auto\]'
+  check       "$skill" "argument-hint contains auto" 'argument-hint:.*\[auto'
+done
+
+echo ""
+echo "=== automerge token separation (ZSKILLS_TODO #1) ==="
+# The automerge/auto split: skills parse AUTOMERGE_FLAG separately from
+# AUTO_FLAG. automerge implies auto. /land-pr accepts --automerge and
+# passes --automerge-flag to pr-merge.sh.
+check_fixed land-pr "AUTOMERGE_FLAG init"         'AUTOMERGE_FLAG=false'
+check_fixed land-pr "--automerge arg parse arm"   'AUTOMERGE_FLAG=true; AUTO_FLAG=true'
+check_fixed land-pr "--automerge-flag passed to pr-merge.sh" '--automerge-flag "$AUTOMERGE_FLAG"'
+for skill in run-plan do commit fix-issues draft-plan refine-plan draft-tests; do
+  check_fixed "$skill" "AUTOMERGE_FLAG init"           'AUTOMERGE_FLAG=0'
+  check       "$skill" "automerge token detection"     '\[aA\]\[uU\]\[tT\]\[oO\]\[mM\]\[eE\]\[rR\]\[gG\]\[eE\]'
+  check_fixed "$skill" "AUTOMERGE gates --automerge"   'AUTOMERGE_FLAG:-0}" = "1"'
 done
 
 echo ""
@@ -1901,8 +1915,8 @@ echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
 # count. WI 6.3 is the authoritative enumeration source.
 #
 # 1. Frontmatter shape (incl. `[<guidance>]` positional tail in argument-hint)
-check       draft-tests "frontmatter argument-hint with [auto] [<guidance>]" \
-  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[auto\] \[<guidance>\]"'
+check       draft-tests "frontmatter argument-hint with [auto|automerge] [<guidance>]" \
+  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[auto|automerge\] \[<guidance>\]"'
 # 2. Tracking marker basename matches canonical scheme `fulfilled.draft-tests.<id>`
 check_fixed draft-tests "fulfilled marker basename" \
   'fulfilled.draft-tests.$TRACKING_ID'

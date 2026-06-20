@@ -658,10 +658,10 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
       # This dispatch fires when the dashboard Ready queue is empty but
       # Phase 1a sync wrote tracker updates. The PR commits only sync-driven
       # content (`git add -A` against the worktree after sync ran), so it
-      # ALWAYS auto-merges regardless of user's `auto` arg — same rationale
-      # as standalone sync's Phase 5 dispatch and the no-actionable ship
-      # branch later in this skill.
-      LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-dashboard-empty --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto"
+      # ALWAYS auto-merges regardless of user's `automerge` arg — same
+      # rationale as standalone sync's Phase 5 dispatch and the no-actionable
+      # ship branch later in this skill.
+      LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-dashboard-empty --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto --automerge"
 
       echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
@@ -1458,10 +1458,10 @@ If ALL candidates are too vague, too complex, or already attempted:
          # This dispatch fires when Phase 2 found no actionable issues but
          # Phase 1a sync wrote tracker updates. The PR commits only sync-driven
          # content (`git add -A` against the worktree after sync ran, before any
-         # fix work), so it ALWAYS auto-merges regardless of user's `auto` arg —
-         # same rationale as standalone sync's Phase 5 dispatch at the top of
-         # this skill.
-         LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto"
+         # fix work), so it ALWAYS auto-merges regardless of user's `automerge`
+         # arg — same rationale as standalone sync's Phase 5 dispatch at the
+         # top of this skill.
+         LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto --automerge"
 
          echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
@@ -2458,8 +2458,8 @@ if [ "${#TRACKER_SCRATCHPADS[@]}" -gt 0 ]; then
         git commit -m "docs(sync): /fix-issues skip-tag rollup sprint $SPRINT_ID"
       fi
     )
-    # Dispatch /land-pr --auto for the tracker PR. Mirrors the
-    # dashboard-empty pattern's LAND_ARGS shape (always --auto because
+    # Dispatch /land-pr --auto --automerge for the tracker PR. Mirrors the
+    # dashboard-empty pattern's LAND_ARGS shape (always automerge because
     # this is sync-only content with no code-review surface).
     TRACKER_LAND_ID="fix-issues.tracker-rollup.${SPRINT_ID}"
     TRACKER_RESULT=$(mktemp)
@@ -2474,7 +2474,7 @@ if [ "${#TRACKER_SCRATCHPADS[@]}" -gt 0 ]; then
     printf 'skill: land-pr\nrequired-by: fix-issues-pr-mode-tracker-rollup\ndate: %s\n' \
       "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
       > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${TRACKER_LAND_ID}"
-    TRACKER_LAND_ARGS="--branch=fix-issues-tracker/$SPRINT_ID --title=\"sync: /fix-issues skip-tag rollup sprint $SPRINT_ID\" --body-file=$TRACKER_BODY --result-file=$TRACKER_RESULT --landed-source=fix-issues-pr-mode-tracker-rollup --worktree-path=$TRACKER_WT --tracking-id=$TRACKER_LAND_ID --auto"
+    TRACKER_LAND_ARGS="--branch=fix-issues-tracker/$SPRINT_ID --title=\"sync: /fix-issues skip-tag rollup sprint $SPRINT_ID\" --body-file=$TRACKER_BODY --result-file=$TRACKER_RESULT --landed-source=fix-issues-pr-mode-tracker-rollup --worktree-path=$TRACKER_WT --tracking-id=$TRACKER_LAND_ID --auto --automerge"
     echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
     # Skill: { skill: "land-pr", args: "$TRACKER_LAND_ARGS" }
     # (Allow-list parser handles result file; mirrors dashboard-empty pattern.)
@@ -2896,7 +2896,8 @@ if [ -n "${WT_PATH:-}" ]; then
     PR_TITLE="sprint-report: $SPRINT_ID"
     SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
     LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sprint --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
-    [ "${AUTO:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+    [ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
+    [ "${AUTOMERGE_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --automerge"
 
     echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 

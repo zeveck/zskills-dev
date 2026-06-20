@@ -29,8 +29,8 @@ If a plan in the queue points at a plan file that no longer exists, `/work-on-pl
 
 ```
 /work-on-plans
-/work-on-plans N [phase|finish] [every SCHEDULE] [now] [continue] [--force]
-/work-on-plans all [phase|finish] [every SCHEDULE] [now] [continue] [--force]
+/work-on-plans N [phase|finish] [automerge] [every SCHEDULE] [now] [continue] [--force]
+/work-on-plans all [phase|finish] [automerge] [every SCHEDULE] [now] [continue] [--force]
 /work-on-plans add <slug> [pos]
 /work-on-plans rank <slug> <pos>
 /work-on-plans remove <slug>
@@ -69,6 +69,7 @@ Run bare, it lists the ready queue. Give it a number to run that many plans from
 | `all` | No | Run every plan in the ready queue |
 | `phase` | No | Run one phase per plan instead of running each to completion |
 | `finish` | No | Run each plan to completion (this is the default) |
+| `automerge` | No | Auto-merge each plan's PR once CI passes. Without it, each PR is created and left at pr-ready for you to review and merge. |
 | `continue` | No | If one plan fails, skip it and keep going instead of stopping |
 | `every SCHEDULE` | No | Run on a recurring schedule (`1h`, `4h`, `day at 9am`); each fire runs the count |
 | `now` | No | With `every`, run immediately as well as scheduling |
@@ -132,11 +133,14 @@ Cancel the active recurring schedule.
 - **Run everything:** `/work-on-plans all finish` — finish every queued plan
 - **Resilient batch:** `/work-on-plans all continue` — if one plan fails, skip it and keep going
 - **Drain over time:** `/work-on-plans 1 finish every 1h now` — run one plan now, then one more each hour
+- **Drain and merge:** `/work-on-plans 3 automerge` — run the top three and auto-merge each PR once CI passes (omit `automerge` to leave them at pr-ready for review)
 - **Curate priorities:** use `add`, `rank`, and `remove` to shape the queue; use `default` to set the baseline mode
 
 ## Tips & Gotchas
 
 - The default mode is `finish` — each plan runs to completion and lands as one pull request. Add `phase` only when you want to pace the work a single phase per plan.
+- Each plan's PR is left at pr-ready for your review by default; it is **not** merged automatically. Add `automerge` if you want each PR to merge once CI passes.
+- `/work-on-plans` always runs unattended, so it does **not** accept the bare `auto` token (passing it is a usage error). This mirrors the rule everywhere else — `auto` never requests a merge; `automerge` is the only token that does. Use `automerge` to merge the batch.
 - A mode you pass on the command line (`phase`/`finish`) applies to that batch only; it does not change the saved mode on queue entries or the queue-wide default.
 - A count combines with a schedule: each scheduled fire runs the count you gave, not the whole queue. A bare `every SCHEDULE` with no count runs everything on each fire.
 - A recurring schedule remembers the mode it was registered with — to change it, `stop` the schedule and register a new one.

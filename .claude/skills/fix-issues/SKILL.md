@@ -1,14 +1,14 @@
 ---
 name: fix-issues
 disable-model-invocation: true
-argument-hint: "N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next"
+argument-hint: "N [<focus>|dashboard] [auto|automerge] [every SCHEDULE] [now] | sync | plan [auto|automerge] | stop | next"
 description: >-
   Orchestrate a batch bug-fixing sprint: dispatch implementers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.06.15+b4d031"
+  version: "2026.06.15+49b9c8"
 ---
 
 # /fix-issues N [<focus>|dashboard] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -121,8 +121,15 @@ gate stays unchanged.
 ```bash
 # Argument parsing — extract canonical flags from $ARGUMENTS.
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
+AUTOMERGE_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO][[:space:]]+[mM][eE][rR][gG][eE]($|[[:space:]]) ]]; then
+  AUTOMERGE_FLAG=1
+fi
 AUTO_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]] || [ "$AUTOMERGE_FLAG" = "1" ]; then
   AUTO_FLAG=1
 fi
 ```

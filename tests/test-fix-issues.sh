@@ -415,10 +415,10 @@ test_site2_sync_phase5_unconditional_auto() {
   fi
   local content
   content=$(awk -v n="$line" 'NR==n { print }' "$SKILL_SYNC")
-  if echo "$content" | grep -qE -- '--auto"?$'; then
-    pass "site 2: standalone sync LAND_ARGS ends with --auto (unconditional)"
+  if echo "$content" | grep -qE -- '--auto --automerge"?$'; then
+    pass "site 2: standalone sync LAND_ARGS ends with --auto --automerge (unconditional)"
   else
-    fail "site 2: standalone sync LAND_ARGS ends with --auto" "line $line does not end --auto: [$content]"
+    fail "site 2: standalone sync LAND_ARGS ends with --auto --automerge" "line $line does not end --auto --automerge: [$content]"
   fi
 }
 
@@ -434,10 +434,10 @@ test_site3_no_actionable_unconditional_auto() {
   fi
   local content
   content=$(awk -v n="$line" 'NR==n { print }' "$SKILL_SPRINT")
-  if echo "$content" | grep -qE -- '--auto"?$'; then
-    pass "site 3: no-actionable LAND_ARGS ends with --auto (unconditional)"
+  if echo "$content" | grep -qE -- '--auto --automerge"?$'; then
+    pass "site 3: no-actionable LAND_ARGS ends with --auto --automerge (unconditional)"
   else
-    fail "site 3: no-actionable LAND_ARGS ends with --auto" "line $line does not end --auto: [$content]"
+    fail "site 3: no-actionable LAND_ARGS ends with --auto --automerge" "line $line does not end --auto --automerge: [$content]"
   fi
 
   # And the AUTO-conditional must NOT appear immediately after the
@@ -445,7 +445,7 @@ test_site3_no_actionable_unconditional_auto() {
   # confusion).
   local next
   next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL_SPRINT")
-  if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
+  if echo "$next" | grep -qE '\[\s*"\$\{AUTO_FLAG:-0\}"\s*=\s*"1"\s*\]\s*&&\s*LAND_ARGS='; then
     fail "site 3: no AUTO-conditional after no-actionable LAND_ARGS" "found on line $((line+1)): [$next]"
   else
     pass "site 3: no AUTO-conditional immediately after no-actionable LAND_ARGS"
@@ -475,7 +475,7 @@ test_site1_sprint_land_honors_auto() {
   # The AUTO-conditional MUST be on the very next line.
   local next
   next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL_SPRINT")
-  if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
+  if echo "$next" | grep -qE '\[\s*"\$\{AUTO_FLAG:-0\}"\s*=\s*"1"\s*\]\s*&&\s*LAND_ARGS='; then
     pass "site 1: AUTO-conditional present immediately after sprint-land LAND_ARGS"
   else
     fail "site 1: AUTO-conditional present immediately after sprint-land LAND_ARGS" \

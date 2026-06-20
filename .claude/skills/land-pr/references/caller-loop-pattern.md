@@ -40,8 +40,9 @@ maintainers.
 ```bash
 # === BEGIN CANONICAL /land-pr CALLER LOOP ===
 # Caller fills in: $BRANCH_NAME, $PR_TITLE, $BODY_FILE, $WORKTREE_PATH (optional),
-# $LANDED_SOURCE, $AUTO ("true"/"false"), $CI_MAX_ATTEMPTS (default 2),
-# $ISSUE_NUM (optional), and the fix-cycle agent dispatch block below.
+# $LANDED_SOURCE, $AUTO ("true"/"false"), $AUTOMERGE ("true"/"false"),
+# $CI_MAX_ATTEMPTS (default 2), $ISSUE_NUM (optional), and the fix-cycle
+# agent dispatch block below.
 if [ -n "${ZSH_VERSION:-}" ]; then setopt KSH_ARRAYS BASH_REMATCH SH_WORD_SPLIT 2>/dev/null || true; fi
 
 ATTEMPT=0
@@ -64,6 +65,7 @@ while :; do
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE"
   [ -n "$WORKTREE_PATH" ] && LAND_ARGS="$LAND_ARGS --worktree-path=$WORKTREE_PATH"
   [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+  [ "${AUTOMERGE:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --automerge"
   [ -n "$ISSUE_NUM" ] && LAND_ARGS="$LAND_ARGS --issue=$ISSUE_NUM"
 
   # Invoke /land-pr via the Skill tool. The Skill tool loads /land-pr's
@@ -155,7 +157,7 @@ while :; do
 
   case "$CI_STATUS" in
     pass|none|skipped)
-      break ;;  # /land-pr already requested merge if --auto
+      break ;;  # /land-pr already requested merge if --automerge
     pending)
       break ;;  # settle at pr-ready; user / cron can resume with --pr
     not-monitored)

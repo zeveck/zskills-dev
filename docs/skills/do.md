@@ -12,7 +12,7 @@
 <div class="flow-step"><p>An <strong>implementer subagent</strong> builds it in a worktree</p></div>
 <div class="flow-step"><p>A <strong>verifier subagent</strong> verifies the change</p></div>
 <div class="flow-step"><p>The <strong>original agent</strong> lands it via a PR and monitors CI (up to 2 fix attempts)</p></div>
-<div class="flow-step optional"><p>If you pass <strong>auto</strong>, it requests merge — GitHub merges once required checks pass</p></div>
+<div class="flow-step optional"><p>If you pass <strong>automerge</strong>, it requests merge — GitHub merges once required checks pass</p></div>
 </div>
 
 </details>
@@ -48,7 +48,7 @@ The most common form is a free-text description, optionally autonomous, optional
 /do Check for broken links in examples every 12h now
 ```
 
-A description alone runs the task immediately. Add a landing flag (`pr`, `worktree`, `direct`) to override the configured default. Add `auto` to land without stopping for approval. Add `every SCHEDULE` (with `now` to also run straight away) to turn the task into recurring maintenance.
+A description alone runs the task immediately. Add a landing flag (`pr`, `worktree`, `direct`) to override the configured default. Add `auto` to run without stopping for approval; add `automerge` to also auto-merge the PR. Add `every SCHEDULE` (with `now` to also run straight away) to turn the task into recurring maintenance.
 
 ## Companion skills
 
@@ -67,7 +67,8 @@ A description alone runs the task immediately. Add a landing flag (`pr`, `worktr
 | `worktree` | No | Isolate work in a worktree, cherry-pick back to `main` after verification |
 | `direct` | No | Work on `main` in place, no landing step |
 | `pr` | No | Named worktree + feature branch, push, open a PR, poll CI |
-| `auto` | No | Land autonomously (PR: request auto-merge; worktree: cherry-pick and push; direct: push) |
+| `auto` | No | Land autonomously (unattended mode). In PR mode the PR is created but NOT auto-merged; see `automerge` |
+| `automerge` | No | Unattended + auto-merge the PR (PR mode). Implies `auto`. |
 | `every SCHEDULE` | No | Self-schedule recurring runs (`4h`, `12h`, `day at 9am`, `weekday at 9am`) |
 | `now` | No | Run immediately (with `every`: run now AND schedule) |
 | `--force` | No | Bypass a triage redirect and a review rejection |
@@ -113,7 +114,7 @@ Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if 
 
 - **Quick content task:** `/do Sort the screenshots` — direct mode, no ceremony
 - **Isolated refactor:** `/do Refactor color constants worktree` — work in a worktree, verify, no auto-land
-- **PR with auto-merge:** `/do Add dark mode pr auto` — open a PR and request auto-merge
+- **PR with auto-merge:** `/do Add dark mode pr automerge` — open a PR and request auto-merge
 - **Recurring maintenance:** `/do Check for broken links every 12h now` — schedule and run immediately
 - **Bypass gates:** `/do Fix the tooltip bug --force` — skip the triage and review checks for a known-simple fix
 
@@ -124,4 +125,5 @@ Trigger a cron immediately. Bare `/do now` triggers the single cron (or asks if 
 - Verification runs on all code changes regardless of `auto`; content-only changes skip the test suite and get a focused diff review instead.
 - PR mode runs the same local verification gate as the other modes before opening the PR, then dispatches `/land-pr` for the PR lifecycle (push, CI poll, fix cycle on failure).
 - Quoted descriptions (`/do "Now fix the tooltip bug"`) are taken verbatim and bypass the `stop`/`next`/`now` subcommand detection.
+- `auto` runs unattended but does not merge; use `automerge` for unattended + auto-merge.
 - `--force` and `--rounds N` persist into the cron prompt verbatim when used with `every`, so every scheduled fire keeps the same behavior.
