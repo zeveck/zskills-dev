@@ -54,7 +54,11 @@ assert_eq() {
 
 # ── PREDICATE ─────────────────────────────────────────────────────────────
 echo "── predicate: permission_mode parse ──"
-assert_eq "predicate bypassPermissions → enforce-autonomous" "enforce-autonomous" \
+# bypassPermissions is ATTENDED: it's a permission-convenience flag, not an
+# attendance signal. With no live pipeline marker it resolves to watched (same
+# as default/acceptEdits/plan). Autonomy is detected by the pipeline-live arms;
+# hard enforcement stays available via the per-check "block" toggle.
+assert_eq "predicate bypassPermissions (no markers) → watched" "watched" \
   "$(zskills_enforcement_predicate '{"permission_mode":"bypassPermissions"}' /nope /nope)"
 assert_eq "predicate default (no markers) → watched" "watched" \
   "$(zskills_enforcement_predicate '{"permission_mode":"default"}' /nope /nope)"
@@ -69,9 +73,17 @@ assert_eq "predicate garbage value → enforce-autonomous (fail-safe)" "enforce-
 
 echo "── predicate: SPOOF cases ──"
 # Counterfeit escaped "permission_mode":"default" embedded in command content,
-# real field is bypassPermissions → must still be enforce-autonomous.
-assert_eq "spoof embedded default + real bypass → enforce-autonomous" "enforce-autonomous" \
+# real top-level field is bypassPermissions → parser must take the REAL field
+# (now attended → watched, no markers), NOT leak the embedded literal.
+assert_eq "spoof embedded default + real bypass → watched" "watched" \
   "$(zskills_enforcement_predicate '{"tool_input":{"command":"echo \"permission_mode\":\"default\""},"permission_mode":"bypassPermissions"}' /nope /nope)"
+# Counterfeit escaped attended literal embedded, real top-level field is GARBAGE
+# → parser must take the real (unrecognized) field → fail-safe enforce-autonomous.
+# This is the discriminating spoof case: embedded "default" would map to watched,
+# but the real "banana" is unrecognized, so the result proves the embedded
+# literal was NOT parsed.
+assert_eq "spoof embedded default + real garbage → enforce-autonomous" "enforce-autonomous" \
+  "$(zskills_enforcement_predicate '{"tool_input":{"command":"echo \"permission_mode\":\"default\""},"permission_mode":"banana"}' /nope /nope)"
 # Counterfeit embedded default, real field ABSENT → fail-safe enforce.
 assert_eq "spoof embedded default + real absent → enforce-autonomous" "enforce-autonomous" \
   "$(zskills_enforcement_predicate '{"tool_input":{"command":"echo \"permission_mode\":\"default\""}}' /nope /nope)"
@@ -83,6 +95,10 @@ LR=$(mktemp -d "$WORK/local-XXXXXX"); MR=$(mktemp -d "$WORK/main-XXXXXX")
 mkdir -p "$LR/.zskills"; touch "$LR/.zskills/tracked"
 assert_eq "DA1 local .zskills/tracked, main clean → enforce-pipeline" "enforce-pipeline" \
   "$(zskills_enforcement_predicate '{"permission_mode":"default"}' "$MR" "$LR")"
+# bypassPermissions is attended, but a LIVE pipeline marker still forces
+# enforce-pipeline — genuine zskills autonomy under bypass is caught here.
+assert_eq "bypassPermissions + live pipeline marker → enforce-pipeline" "enforce-pipeline" \
+  "$(zskills_enforcement_predicate '{"permission_mode":"bypassPermissions"}' "$MR" "$LR")"
 # Legacy .zskills-tracked at the local root.
 rm -f "$LR/.zskills/tracked"; touch "$LR/.zskills-tracked"
 assert_eq "legacy local .zskills-tracked → enforce-pipeline" "enforce-pipeline" \
@@ -115,6 +131,19 @@ touch "$MR4/.zskills/tracking/finished-pipeline/requires.x.123" \
       "$MR4/.zskills/tracking/finished-pipeline/step.1.123"
 assert_eq "DA2 stale tracking subdir, no tracked file → watched" "watched" \
   "$(zskills_enforcement_predicate '{"permission_mode":"default"}' "$MR4" "$LR4")"
+
+echo "── predicate: bypassPermissions-as-attended REGRESSION PIN ──"
+# REGRESSION PIN for the bypassPermissions=attended recategorization: a
+# bypass-mode human with NO live pipeline and an unset per-check toggle must
+# resolve to a SILENT demotable check (no nag, no block). This pins the whole
+# attended path end-to-end: predicate → watched, then a demotable check
+# (main_edit) with the toggle unset → silent.
+MR5=$(mktemp -d "$WORK/main5-XXXXXX"); LR5=$(mktemp -d "$WORK/local5-XXXXXX")
+PIN_PRED="$(zskills_enforcement_predicate '{"permission_mode":"bypassPermissions"}' "$MR5" "$LR5")"
+assert_eq "PIN: bypass + no pipeline + unset toggle → predicate watched" "watched" "$PIN_PRED"
+reset_state
+assert_eq "PIN: bypass-watched + demotable main_edit (unset) → silent" "silent" \
+  "$(zskills_enforcement_mode main_protection main_edit demotable "$PIN_PRED")"
 
 # ── CONFIG_ROOT ───────────────────────────────────────────────────────────
 echo "── config_root resolution ──"

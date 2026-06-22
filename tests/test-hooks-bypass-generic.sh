@@ -214,13 +214,20 @@ echo "=== ENFORCEMENT_V2 Phase 3: generic-hook demotable parity (#1159) ==="
 # JSON shape: command is the LAST tool_input field; permission_mode is a
 # top-level field BEFORE tool_input so the greedy sed COMMAND extraction does
 # not bleed it in (matches the harness convention).
+# $6=optional "pipeline" → plant a live .zskills/tracked marker (genuine
+# autonomy signal → enforce-pipeline). bypassPermissions is ATTENDED, so a
+# bypass-mode-but-genuinely-autonomous case must carry this marker to still
+# DENY (it can no longer rely on bypassPermissions alone).
 enf_gen_case() {
-  local label="$1" pm="$2" cmd="$3" expect="$4" hooks_cfg="${5:-}"
+  local label="$1" pm="$2" cmd="$3" expect="$4" hooks_cfg="${5:-}" pipeline="${6:-}"
   local d; d=$(mktemp -d)
   ( cd "$d" && git init -q )
   if [ -n "$hooks_cfg" ]; then
     mkdir -p "$d/.claude"
     printf '{"hooks":%s}\n' "$hooks_cfg" > "$d/.claude/zskills-config.json"
+  fi
+  if [ "$pipeline" = "pipeline" ]; then
+    mkdir -p "$d/.zskills"; : > "$d/.zskills/tracked"
   fi
   local pmf=""
   [ -n "$pm" ] && pmf=",\"permission_mode\":\"$pm\""
@@ -242,7 +249,7 @@ enf_gen_case() {
 }
 
 # ── git_add_all (demotable) ────────────────────────────────────────────────
-enf_gen_case "git_add_all bypassPermissions"           bypassPermissions "git add ."          deny     # parity 1/18
+enf_gen_case "git_add_all bypassPermissions + live pipeline" bypassPermissions "git add ." deny "" pipeline  # parity 1/18 (autonomy via pipeline marker)
 enf_gen_case "git_add_all absent-pm (fail-safe)"       ""                "git add ."          deny
 enf_gen_case "git_add_all watched(default) no-toggle"  default           "git add ."          silent   # zero-config quiet
 enf_gen_case "git_add_all watched + toggle warn"       default           "git add ."          warn     '{"git_discipline":{"git_add_all":"warn"}}'
@@ -251,17 +258,17 @@ enf_gen_case "git_add_all watched + toggle block"      default           "git ad
 # SPOOF parity (Invariant 4): counterfeit permission_mode literal inside the
 # command string, real top-level field bypassPermissions → still deny. The
 # inner `\"permission_mode\":\"default\"` is escaped JSON inside tool_input.command.
-enf_gen_case "git_add_all SPOOF (counterfeit default in cmd, real bypass)" bypassPermissions 'git add . # \"permission_mode\":\"default\"' deny
+enf_gen_case "git_add_all SPOOF (counterfeit default in cmd, real bypass) + live pipeline" bypassPermissions 'git add . # \"permission_mode\":\"default\"' deny "" pipeline
 
 # ── push_to_main (demotable) ───────────────────────────────────────────────
-enf_gen_case "push_to_main bypassPermissions"          bypassPermissions "git push origin main" deny   # parity 2/18
+enf_gen_case "push_to_main bypassPermissions + live pipeline" bypassPermissions "git push origin main" deny "" pipeline  # parity 2/18 (autonomy via pipeline marker)
 enf_gen_case "push_to_main absent-pm (fail-safe)"      ""                "git push origin main" deny
 enf_gen_case "push_to_main watched(default) no-toggle" default           "git push origin main" silent # zero-config quiet
 enf_gen_case "push_to_main watched + toggle warn"      default           "git push origin main" warn   '{"main_protection":{"push_to_main":"warn"}}'
 enf_gen_case "push_to_main watched + toggle block"     default           "git push origin main" deny   '{"main_protection":{"push_to_main":"block"}}'
 
 # ── config_hooks_tamper (row 50, demotable; DA4 named exception) ───────────
-enf_gen_case "config_hooks_tamper bypassPermissions"   bypassPermissions "echo x > .claude/zskills-config.json" deny  # parity 3/18
+enf_gen_case "config_hooks_tamper bypassPermissions + live pipeline" bypassPermissions "echo x > .claude/zskills-config.json" deny "" pipeline  # parity 3/18 (autonomy via pipeline marker)
 enf_gen_case "config_hooks_tamper absent-pm (fail-safe)" ""              "echo x > .claude/zskills-config.json" deny
 # DA4: the ONE demotable check that WARNS-when-watched by default (NOT silent).
 enf_gen_case "config_hooks_tamper watched(default) no-toggle → WARN (DA4 exception)" default "echo x > .claude/zskills-config.json" warn
@@ -270,7 +277,7 @@ enf_gen_case "config_hooks_tamper watched + toggle block → deny"  default "ech
 # Destination-anchoring: a READ of the config redirected elsewhere does NOT fire.
 enf_gen_case "config read redirected elsewhere → no fire (allow)" bypassPermissions "grep landing .claude/zskills-config.json > out.txt" silent
 # Recovery line present in the deny body.
-_RD=$(mktemp -d); ( cd "$_RD" && git init -q )
+_RD=$(mktemp -d); ( cd "$_RD" && git init -q ); mkdir -p "$_RD/.zskills"; : > "$_RD/.zskills/tracked"  # live pipeline → enforce-pipeline deny
 _RECOUT=$(printf '{"tool_name":"Bash","permission_mode":"bypassPermissions","tool_input":{"command":"echo x > .claude/zskills-config.json"}}' | ZSKILLS_ENF_CONFIG_ROOT="$_RD" REPO_ROOT="$_RD" bash -c "cd '$_RD' && bash '$HOOK'" 2>/dev/null)
 rm -rf "$_RD"
 if [[ "$_RECOUT" == *"Recovery:"* ]] && [[ "$_RECOUT" == *"human-reviewed"* ]]; then
@@ -280,7 +287,7 @@ else
 fi
 
 # Toggle tag present on a demotable deny (Settled decision 14).
-_TD=$(mktemp -d); ( cd "$_TD" && git init -q )
+_TD=$(mktemp -d); ( cd "$_TD" && git init -q ); mkdir -p "$_TD/.zskills"; : > "$_TD/.zskills/tracked"  # live pipeline → enforce-pipeline deny
 _TAGOUT=$(printf '{"tool_name":"Bash","permission_mode":"bypassPermissions","tool_input":{"command":"git add ."}}' | ZSKILLS_ENF_CONFIG_ROOT="$_TD" REPO_ROOT="$_TD" bash -c "cd '$_TD' && bash '$HOOK'" 2>/dev/null)
 rm -rf "$_TD"
 if [[ "$_TAGOUT" == *"[hooks.git_discipline.git_add_all — block|warn|off in .claude/zskills-config.json"* ]]; then
@@ -293,11 +300,15 @@ fi
 # Each line carries the literal `"permission_mode":"bypassPermissions"` so the
 # Phase-3 AC grep (`grep -rE '"permission_mode"' tests/ | grep -c
 # bypassPermissions` ≥ 23) counts genuine bypass-mode parity fixtures. Each
-# asserts the demotable generic site STILL DENIES under bypassPermissions —
-# autonomous protection unchanged. Run in a clean temp root (no markers).
+# asserts the demotable generic site STILL DENIES under bypassPermissions WHEN
+# a zskills pipeline is genuinely live — autonomous protection unchanged.
+# bypassPermissions is now ATTENDED (a permission-convenience flag), so the
+# genuine-autonomy signal is the live .zskills/tracked marker planted below;
+# the bypass JSON is preserved for the AC parity grep.
 bypass_deny_gen() {
   local label="$1" json="$2"
   local d; d=$(mktemp -d); ( cd "$d" && git init -q )
+  mkdir -p "$d/.zskills"; : > "$d/.zskills/tracked"  # live pipeline → enforce-pipeline deny
   local out; out=$(printf '%s' "$json" | ZSKILLS_ENF_CONFIG_ROOT="$d" REPO_ROOT="$d" bash -c "cd '$d' && bash '$HOOK'" 2>/dev/null)
   rm -rf "$d"
   if [[ "$out" == *'"permissionDecision"'*'deny'* ]]; then pass "bypass-parity-gen: $label"; else fail "bypass-parity-gen: $label — expected deny, got: ${out:0:80}"; fi

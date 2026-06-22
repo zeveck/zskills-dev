@@ -2608,3 +2608,47 @@ its rationale and mitigation; none is a plan-text contradiction:
    pre-amendment, so the amendment removes only the warning, not a block. A
    project wanting the warn or hard-deny back sets
    `hooks.main_protection.push_to_main` to `"warn"` / `"block"`.
+
+## Disposition / drift note — 2026-06-22: `bypassPermissions` reclassified as ATTENDED
+
+The original Phase 1–3 predicate classified `bypassPermissions` as one of the
+AUTONOMOUS triggers (the `*)` catch-all returned `enforce-autonomous` for both
+`bypassPermissions` AND absent/unrecognized modes). This categorization is
+REVERSED as of 2026-06-22.
+
+**What changed.** In `zskills_enforcement_predicate`
+(`hooks/_lib/zskills-enforcement.sh`, mirrored verbatim into the eight inlining
+`block-*` hooks + the project `.template` + the `.claude/hooks/` legacy
+mirrors), `bypassPermissions` moves from the `*)` arm into the attended case
+label: `default|acceptEdits|plan` → `default|acceptEdits|plan|bypassPermissions`.
+The `*)` arm still returns `enforce-autonomous`, but now matches ONLY
+absent/unrecognized permission modes (the fail-safe-toward-enforcement default
+is preserved).
+
+**Rationale.** `bypassPermissions` (a human running
+`--dangerously-skip-permissions`) is a permission-CONVENIENCE flag, not an
+ATTENDANCE signal — many humans run it always, and auto-classifying every such
+session as autonomous nagged/blocked attended humans on routine workflows.
+Genuine zskills autonomy is already detected by the `enforce-pipeline` arm (a
+live `.zskills/tracked` marker / `.zskills/inflight/` sentinel), so dropping the
+bypass trigger loses no genuine-autonomy coverage. A project that wants hard
+enforcement under bypass regardless keeps it via the per-check `"block"` toggle
+(forces a block independent of the predicate). HARD checks (destructive
+fs/git/process-kill, `--no-verify`) are UNAFFECTED — they block always,
+regardless of the predicate.
+
+**Test repointing (never weakened).** The bypass-parity DENY assertions across
+`test-block-main-edits.sh`, `test-hooks-bypass-generic.sh`,
+`test-hooks-bypass-project.sh`, `test-plan-claim-hook-deny.sh`, and
+`test-block-fix-issue-unclaimed-ownership.sh` previously relied on
+`bypassPermissions` alone to TRIGGER the demotable-check block. They now plant a
+live `.zskills/tracked` pipeline marker in the fixture (→ `enforce-pipeline` →
+deny), repointing the trigger to a GENUINE autonomy signal so the same block
+path stays exercised. The lib unit test
+(`test-zskills-enforcement-lib.sh`) flips its direct
+`bypassPermissions → enforce-autonomous` assertion to
+`bypassPermissions (no markers) → watched` and `bypassPermissions + live
+pipeline → enforce-pipeline`, keeps the absent/garbage → `enforce-autonomous`
+fail-safe assertions, and adds a regression pin (bypass + no pipeline + unset
+toggle → predicate `watched` AND demotable check resolves `silent`). HARD-check
+assertions (which block always) were left untouched.

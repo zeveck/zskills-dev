@@ -443,9 +443,14 @@ to `"block"`.
 coaching is opt-in; per-check overrides in `hooks.*`.** The safety hooks
 follow one rule: a *demotable* check is SILENT by shipped default when a
 human is watching (no nagging — no warning AND no block on a routine git
-workflow) and BLOCKS when the session is autonomous/unwatched
-(`bypassPermissions` mode, an absent/unrecognized permission mode, or a
-live zskills pipeline). On a fresh install with NO config of any kind, an
+workflow) and BLOCKS when the session is autonomous/unwatched (an
+absent/unrecognized permission mode, or a live zskills pipeline).
+`bypassPermissions` (a human running `--dangerously-skip-permissions`) is
+treated as ATTENDED — it is a permission-convenience flag, not an attendance
+signal — so it is no longer auto-classified as autonomous; genuine autonomy
+under bypass is still caught by the live-pipeline arm, and a project that
+wants hard enforcement regardless keeps it via the per-check `"block"`
+toggle (hard checks are unaffected — they block always). On a fresh install with NO config of any kind, an
 attended human is nagged about nothing, while every autonomous/unwatched
 safety guarantee is preserved unchanged. Coaching is opt-in per check via
 the project-only `hooks.*` block in `.claude/zskills-config.json`: set a
