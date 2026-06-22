@@ -198,6 +198,7 @@ fi
 # triad, then the niche references).
 EXPECTED_GUIDES_PATHS='docs/guides/README.md
 docs/guides/installing-zskills.md
+docs/guides/setup-stories.md
 docs/guides/workflows.md
 docs/guides/inspecting-and-monitoring.md
 docs/guides/zskills-config.md

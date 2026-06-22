@@ -23,6 +23,7 @@ export const DOCS_CATALOG = [
     items: [
       { name: "Overview", path: "docs/guides/README.md" },
       { name: "Installing zskills", path: "docs/guides/installing-zskills.md" },
+      { name: "Setup Stories", path: "docs/guides/setup-stories.md" },
       { name: "Z Skills Workflows", path: "docs/guides/workflows.md" },
       { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/inspecting-and-monitoring.md" },
       { name: "Configuring zskills", path: "docs/guides/zskills-config.md" },
