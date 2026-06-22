@@ -145,6 +145,22 @@ run_hook() {
   rm -f "$errf"
 }
 
+# run_hook_pipeline: same as run_hook, but plants a live `.zskills/tracked`
+# pipeline marker at BOTH the predicate's local root (CLAUDE_PROJECT_DIR =
+# project_dir) and its main/config root (enf_root) for the duration of the run,
+# then removes them. Used by the bypass-parity DENY cases: bypassPermissions is
+# now ATTENDED (a permission-convenience flag, not an attendance signal), so an
+# autonomous deny must be driven by a GENUINE autonomy signal — a live pipeline
+# marker — not by bypassPermissions alone.
+run_hook_pipeline() {
+  local project_dir="$1" input="$2" enf_root="${3:-$1}"
+  mkdir -p "$project_dir/.zskills" "$enf_root/.zskills"
+  : > "$project_dir/.zskills/tracked"
+  : > "$enf_root/.zskills/tracked"
+  run_hook "$project_dir" "$input" "$enf_root"
+  rm -f "$project_dir/.zskills/tracked" "$enf_root/.zskills/tracked"
+}
+
 # Build an Edit/Write envelope. The tool name varies by tool; both use
 # file_path under tool_input.
 mkenv_edit()   { printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1"; }
@@ -458,9 +474,9 @@ printf '{"execution":{"main_protected":true}}' > "$SANDBOX/.claude/zskills-confi
 # ═══ config_hooks_tamper arm (registry row 49, Settled decision 13) ════════
 CFG="$SANDBOX/.claude/zskills-config.json"
 
-# ── tc1: tamper Edit (hooks in new_string) + BYPASS → DENY (bypass parity 2/5) ─
-run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
-assert_deny "tc1: tamper Edit + bypass → DENY (bypass parity, config_hooks_tamper)" "$HOOK_OUT"
+# ── tc1: tamper Edit (hooks in new_string) + BYPASS + live pipeline → DENY (bypass parity 2/5) ─
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+assert_deny "tc1: tamper Edit + bypass + live pipeline → DENY (bypass parity, config_hooks_tamper)" "$HOOK_OUT"
 if [[ "$HOOK_OUT" == *'[hooks.main_protection.config_hooks_tamper'* ]]; then
   pass "tc1b: tamper deny names config_hooks_tamper toggle"
 else
@@ -494,9 +510,9 @@ printf '{"execution":{"main_protected":true}}' > "$CFG"
 run_hook "$SANDBOX" "$(mkenv_edit_nonhooks "$CFG" default)"
 assert_silent "tc5: non-hooks config Edit watched → SILENT (falls through to main_edit)" \
   "$HOOK_EXIT" "$HOOK_OUT" "$HOOK_ERR"
-# And the same non-hooks config Edit under BYPASS → DENY via main_edit (not tamper).
-run_hook "$SANDBOX" "$(mkenv_edit_nonhooks "$CFG" bypassPermissions)"
-assert_deny "tc5b: non-hooks config Edit bypass → DENY via main_edit arm" "$HOOK_OUT"
+# And the same non-hooks config Edit under BYPASS + live pipeline → DENY via main_edit (not tamper).
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_nonhooks "$CFG" bypassPermissions)"
+assert_deny "tc5b: non-hooks config Edit bypass + live pipeline → DENY via main_edit arm" "$HOOK_OUT"
 if [[ "$HOOK_OUT" == *'[hooks.main_protection.main_edit'* ]]; then
   pass "tc5c: non-hooks config Edit deny names main_edit (not tamper)"
 else
@@ -505,7 +521,7 @@ fi
 
 # ── tc6: main_protected ABSENT → tamper arm STILL fires (placement headline, R2-6) ─
 printf '{"execution":{}}' > "$CFG"
-run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
 assert_deny "tc6: tamper arm fires even with main_protected absent (placement above gate)" "$HOOK_OUT"
 printf '{"execution":{"main_protected":true}}' > "$CFG"
 
@@ -522,24 +538,24 @@ rm -f "$WORKTREE/.zskills-tracked" "$WORKTREE/.landed"
 run_hook "$WORKTREE" "$(mkenv_edit_hooks "$CFG" default)" "$SANDBOX"
 assert_warn "tc7: worktree-session Edit of MAIN config (watched) → WARN (above worktree-self, DA3)" \
   "$HOOK_EXIT" "$HOOK_OUT" "[hooks.main_protection.config_hooks_tamper"
-run_hook "$WORKTREE" "$(mkenv_edit_hooks "$CFG" bypassPermissions)" "$SANDBOX"
+run_hook_pipeline "$WORKTREE" "$(mkenv_edit_hooks "$CFG" bypassPermissions)" "$SANDBOX"
 assert_deny "tc7b: worktree-session Edit of MAIN config (bypass) → DENY (above worktree-self, DA3)" "$HOOK_OUT"
 
 # ── tc8: group ceiling main_protection.enabled:false + tamper edit → STILL gated ─
 # config_hooks_tamper is EXEMPT from its group's enabled ceiling.
 printf '{"execution":{"main_protected":true},"hooks":{"main_protection":{"enabled":false}}}' > "$CFG"
-run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
 assert_deny "tc8: group ceiling enabled:false + tamper edit → STILL gated (ceiling exemption)" "$HOOK_OUT"
 printf '{"execution":{"main_protected":true}}' > "$CFG"
 
 # ── tc9: self-protection — config WITHOUT a config_hooks_tamper value, Edit
 # setting config_hooks_tamper:"off", BYPASS → DENY (gate evaluates pre-write) ─
-run_hook "$SANDBOX" "$(mkenv_edit_tamper_self "$CFG" bypassPermissions)"
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_tamper_self "$CFG" bypassPermissions)"
 assert_deny "tc9: self-protection — Edit setting config_hooks_tamper:off bypass → DENY (pre-write eval)" "$HOOK_OUT"
 
 # ── tc10: warn AND deny text both carry the recovery line (Settled decision 13) ─
-run_hook "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
-if [[ "$HOOK_OUT" == *'human-reviewed'* ]]; then
+run_hook_pipeline "$SANDBOX" "$(mkenv_edit_hooks "$CFG" bypassPermissions)"
+if [[ "$HOOK_OUT" == *'human-reviewed'* ]] && [[ "$HOOK_OUT" == *'"permissionDecision":"deny"'* ]]; then
   pass "tc10a: tamper DENY text contains the recovery line (human-reviewed)"
 else
   fail "tc10a: tamper DENY text contains the recovery line (human-reviewed)" "out=$HOOK_OUT"

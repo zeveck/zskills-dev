@@ -161,10 +161,15 @@ zskills_enforcement_predicate() {
   if [[ "$_json" =~ (^|[^\\])\"permission_mode\"[[:space:]]*:[[:space:]]*\"([a-zA-Z]+)\" ]]; then
     PERM="${BASH_REMATCH[2]}"
   fi
-  # enforce-autonomous iff bypassPermissions OR not a recognized attended
-  # mode (absent/unrecognized — fail-safe TOWARD enforcement).
+  # enforce-autonomous iff the permission mode is ABSENT or UNRECOGNIZED only
+  # (fail-safe TOWARD enforcement). bypassPermissions is treated as ATTENDED:
+  # it's a permission-convenience flag (--dangerously-skip-permissions), NOT an
+  # attendance signal — many humans run it always. Genuine zskills autonomy is
+  # detected by the pipeline-live arm below (.zskills/tracked / inflight
+  # sentinel); projects wanting hard enforcement keep it via the per-check
+  # "block" toggle, which forces a block regardless of this predicate.
   case "$PERM" in
-    default|acceptEdits|plan)
+    default|acceptEdits|plan|bypassPermissions)
       : # attended modes — fall through to the pipeline-live check
       ;;
     *)

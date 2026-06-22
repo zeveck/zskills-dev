@@ -383,14 +383,19 @@ see below.)
 A hook decides whether it is *watched* or *autonomous* from one signal
 (no TTY sniffing, no env vars, no transcript heuristics):
 
-- **Autonomous (enforce)** — the session is running in
-  `bypassPermissions` permission mode, OR the permission-mode field is
+- **Autonomous (enforce)** — the permission-mode field is
   absent/unrecognized (fail-safe → enforce), OR a zskills pipeline is LIVE
   (a `.zskills/tracked` marker at the effective local root or the main
   root, or a fresh `.zskills/inflight/` sentinel). Demotable checks
   **BLOCK** here.
 - **Watched** — everything else (a normal attended session in `default`,
-  `acceptEdits`, or `plan` permission mode with no live pipeline marker).
+  `acceptEdits`, `plan`, or `bypassPermissions` permission mode with no live
+  pipeline marker). `bypassPermissions` (a human running
+  `--dangerously-skip-permissions`) is treated as ATTENDED — it is a
+  permission-convenience flag, not an attendance signal — so it does not by
+  itself classify the session as autonomous; genuine autonomy under bypass
+  is still caught by the live-pipeline arm, and a project that wants hard
+  enforcement regardless keeps it via the per-check `"block"` toggle.
   A demotable check is **SILENT by shipped default** — it does nothing (no
   warning, no block; the permission prompt the session would normally get
   still fires from the harness). Coaching is opt-in: set the per-check

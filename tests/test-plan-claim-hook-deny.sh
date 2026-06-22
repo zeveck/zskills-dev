@@ -254,8 +254,12 @@ run_hook_capture() {
 ENF_SLUG="enfplan"
 ENF_CMD="bash $REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh --prefix cp $ENF_SLUG"
 
-# ── EP1: bypass-parity — no-claim + bypassPermissions → DENY + names toggle ─
+# ── EP1: bypass-parity — no-claim + bypassPermissions + live pipeline → DENY +
+# names toggle. bypassPermissions is now ATTENDED (a permission-convenience flag,
+# not an attendance signal); the genuine autonomy signal driving the autonomous
+# deny is the live .zskills/tracked pipeline marker planted below. ─
 ep1_fixture=$(setup_fixture "enf_p1" "$ENF_SLUG")
+mkdir -p "$ep1_fixture/.zskills"; : > "$ep1_fixture/.zskills/tracked"
 ep1_payload=$(make_payload_pm "$ENF_CMD" "bypassPermissions")
 run_hook_capture "$ep1_payload" "$ep1_fixture"
 if echo "$PLAN_STDOUT" | grep -q '"permissionDecision":"deny"' \

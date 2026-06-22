@@ -384,21 +384,21 @@ enf_proj_case() {
 }
 
 # ── commit_on_main (demotable) — parity 4/18 ───────────────────────────────
-enf_proj_case "commit_on_main bypassPermissions"          main bypassPermissions "git commit -m x" deny "" "" "stagecode"
+enf_proj_case "commit_on_main bypassPermissions + live pipeline" main bypassPermissions "git commit -m x" deny "" "tracked" "stagecode"
 enf_proj_case "commit_on_main absent-pm (fail-safe)"      main ""                "git commit -m x" deny "" "" "stagecode"
 enf_proj_case "commit_on_main watched(default) → SILENT"  main default           "git commit -m x" silent "" "" "stagecode"
 enf_proj_case "commit_on_main watched + toggle warn"      main default           "git commit -m x" warn '{"main_protection":{"commit_on_main":"warn"}}' "" "stagecode"
 enf_proj_case "commit_on_main watched + toggle block"     main default           "git commit -m x" deny '{"main_protection":{"commit_on_main":"block"}}' "" "stagecode"
 
 # ── cherry_pick_on_main (demotable) — parity 5/18 ──────────────────────────
-enf_proj_case "cherry_pick_on_main bypassPermissions"     main bypassPermissions "git cherry-pick abc123" deny
+enf_proj_case "cherry_pick_on_main bypassPermissions + live pipeline" main bypassPermissions "git cherry-pick abc123" deny "" "tracked"
 enf_proj_case "cherry_pick_on_main watched(default) → SILENT" main default       "git cherry-pick abc123" silent
 
 # ── push_to_main (demotable, 3 forms share the key) — parity 6/18 ──────────
-enf_proj_case "push_to_main form-a (origin main) bypass"  feat/test bypassPermissions "git push origin main" deny
+enf_proj_case "push_to_main form-a (origin main) bypass + live pipeline" feat/test bypassPermissions "git push origin main" deny "" "tracked"
 enf_proj_case "push_to_main form-a watched(default) → SILENT" feat/test default     "git push origin main" silent
-enf_proj_case "push_to_main form-b (feat:main) bypass"    feat/test bypassPermissions "git push origin feat:main" deny
-enf_proj_case "push_to_main form-c (naked on main) bypass" main bypassPermissions "git push" deny
+enf_proj_case "push_to_main form-b (feat:main) bypass + live pipeline" feat/test bypassPermissions "git push origin feat:main" deny "" "tracked"
+enf_proj_case "push_to_main form-c (naked on main) bypass + live pipeline" main bypassPermissions "git push" deny "" "tracked"
 
 # ── requires_unfulfilled (demotable, 2 sites: commit + push) — parity 7/18 ─
 enf_proj_case "requires_unfulfilled (commit) bypass"      feat/test bypassPermissions "git commit -m x" deny "" "tracked" "requires,stagecode"
@@ -415,45 +415,49 @@ enf_proj_case "step_unverified (impl, no verify) bypass"  feat/test bypassPermis
 enf_proj_case "step_unreported (verify, no report) bypass" feat/test bypassPermissions "git commit -m x" deny "" "tracked" "stepverify,stagecode"
 
 # ── logs_add_all (demotable) — parity 10/18 ────────────────────────────────
-enf_proj_case "logs_add_all bypassPermissions"            feat/test bypassPermissions "git add .claude/logs/" deny
+enf_proj_case "logs_add_all bypassPermissions + live pipeline" feat/test bypassPermissions "git add .claude/logs/" deny "" "tracked"
 enf_proj_case "logs_add_all watched(default) → SILENT"    feat/test default           "git add .claude/logs/" silent
 
 # ── test_pipe (demotable) — parity 11/18 ───────────────────────────────────
-enf_proj_case "test_pipe bypassPermissions"               feat/test bypassPermissions "npm test | tail" deny
+enf_proj_case "test_pipe bypassPermissions + live pipeline" feat/test bypassPermissions "npm test | tail" deny "" "tracked"
 enf_proj_case "test_pipe watched(default) → SILENT"       feat/test default           "npm test | tail" silent
 
 # ── full_cmd_unset (demotable) — parity 12/18 ──────────────────────────────
-enf_proj_case "full_cmd_unset bypassPermissions"          feat/test bypassPermissions "npm test | tail" deny "" "" "no-full-cmd"
+enf_proj_case "full_cmd_unset bypassPermissions + live pipeline" feat/test bypassPermissions "npm test | tail" deny "" "tracked" "no-full-cmd"
 enf_proj_case "full_cmd_unset watched(default) → SILENT"  feat/test default           "npm test | tail" silent "" "" "no-full-cmd"
 
 # ── tests_not_run (commit, demotable) — parity 13/18 ───────────────────────
-enf_proj_case "tests_not_run (commit) bypassPermissions"  feat/test bypassPermissions "git commit -m x" deny "" "" "stagecode,no-test-in-transcript"
+enf_proj_case "tests_not_run (commit) bypassPermissions + live pipeline" feat/test bypassPermissions "git commit -m x" deny "" "tracked" "stagecode,no-test-in-transcript"
 enf_proj_case "tests_not_run (commit) watched(default) → SILENT" feat/test default     "git commit -m x" silent "" "" "stagecode,no-test-in-transcript"
 # ── tests_not_run (cherry-pick, demotable) — parity 14/18 ──────────────────
-enf_proj_case "tests_not_run (cherry-pick) bypassPermissions" feat/test bypassPermissions "git cherry-pick abc123" deny "" "" "no-test-in-transcript"
+enf_proj_case "tests_not_run (cherry-pick) bypassPermissions + live pipeline" feat/test bypassPermissions "git cherry-pick abc123" deny "" "tracked" "no-test-in-transcript"
 
 # ── ui_unverified (demotable) — parity 15/18 ───────────────────────────────
 # UI file staged, transcript lacks playwright-cli AND lacks the test cmd so the
 # commit transcript gate is the UI one (use no-test-in-transcript to skip the
 # tests_not_run gate ordering; UI gate fires on the missing playwright-cli).
-enf_proj_case "ui_unverified bypassPermissions"           feat/test bypassPermissions "git commit -m x" deny "" "" "uifile,ui-no-playwright"
+enf_proj_case "ui_unverified bypassPermissions + live pipeline" feat/test bypassPermissions "git commit -m x" deny "" "tracked" "uifile,ui-no-playwright"
 
 # SPOOF parity (Invariant 4): counterfeit permission_mode:"default" inside the
-# command string, real top-level field bypassPermissions → still deny.
-enf_proj_case "commit_on_main SPOOF (counterfeit default in cmd, real bypass)" main bypassPermissions 'git commit -m \"x permission_mode default\"' deny "" "" "stagecode"
+# command string, real top-level field bypassPermissions → parser takes the real
+# field (attended); a live pipeline marker keeps the deny path exercised.
+enf_proj_case "commit_on_main SPOOF (counterfeit default in cmd, real bypass) + live pipeline" main bypassPermissions 'git commit -m \"x permission_mode default\"' deny "" "tracked" "stagecode"
 
 # ── Inline-JSON bypass-parity (Invariant 4, AC parity-coverage floor) ───────
 # Each line carries the literal `"permission_mode":"bypassPermissions"` so the
 # Phase-3 AC grep (`grep -rE '"permission_mode"' tests/ | grep -c
 # bypassPermissions` ≥ 23) counts genuine bypass-mode parity fixtures. These
-# cover the on-main + git-discipline project sites whose deny fires without
-# pipeline markers; the marker-dependent tracking sites are covered by the
-# helper-based cases above (also bypassPermissions). $1=label $2=branch
+# cover the on-main + git-discipline project sites. bypassPermissions is now
+# ATTENDED, so the genuine-autonomy signal is the live .zskills/tracked marker
+# planted below — the bypass JSON is preserved for the AC parity grep. The
+# marker-dependent tracking sites are covered by the helper-based cases above
+# (also bypassPermissions). $1=label $2=branch
 # $3=full-json $4=no-full-cmd? $5=no-test? — minimal fixture controls.
 bypass_deny_proj() {
   local label="$1" branch="$2" json="$3" nofull="${4:-}" notest="${5:-}"
   local d; d=$(mktemp -d)
   mkdir -p "$d/.claude/hooks" "$d/.zskills/tracking"
+  printf 'run-plan.test-plan\n' > "$d/.zskills/tracked"  # live pipeline → enforce-pipeline deny
   cp "$PROJ_HOOK_FILE" "$d/.claude/hooks/block-unsafe-project.sh"
   local fc='"full_cmd": "npm run test:all"'; [ "$nofull" = "nofull" ] && fc='"full_cmd": ""'
   printf '{ "testing": { "unit_cmd": "npm test", %s }, "ui": { "file_patterns": "src/ui/" }, "execution": { "main_protected": true } }\n' "$fc" > "$d/.claude/zskills-config.json"

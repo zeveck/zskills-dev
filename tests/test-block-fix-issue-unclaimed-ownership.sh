@@ -284,9 +284,13 @@ write_hooks_config() {
   printf '%s' "$2" > "$1/.claude/zskills-config.json"
 }
 
-# ── P1: bypass-parity (foreign-pipeline deny under bypassPermissions) ──────
+# ── P1: bypass-parity (foreign-pipeline deny under bypassPermissions + live
+# pipeline). bypassPermissions is now ATTENDED (a permission-convenience flag,
+# not an attendance signal); the genuine autonomy signal driving the autonomous
+# deny is the live .zskills/tracked pipeline marker planted below. ─
 FP1="$SCRATCH_ROOT/fp1"
 init_fixture "$FP1"
+mkdir -p "$FP1/.zskills"; : > "$FP1/.zskills/tracked"
 write_claim "$FP1" 21 "pipe-A-holder"
 PAYLOAD=$(build_payload_pm 21 "pipe-B-intruder" "bypassPermissions")
 run_hook "$FP1" "$PAYLOAD"
@@ -297,9 +301,12 @@ else
   fail "P1: foreign-pipeline deny under bypass" "stdout=$LAST_STDOUT"
 fi
 
-# ── P2: bypass-parity (no-claim deny under bypassPermissions) ──────────────
+# ── P2: bypass-parity (no-claim deny under bypassPermissions + live pipeline) ─
+# bypassPermissions is ATTENDED; the live .zskills/tracked marker is the genuine
+# autonomy signal that keeps the autonomous deny path exercised.
 FP2="$SCRATCH_ROOT/fp2"
 init_fixture "$FP2"
+mkdir -p "$FP2/.zskills"; : > "$FP2/.zskills/tracked"
 PAYLOAD=$(build_payload_pm 22 "pipe-any" "bypassPermissions")
 run_hook "$FP2" "$PAYLOAD"
 if echo "$LAST_STDOUT" | grep -q '"permissionDecision":"deny"' \
