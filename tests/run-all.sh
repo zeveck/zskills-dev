@@ -145,6 +145,7 @@ run_suite "test-hooks-worktree-cd.sh" "tests/test-hooks-worktree-cd.sh"
 run_suite "test-hooks-agent.sh" "tests/test-hooks-agent.sh"
 run_suite "test-hooks-warn-drift.sh" "tests/test-hooks-warn-drift.sh"
 run_suite "test-hooks-misc.sh" "tests/test-hooks-misc.sh"
+run_suite "test-hooks-helpers.sh" "tests/test-hooks-helpers.sh"
 run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
 run_suite "test-zskills-enforcement-lib.sh" "tests/test-zskills-enforcement-lib.sh"
@@ -206,6 +207,7 @@ run_suite "test-block-bad-cron.sh" "tests/test-block-bad-cron.sh"
 run_suite "test-block-stale-skill-version.sh" "tests/test-block-stale-skill-version.sh"
 run_suite "test-block-stale-skill-version-sandbox.sh" "tests/test-block-stale-skill-version-sandbox.sh"
 run_suite "test-block-bypassed-land-pr.sh" "tests/test-block-bypassed-land-pr.sh"
+run_suite "test-block-fix-issue-unclaimed-ownership.sh" "tests/test-block-fix-issue-unclaimed-ownership.sh"
 run_suite "test-block-main-edits.sh" "tests/test-block-main-edits.sh"
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
 run_suite "test-fix-issues.sh" "tests/test-fix-issues.sh"
@@ -220,6 +222,8 @@ run_suite "test-fix-issues-skip-persistence.sh" "tests/test-fix-issues-skip-pers
 run_suite "test-fix-issues-skip-effective-reason.sh" "tests/test-fix-issues-skip-effective-reason.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-do-issue-num-parser.sh" "tests/test-do-issue-num-parser.sh"
+run_suite "test-do-multi-issue-fanout.sh" "tests/test-do-multi-issue-fanout.sh"
+run_suite "test-do-pr-claim-release.sh" "tests/test-do-pr-claim-release.sh"
 # SEAM_HARDENING_HIGH Phase 3 — extract-and-run the real /commit arg-parser
 # + the real /commit pr canonical /land-pr caller loop. These supersede the
 # static-grep coverage that used to live in tests/test-commit.sh (removed).
@@ -273,6 +277,10 @@ run_suite "test-extract-fence-lib.sh" "tests/test-extract-fence-lib.sh"
 # are intentionally NOT registered; these two ARE the registered self-tests.
 run_suite "test-parse-results.sh" "tests/test-parse-results.sh"
 run_suite "test-suite-registry.sh" "tests/test-suite-registry.sh"
+# #1186 — completeness gate: every on-disk tests/test-*.sh MUST be referenced
+# in run-all.sh (or carry an inline-reasoned allowlist entry). Statically
+# greps the registry; does NOT execute run-all.sh.
+run_suite "test-suite-registration-complete.sh" "tests/test-suite-registration-complete.sh"
 # SUITE_PROVENANCE Phase 1 (#1166) — self-test for the sourceable validator
 # lib tests/lib/suite-result-valid.sh (which is NOT registered as a run_suite,
 # same as parse-results.sh / suite-registry.sh above).
@@ -321,6 +329,7 @@ run_suite "test-dashboard-completed-readonly.sh" "tests/test-dashboard-completed
 run_suite "test-dashboard-complete-render-drag.sh" "tests/test-dashboard-complete-render-drag.sh"
 run_suite "test-dashboard-backlog-bidir.sh" "tests/test-dashboard-backlog-bidir.sh"
 run_suite "test-backfill-plan-completed.sh" "tests/test-backfill-plan-completed.sh"
+run_suite "test-mark-plan-complete.sh" "tests/test-mark-plan-complete.sh"
 run_suite "test-fix-issues-claim-race-e2e.sh" "tests/test-fix-issues-claim-race-e2e.sh"
 run_suite "test-fix-issues-claim-race-baseline.sh" "tests/test-fix-issues-claim-race-baseline.sh"
 run_suite "test-fix-issues-claim-conformance.sh" "tests/test-fix-issues-claim-conformance.sh"
@@ -363,6 +372,7 @@ run_suite "test-plan-claim-conformance.sh" "tests/test-plan-claim-conformance.sh
 run_suite "test-claim-plan-heartbeat.sh" "tests/test-claim-plan-heartbeat.sh"
 run_suite "test-claim-self-reentry.sh" "tests/test-claim-self-reentry.sh"
 run_suite "test-inflight-batch-guard.sh" "tests/test-inflight-batch-guard.sh"
+run_suite "test-inflight-reentry-guard.sh" "tests/test-inflight-reentry-guard.sh"
 run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
 # INSTALL_REDESIGN Phase 2 (1A) — root agents/ vs .claude/agents parity.
