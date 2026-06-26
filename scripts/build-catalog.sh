@@ -107,6 +107,7 @@ SECTION_ORDER = {
     'Guides': [
         'docs/guides/README.md',
         'docs/guides/installing-zskills.md',
+        'docs/guides/setup-stories.md',
         'docs/guides/workflows.md',
         'docs/guides/inspecting-and-monitoring.md',
         'docs/guides/zskills-config.md',

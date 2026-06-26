@@ -5,6 +5,7 @@ Practical guides for installing zskills and working with it day to day. Start wi
 ## Start here
 
 - **[Install zskills](installing-zskills.md)** — the two ways to install zskills and how to choose between them.
+- **[Setup stories](setup-stories.md)** — five setups from quick evaluation to software factory — pick the one that matches your situation.
 - **[Workflows](workflows.md)** — end-to-end recipes that chain skills together (draft a plan, review it, run it, land it).
 
 ## Operations
