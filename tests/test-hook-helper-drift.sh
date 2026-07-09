@@ -133,6 +133,8 @@ RESOLVE_PYTHON_CONSUMERS=(
   scripts/build-catalog.sh
   scripts/build-plugin-release.sh
   scripts/porting/codex-probe.sh
+  scripts/porting/zskills-runner.sh
+  scripts/porting/zskills-gate.sh
   scripts/_lib/finalize-prod-tree.sh
   skills/update-zskills/verifiers/verify-install-lib.sh
   skills/update-zskills/scripts/init-state.sh

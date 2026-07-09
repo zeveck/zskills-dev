@@ -467,6 +467,11 @@ run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-
 # and the Git-Bash/BSD portability self-check).
 run_suite "test-porting-probe-kit.sh" "tests/test-porting-probe-kit.sh"
 
+# CODEX_PORT_PLAN Phase 1 — unified porting runner refusal/preflight battery
+# + dry-run purity (container-runnable: run cases use tests/mocks/
+# fake-codex.sh via --codex-bin; no real codex binary needed).
+run_suite "test-porting-runner-preflight.sh" "tests/test-porting-runner-preflight.sh"
+
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
 if [ -n "${RUN_E2E:-}" ]; then
