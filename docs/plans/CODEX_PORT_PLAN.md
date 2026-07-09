@@ -851,7 +851,7 @@ small, verifiable commit.
 | Phase | Status | Commit | Notes |
 |---|---|---|---|
 | 0 — Probe kit + scan widening (+ owner probe, attended) | ✅ Done | `222c0d15` | 25-probe kit + suite (27 checks); 8324/8324; WI 0.7 ATTENDED-PENDING #1189 |
-| 1 — Runner + gate + invariants + fake-codex + preflight suite | ⬚ | | |
+| 1 — Runner + gate + invariants + fake-codex + preflight suite | ✅ Done | `9c3e3893` | 15/15 spec changes audited; preflight 27/27; 8353/8353; template verbatim-match |
 | 2 — Runner behavioral matrix (happy / failures / every suites) | ⬚ | | |
 | 3 — Scanner + converters + AGENTS.md renderer wrapper + tests | ⬚ | | |
 | 4 — Probe triage + the porting guide (gates on probe results) | ⬚ | | |

@@ -1,5 +1,36 @@
 # Plan Report — General Claude→Codex porting capability
 
+## Phase — 1 Unified runner + gate + invariants + fake-codex + preflight suite
+
+**Plan:** docs/plans/CODEX_PORT_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-codex-port-plan
+**Branch:** feat/codex-port-plan
+**Commit:** 9c3e3893
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 1.1 | `scripts/porting/zskills-runner.sh` (2,039 lines) — both modes, ALL 15 named spec changes verifier-audited, code-26 mapping, streaming pumper, inlined claims, every-mode session persistence, child prompt template byte-identical to spec after substitution | Done |
+| 1.2 | `scripts/porting/zskills-gate.sh` (295) — GATE-UNIFY four modes, read-only verified (zero mutations in code) | Done |
+| 1.3 | `scripts/porting/post-run-invariants-codex.sh` (277) — re-fork of the 235-line upstream; diff shows only the `--base-branch/--remote/--report` parametrization, dual-read preserved | Done |
+| 1.4 | `tests/mocks/fake-codex.sh` (574) — 21-mode failure matrix incl. `mid-run-stop` + `pr-wrong-tracking`; probe-id anchors verified against Phase 0 registry | Done |
+| 1.5 | `tests/test-porting-runner-preflight.sh` — 27 enumerated refusal/purity cases, count self-derived, registered | Done |
+| 1.6 | `run_suite` registration + runner/gate in `RESOLVE_PYTHON_CONSUMERS`; inlined resolvers byte-match `hooks/_lib/resolve-python.sh` | Done |
+
+### Verification
+- Verifier: fresh agent, verdict PASS; Layer-3 response validation exit 0. Salvage from the fork clones was used per Design & Constraints; shipped scripts confirmed self-contained (no scratchpad-path references).
+- Verifier made one in-review fix: the no-args exit path was missing the `runner_stop_reason` stderr line (the runner's own "every terminal exit" contract) — 3 lines added, behavior re-verified, full suite re-run post-fix.
+- Test suite (fresh, twice — pre- and post-fix): `bash tests/run-all.sh` → **Overall: 8353/8353 passed, 0 failed** (223 suites). Baseline 8324/8324; +29 fully attributed (+27 new preflight cases, +2 drift-gate consumers). No regressions.
+- All 7 AC commands run literally and passed (help grammars + 13-row exit table; dry-run purity with zero fixture mutations; dangerous `--codex-arg` rc=2 naming the flag; suite 27/27 self-derived; registration grep = 1; `fake-codex-fail-fast-99` rc=99).
+- Runner size 2,039 vs the plan's ~1,150–1,350 estimate: explicitly "not a gate"; verifier judged the overage spec-mandated (every-mode, claims, schema cross-check, no-jq Python heredocs) with no dead code or duplication.
+
+### Plan-text drift
+- Implementer emitted 4 advisory tokens, all against the Design & Constraints "Scale expectation (not a gate)" bullet — non-AC, non-derivable form; no correction. Verifier independently re-measured: zero AC drift (the "235 lines at draft time" claim re-measured exact).
+
+### Notes
+- Hook signal surfaced by the verifier: `config_hooks_tamper` denied an inline write of a throwaway `$TMPDIR` fixture `zskills-config.json` (basename match fires outside the repo config path). Fail-safe direction, but a possible false-positive class for test fixtures — tracked as issue #1190.
+
 ## Phase — 0 Real-Codex probe kit, scripts/porting/ bootstrap, literal-scan widening
 
 **Plan:** docs/plans/CODEX_PORT_PLAN.md
