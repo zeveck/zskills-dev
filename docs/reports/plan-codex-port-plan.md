@@ -1,5 +1,39 @@
 # Plan Report — General Claude→Codex porting capability
 
+## Phase — 2 Runner behavioral matrix: happy / failures / every suites
+
+**Plan:** docs/plans/CODEX_PORT_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-codex-port-plan
+**Branch:** feat/codex-port-plan
+**Commit:** e11492a2
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 2.1 | `tests/test-porting-runner-happy.sh` — 8 cases (mid-run-stop exits 31 BEFORE chunk 2; no resume token in finish-auto argv; streaming; env export end-to-end) | Done |
+| 2.2 | `tests/test-porting-runner-failures.sh` — 20 cases (full taxonomy 20–26/30/124/125; rc-26 forensics `child_raw_rc=7` quoted; stderr-reason discipline sweep with coverage assertion) | Done |
+| 2.3 | `tests/test-porting-runner-every.sh` — 8 cases (session-lost exit 32 with argv proof of no silent fresh exec; parse_schedule matrix; next-output contract) | Done |
+| 2.4 | Three `run_suite` registrations (total four `test-porting-runner-*`) | Done |
+
+### Matrix-discovered Phase-1 fixes (in-scope per D&C; each adversarially adjudicated SPEC-CONSISTENT by the verifier)
+1. Removed the stale-stop-marker preflight refusal (never spec-pinned; contradicted STOP-IN-LOOP and WI 2.3's pinned behavior; direct-unattended coverage retained; unedited preflight suite still 27/27).
+2. `ZSKILLS_RUNNER_SCHEDULE_SECONDS` test override (single use site, post-validation — cannot smuggle production behavior).
+3. `schedule_seconds=` in dry-run resolved output (additive; makes the parse matrix assertable).
+4. Validation-ladder reorder: dirty-artifacts (25) before gate (24) — code 25 was unreachable under spec order; taxonomy is normative.
+5. Per-rung authoritative `runner_stop_reason` values (the reason line is the authoritative stop classification).
+6. `last_verdict` carry in every-mode (fixes `next`'s last-verdict contract).
+7. fake-codex `env.log` (additive observability).
+8. fake-codex `premature-final` fixture fix — the premature-final rung was previously unreachable; now genuinely tested.
+
+### Verification
+- Verifier: fresh agent, PASS; Layer-3 validation exit 0. Every enumerated case ticked against actual test code; all 8 fixes judged with code evidence (none test-weakening).
+- Test suite fresh: **Overall: 8389/8389 passed, 0 failed**; baseline 8353; +36 exactly the new cases. Suite runtimes 17s/26s/39s.
+- All ACs run literally: three self-derived `Results:` lines green; registration grep = 4; five named novel classes grep-hit; rc-26 raw child rc cited (7).
+
+### Plan-text drift
+- 2 advisory tokens (impl + verifier), both against the "Scale expectation (not a gate)" bullet (1,307 total suite lines vs ~1,000–1,200) — non-AC, non-derivable form; no correction.
+
 ## Phase — 1 Unified runner + gate + invariants + fake-codex + preflight suite
 
 **Plan:** docs/plans/CODEX_PORT_PLAN.md
