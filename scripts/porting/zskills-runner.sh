@@ -152,7 +152,8 @@ Safety:
     conflicts, stashes, stale worktree registry), un-ignored tracking state,
     narrative plans with no tracker, and foreign-held plan claims.
   - Environment overrides for tests: ZSKILLS_RUNNER_TIMEOUT_SECONDS,
-    ZSKILLS_RUNNER_IDLE_TIMEOUT_SECONDS.
+    ZSKILLS_RUNNER_IDLE_TIMEOUT_SECONDS, ZSKILLS_RUNNER_SCHEDULE_SECONDS
+    (every-mode fire interval; the schedule expression is still validated).
 
 Exit codes:
   0    plan complete (or subcommand success)
@@ -713,6 +714,12 @@ codex_bin=$CODEX_BIN
 schedule=${SCHEDULE:-<none>}
 every_auto=$EVERY_AUTO
 EOF
+  # parse_schedule matrix visibility: the resolved seconds-until-next-fire
+  # for the accepted schedule grammar (only meaningful in every mode, where
+  # the expression has already been validated before this is reachable).
+  if [ "$RUN_MODE" = "every" ]; then
+    echo "schedule_seconds=$(parse_schedule_seconds "$SCHEDULE")"
+  fi
   ps=$(plan_state "$(active_plan_path)")
   printf '%s\n' "$ps"
 }
@@ -1065,11 +1072,12 @@ preflight() {
     die "foreground auto execution requires a clean working tree before launching child chunks: $dirty"
   fi
 
-  # A pre-existing stop marker is honored-but-stale state: refuse explicitly
-  # instead of an instant exit-31 surprise.
-  if [ -f "$STOP_MARKER" ]; then
-    die "stale stop marker present: $STOP_MARKER — a previous stop was honored; remove the marker to run again"
-  fi
+  # A pre-seeded stop marker is NOT a refusal: change 2 (STOP-IN-LOOP) checks
+  # the marker before EVERY chunk/fire, so both modes honor it with exit 31
+  # BEFORE the first chunk/fire (the every-mode matrix pins "pre-seeded → 31
+  # before fire 1"). Direct-unattended mode alone treats it as residue (the
+  # direct-runner-residue check above), because unattended direct demands
+  # pristine per-plan state.
 }
 
 # ── claims (change 10 — inlined minimal claim semantics) ─────────────────────
@@ -1459,6 +1467,7 @@ PY
 
 # ── validation ladder (runs after every child, both modes) ───────────────────
 VALIDATION_REASON=""
+VALIDATION_STOP_REASON=""
 VALIDATED_TID=""
 GATE_RESULT="not-run"
 SIGNALS=""
@@ -1556,6 +1565,7 @@ validate_chunk() {
   local before_file="$1" after_file="$2" summary_file="$3" gate_out="$4"
   local complete analysis report gate_mode dirty
   VALIDATION_REASON=""
+  VALIDATION_STOP_REASON="validation-failed"
   VALIDATED_TID="$TRACKING_ID"
   GATE_RESULT="not-run"
 
@@ -1571,6 +1581,7 @@ validate_chunk() {
   # 2. Empty signal set — nothing durable changed.
   if [ -z "$SIGNALS" ]; then
     VALIDATION_REASON="no durable progress detected"
+    VALIDATION_STOP_REASON="no-progress"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 20
@@ -1579,12 +1590,14 @@ validate_chunk() {
   # 3. Handoff contract (change 9) + premature-final.
   if [ "$complete" != "true" ] && [ "$(state_value "$analysis" handoff_touched)" != "true" ]; then
     VALIDATION_REASON="handoff marker missing after progress"
+    VALIDATION_STOP_REASON="handoff-missing"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 21
   fi
   if [ "$(state_value "$analysis" premature_final)" = "true" ]; then
     VALIDATION_REASON="final run-plan marker present before plan completion"
+    VALIDATION_STOP_REASON="premature-final"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 21
@@ -1595,6 +1608,7 @@ validate_chunk() {
   report=$(active_report_path)
   if [ ! -f "$report" ]; then
     VALIDATION_REASON="report missing: $report"
+    VALIDATION_STOP_REASON="report-invalid"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 22
@@ -1603,6 +1617,7 @@ validate_chunk() {
   for pattern in '^## Phase' '\*\*Status:\*\*' '^### Verification'; do
     if ! grep -qE "$pattern" "$report"; then
       VALIDATION_REASON="report missing required pattern: $pattern"
+      VALIDATION_STOP_REASON="report-invalid"
       update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
       echo "validation_failed=$VALIDATION_REASON" >&2
       return 22
@@ -1612,6 +1627,7 @@ validate_chunk() {
   stale_marker=$(state_value "$analysis" stale_marker)
   if [ -n "$stale_marker" ]; then
     VALIDATION_REASON="stale marker was not updated: $stale_marker"
+    VALIDATION_STOP_REASON="stale-marker"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 22
@@ -1623,6 +1639,7 @@ validate_chunk() {
   missing_marker=$(state_value "$analysis" missing_marker)
   if [ -n "$missing_marker" ]; then
     VALIDATION_REASON="verification marker evidence missing: $missing_marker"
+    VALIDATION_STOP_REASON="verifier-evidence-missing"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 23
@@ -1633,13 +1650,29 @@ validate_chunk() {
     local mismatch
     if ! mismatch=$(self_report_mismatch "$LAST_MESSAGE_FILE" "$complete" "$summary_file"); then
       VALIDATION_REASON="claim-evidence-mismatch: $mismatch"
+      VALIDATION_STOP_REASON="claim-evidence-mismatch"
       update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
       echo "validation_failed=$VALIDATION_REASON" >&2
       return 23
     fi
   fi
 
-  # 6. Gate (change 13): pre-continue (non-final) / post-land (final).
+  # 6. Dirty non-.zskills artifacts — checked BEFORE the gate: the unified
+  # gate carries its own artifact-root dirty scan (GATE-UNIFY), which would
+  # otherwise shadow every dirty tree as a generic gate failure (rc 24) and
+  # make the taxonomy's dedicated code 25 unreachable. The more specific
+  # classification wins.
+  dirty=$(dirty_project_state)
+  if [ -n "$dirty" ]; then
+    VALIDATION_REASON="unexpected dirty project artifact remains"
+    VALIDATION_STOP_REASON="dirty-artifacts"
+    update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "not-run" "$SIGNALS"
+    printf '%s\n' "$dirty" >&2
+    echo "validation_failed=$VALIDATION_REASON" >&2
+    return 25
+  fi
+
+  # 7. Gate (change 13): pre-continue (non-final) / post-land (final).
   if [ "$complete" = "true" ]; then
     gate_mode="post-land"
   else
@@ -1657,20 +1690,11 @@ validate_chunk() {
   else
     GATE_RESULT="failed"
     VALIDATION_REASON="$gate_mode gate failed"
+    VALIDATION_STOP_REASON="gate-failed"
     update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "$GATE_RESULT" "$SIGNALS"
     cat "$gate_out" >&2
     echo "validation_failed=$VALIDATION_REASON" >&2
     return 24
-  fi
-
-  # 7. Dirty non-.zskills artifacts.
-  dirty=$(dirty_project_state)
-  if [ -n "$dirty" ]; then
-    VALIDATION_REASON="unexpected dirty project artifact remains"
-    update_summary_validation "$summary_file" "failed" "$VALIDATION_REASON" "$TRACKING_ID" "$GATE_RESULT" "$SIGNALS"
-    printf '%s\n' "$dirty" >&2
-    echo "validation_failed=$VALIDATION_REASON" >&2
-    return 25
   fi
 
   update_summary_validation "$summary_file" "passed" "durable progress validated" "$TRACKING_ID" "$GATE_RESULT" "$SIGNALS"
@@ -1873,7 +1897,7 @@ run_finish_auto() {
     rc=$?
     set -e
     if [ "$rc" -ne 0 ]; then
-      fail_run "$rc" "validation-failed" "chunk validation failed (rc $rc): $VALIDATION_REASON"
+      fail_run "$rc" "${VALIDATION_STOP_REASON:-validation-failed}" "chunk validation failed (rc $rc): $VALIDATION_REASON"
     fi
 
     if plan_is_complete; then
@@ -1937,11 +1961,15 @@ PY
 }
 
 run_every() {
-  local fire=1 sleep_total remaining step now_epoch verdict rc session_id prompt
+  local fire=1 sleep_total remaining step now_epoch rc session_id prompt
+  # The last validation VERDICT survives across loop iterations so `next`
+  # reports it during the (dominant) sleeping state — "pending" only before
+  # the first fire has validated.
+  local last_verdict="pending"
   echo "zskills-runner: every-mode scheduler started (schedule: $SCHEDULE, auto=$EVERY_AUTO)"
   while :; do
     if [ -f "$STOP_MARKER" ]; then
-      update_every_state "" "${VALIDATION_REASON:-stopped}"
+      update_every_state "" "$last_verdict"
       fail_run 31 "stopped" "stop marker honored: $STOP_MARKER"
     fi
     if plan_is_complete; then
@@ -1951,8 +1979,15 @@ run_every() {
 
     sleep_total=$(parse_schedule_seconds "$SCHEDULE") \
       || die "unsupported schedule expression: '$SCHEDULE'"
+    # Test override (spec change 15 — env test overrides): the behavioral
+    # matrix exercises multi-fire every-mode runs without real minutes-scale
+    # waits. The schedule expression is still parsed/validated above, so an
+    # invalid schedule refuses regardless of the override.
+    if [ -n "${ZSKILLS_RUNNER_SCHEDULE_SECONDS:-}" ]; then
+      sleep_total="$ZSKILLS_RUNNER_SCHEDULE_SECONDS"
+    fi
     now_epoch=$("$PYTHON" -c 'import time; print(int(time.time()))')
-    update_every_state "$((now_epoch + sleep_total))" "${VALIDATION_REASON:-pending}"
+    update_every_state "$((now_epoch + sleep_total))" "$last_verdict"
     echo "zskills-runner: next fire in ${sleep_total}s"
 
     # Sleep loop — the stop marker is honored DURING the wait, not only at
@@ -1964,7 +1999,7 @@ run_every() {
       sleep "$step"
       remaining=$((remaining - step))
       if [ -f "$STOP_MARKER" ]; then
-        update_every_state "" "${VALIDATION_REASON:-stopped}"
+        update_every_state "" "$last_verdict"
         fail_run 31 "stopped" "stop marker honored during sleep: $STOP_MARKER"
       fi
     done
@@ -2000,8 +2035,9 @@ run_every() {
     set -e
     if [ "$rc" -ne 0 ]; then
       update_every_state "" "failed: $VALIDATION_REASON"
-      fail_run "$rc" "validation-failed" "fire validation failed (rc $rc): $VALIDATION_REASON"
+      fail_run "$rc" "${VALIDATION_STOP_REASON:-validation-failed}" "fire validation failed (rc $rc): $VALIDATION_REASON"
     fi
+    last_verdict="passed"
     update_every_state "" "passed"
 
     if plan_is_complete; then

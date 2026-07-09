@@ -472,6 +472,17 @@ run_suite "test-porting-probe-kit.sh" "tests/test-porting-probe-kit.sh"
 # fake-codex.sh via --codex-bin; no real codex binary needed).
 run_suite "test-porting-runner-preflight.sh" "tests/test-porting-runner-preflight.sh"
 
+# CODEX_PORT_PLAN Phase 2 — porting-runner behavioral matrix: happy paths
+# (validation-ladder pass-through, mid-run stop, streaming, re-entry),
+# failure taxonomy (mapped exit codes 20-30/124/125 + the stderr-reason
+# discipline sweep), and every-mode scheduler/durable-session semantics.
+# Container-runnable via tests/mocks/fake-codex.sh; timeouts and fire
+# intervals use the ZSKILLS_RUNNER_*_SECONDS env overrides — never real
+# waits.
+run_suite "test-porting-runner-happy.sh" "tests/test-porting-runner-happy.sh"
+run_suite "test-porting-runner-failures.sh" "tests/test-porting-runner-failures.sh"
+run_suite "test-porting-runner-every.sh" "tests/test-porting-runner-every.sh"
+
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
 if [ -n "${RUN_E2E:-}" ]; then

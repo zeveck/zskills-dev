@@ -27,6 +27,9 @@
 #   argv.log    one line per invocation (full argv) — tests assert on it
 #               (e.g. fresh-mode `finish auto` calls must NEVER contain
 #               `resume`).
+#   env.log     one line per invocation recording the ZSKILLS_PIPELINE_ID /
+#               ZSKILLS_TRACKING_ID env values this child saw (tests assert
+#               the runner's env export end-to-end).
 #   thread-id   the durable session id issued by the most recent fresh exec.
 #
 # FAKE_CODEX_MODE values (failure-mode matrix = union of both prior forks'
@@ -148,6 +151,14 @@ mkdir -p "$STATE_DIR"
   done
   printf '\n'
 } >> "$STATE_DIR/argv.log"
+
+# Env-export evidence (spec change 4, STABLE-TRACKING-ID): the runner exports
+# ZSKILLS_PIPELINE_ID / ZSKILLS_TRACKING_ID to every child. Record what THIS
+# invocation actually saw so suites can assert the export end-to-end (and its
+# stability across chunks).
+printf 'ZSKILLS_PIPELINE_ID=%s ZSKILLS_TRACKING_ID=%s\n' \
+  "${ZSKILLS_PIPELINE_ID:-<unset>}" "${ZSKILLS_TRACKING_ID:-<unset>}" \
+  >> "$STATE_DIR/env.log"
 
 THREAD_FILE="$STATE_DIR/thread-id"
 
@@ -421,7 +432,7 @@ run_progress() {
 
   local is_final=no
   case "$final" in
-    force) is_final=yes ;;
+    force|premature) is_final=yes ;;
     suppress) is_final=no ;;
     auto) [ "${REMAINING:-1}" = "0" ] && is_final=yes ;;
   esac
@@ -431,7 +442,14 @@ run_progress() {
     write_marker "$tdir" "fulfilled.verify-changes.final.$TRACKING_ID" "$skip"
     write_marker "$tdir" "step.run-plan.$TRACKING_ID.land" "$skip"
     write_marker "$tdir" "fulfilled.run-plan.$TRACKING_ID" "$skip"
-    rm -f "$tdir/handoff.run-plan.$TRACKING_ID"
+    if [ "$final" = "premature" ] && [ "$handoff" = "yes" ]; then
+      # premature-final fixture: the chunk keeps its (correct) handoff AND
+      # writes final markers mid-plan — so the runner's premature-final rung
+      # is what fires, not the earlier handoff-missing rung.
+      write_marker "$tdir" "handoff.run-plan.$TRACKING_ID" "$skip"
+    else
+      rm -f "$tdir/handoff.run-plan.$TRACKING_ID"
+    fi
     write_landed
   elif [ "$handoff" = "yes" ]; then
     write_marker "$tdir" "handoff.run-plan.$TRACKING_ID" "$skip"
@@ -520,7 +538,7 @@ case "$MODE" in
     exit 0
     ;;
   premature-final)
-    run_progress yes full normal force fresh -
+    run_progress yes full normal premature fresh -
     emit_item_completed "progress with premature final markers"
     emit_turn_completed
     write_self_report "in-progress" "${REMAINING:-1}"
