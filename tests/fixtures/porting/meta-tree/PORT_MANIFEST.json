@@ -1,0 +1,8 @@
+{
+  "schema": "zskills-codex-port-manifest/fixture",
+  "note": "meta-record exemption fixture — names constructs like subagent_type and CLAUDE_PLUGIN_ROOT because dispositions must cite what they dispose of",
+  "dispositions": [
+    { "construct": "subagent_type", "disposition": "codex exec child" },
+    { "construct": "CLAUDE_PLUGIN_ROOT", "disposition": "compat alias verified" }
+  ]
+}

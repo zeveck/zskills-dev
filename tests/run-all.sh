@@ -483,6 +483,14 @@ run_suite "test-porting-runner-happy.sh" "tests/test-porting-runner-happy.sh"
 run_suite "test-porting-runner-failures.sh" "tests/test-porting-runner-failures.sh"
 run_suite "test-porting-runner-every.sh" "tests/test-porting-runner-every.sh"
 
+# CODEX_PORT_PLAN Phase 3 — construct scanner + fail-closed gate caller
+# (fixture trees under tests/fixtures/porting/ plus the live-repo
+# skills/-scoped census floors) and the converters (agents-to-toml /
+# hooks-translate against the REAL agents/verifier.md + hooks/hooks.json;
+# render-agents-md success + 32 KiB-cap oversize failure).
+run_suite "test-porting-scanner.sh" "tests/test-porting-scanner.sh"
+run_suite "test-porting-converters.sh" "tests/test-porting-converters.sh"
+
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
 if [ -n "${RUN_E2E:-}" ]; then

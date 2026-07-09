@@ -135,6 +135,8 @@ RESOLVE_PYTHON_CONSUMERS=(
   scripts/porting/codex-probe.sh
   scripts/porting/zskills-runner.sh
   scripts/porting/zskills-gate.sh
+  scripts/porting/codex-scan-gate.sh
+  scripts/porting/render-agents-md.sh
   scripts/_lib/finalize-prod-tree.sh
   skills/update-zskills/verifiers/verify-install-lib.sh
   skills/update-zskills/scripts/init-state.sh
