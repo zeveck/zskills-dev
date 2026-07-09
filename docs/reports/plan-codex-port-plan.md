@@ -1,5 +1,24 @@
 # Plan Report — General Claude→Codex porting capability
 
+## Run Stopped (owner-gated, by design) — 2026-07-09
+
+**Plan:** docs/plans/CODEX_PORT_PLAN.md
+**Phase:** 4 — Probe triage + the porting guide (gates on probe results)
+**Failed at:** Phase 4 selection — owner-gate dependency unmet
+**Error:** `docs/porting/probe-results.json` is absent from the integration branch (`feat/codex-port-plan`). Per the plan's Execution context, this is explicitly NOT the recoverable dependency-not-met case (a `*/1` cron would spin forever against a file only the owner can produce) — the orchestrator deletes the cron and surfaces WI 0.7. **This is the plan's designed probe→re-arm seam, not a code failure.** Phases 0–3 all completed and verified (suite green at 8447/8447).
+**State:**
+- Commits on `feat/codex-port-plan` (local-only, NOT pushed): `222c0d15`, `19d5dd99`, `9c3e3893`, `58271ed8`, `e11492a2`, `52fa7b71`, `17a69aa2`, `b5a5c164` (+ this report commit)
+- Stash: none created
+- Worktree with changes: /tmp/zskills-pr-codex-port-plan (clean tree, all work committed)
+- Cron killed: yes (was job `b87670aa`, recurring `*/1`)
+- Plan claim: still held by `run-plan.codex-port-plan` (deliberate — re-arm self-re-enters; released at plan completion)
+
+**To resume (owner steps — see issue #1189):**
+1. Run the probe kit on a real-Codex machine: `bash scripts/porting/codex-probe.sh --out docs/porting/probe-results.json`.
+   **Branch note:** `feat/codex-port-plan` is local-only (PR mode opens the PR at final landing), so #1189's `gh pr checkout` step is not yet possible. Either run the kit from the local worktree at `/tmp/zskills-pr-codex-port-plan` and commit the results there, or push the branch yourself first (`git push origin feat/codex-port-plan` from the worktree) and follow #1189's protocol from any machine.
+2. Commit `docs/porting/probe-results.json` to `feat/codex-port-plan` (triage failures in the commit message).
+3. Re-arm: `/run-plan docs/plans/CODEX_PORT_PLAN.md finish auto` — Phase 4 ingests and triages the results (WI 4.0b), then Phases 4→15 run under finish auto normally.
+
 ## Phase — 3 Construct scanner, converters, AGENTS.md renderer wrapper
 
 **Plan:** docs/plans/CODEX_PORT_PLAN.md
