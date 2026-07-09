@@ -1,0 +1,209 @@
+{
+  "schema": "zskills-codex-probe/v1",
+  "_sample_marker": "SAMPLE FIXTURE \u2014 synthetic all-pass values for tests/test-porting-probe-kit.sh; NOT real probe observations. Real results are produced by scripts/porting/codex-probe.sh --out on a machine with Codex installed (CODEX_PORT_PLAN WI 0.7).",
+  "probed_at": "2026-01-01T00:00:00Z",
+  "codex_version": "codex-cli 0.0.0 (SAMPLE)",
+  "platform": "SAMPLE uname",
+  "results": {
+    "skills.discovery.agents-dir": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "skills.discovery.claude-skills-path-config": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "skills.frontmatter.unknown-ignored": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "skills.invocation.dollar-name": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "skills.invocation.implicit": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "skills.openai-yaml.implicit-invocation-off": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.trust.non-managed-friction": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.pretooluse.deny-envelope": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.pretooluse.exit2-stderr": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.pretooluse.updated-input": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.sessionstart.additional-context": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "hooks.stdin.permission-mode": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "agents.toml.project-dispatch": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "agents.limits.max-depth": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.json.thread-id": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.output-last-message": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.output-schema": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.resume.same-session": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.resume.prompt-and-json": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "exec.resume.session-loss": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "agentsmd.cap-32k": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "agentsmd.project-doc-max-bytes-raise": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "plugins.marketplace.claude-compat": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "plugins.env.claude-plugin-root-alias": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    },
+    "sandbox.workspace-write.add-dir": {
+      "status": "pass",
+      "expected": "SAMPLE expected value",
+      "observed": "SAMPLE observed value",
+      "notes": "SAMPLE \u2014 synthetic fixture entry, not a real probe observation",
+      "asserts": "SAMPLE asserts line",
+      "load_bearing": false
+    }
+  }
+}

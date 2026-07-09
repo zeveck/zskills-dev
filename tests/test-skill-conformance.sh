@@ -2807,6 +2807,12 @@ if [ -r "$FORBIDDEN_FIXTURE" ]; then
     {
       find "$REPO_ROOT/hooks" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.sh.template' \) 2>/dev/null
       find "$REPO_ROOT/scripts" -maxdepth 1 -type f -name '*.sh' 2>/dev/null
+      # CODEX_PORT_PLAN Phase 0 (WI 0.4): the Codex porting toolkit under
+      # scripts/porting/ is subject to the same forbidden-literal discipline
+      # as the top-level scripts (genuine literals carry an
+      # `# allow-hardcoded: <literal> reason: ...` marker).
+      find "$REPO_ROOT/scripts/porting" -maxdepth 1 -type f -name '*.sh' 2>/dev/null
+      find "$REPO_ROOT/scripts/porting" -maxdepth 1 -type f -name '*.py' 2>/dev/null
       find "$REPO_ROOT/skills" -type f -path '*/scripts/*.py' 2>/dev/null
     } | sort
   )

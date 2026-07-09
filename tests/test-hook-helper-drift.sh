@@ -132,6 +132,7 @@ RESOLVE_PYTHON_CONSUMERS=(
   hooks/_lib/plugin-hook-skip-if-mirrored.sh
   scripts/build-catalog.sh
   scripts/build-plugin-release.sh
+  scripts/porting/codex-probe.sh
   scripts/_lib/finalize-prod-tree.sh
   skills/update-zskills/verifiers/verify-install-lib.sh
   skills/update-zskills/scripts/init-state.sh

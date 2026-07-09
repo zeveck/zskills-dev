@@ -462,6 +462,11 @@ run_suite "test-skill-frontmatter-survival.sh" "tests/test-skill-frontmatter-sur
 # installing the other.)
 run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-skip-on-double-register.sh"
 
+# CODEX_PORT_PLAN Phase 0 — Codex porting probe kit (container-runnable: no
+# codex binary needed; exercises --list, refusal, --validate, summary format,
+# and the Git-Bash/BSD portability self-check).
+run_suite "test-porting-probe-kit.sh" "tests/test-porting-probe-kit.sh"
+
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
 if [ -n "${RUN_E2E:-}" ]; then
