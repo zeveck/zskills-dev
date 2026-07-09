@@ -1,5 +1,34 @@
 # Plan Report — General Claude→Codex porting capability
 
+## Phase — 3 Construct scanner, converters, AGENTS.md renderer wrapper
+
+**Plan:** docs/plans/CODEX_PORT_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-codex-port-plan
+**Branch:** feat/codex-port-plan
+**Commit:** 17a69aa2
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 3.1 | `codex-scan.py` (488) — 10-class v1 DATA table (verifier: exact match vs the normative reference), fence+prose scanning, discover/gate, extension-dispatched allow-markers, root-only meta-record exemption | Done |
+| 3.2 | `codex-scan-gate.sh` (194) — pinned CLI, fail-closed, census floors derived+checked over the same skills/ scope (all >0, ≤50% observed) | Done |
+| 3.3 | `agents-to-toml.py` (211) — TOML conversion, tools:/hooks: degradations section | Done |
+| 3.4 | `hooks-translate.py` (191) — alias/native plugin-root styles, 3 substrate drops each with reason, trust-review note | Done |
+| 3.5 | `render-agents-md.sh` (118) — D24 wrapper (zero forked logic; byte-identical pass-through proven), 32 KiB dual-delivery check | Done |
+| 3.6 | `test-porting-scanner.sh` (35 checks) + `test-porting-converters.sh` (21 checks) with all enumerated cases incl. NOTES.md counter-case + live census | Done |
+| 3.7 | Drift-gate consumer registrations (124/124); allow-hardcoded markers confirmed unneeded (conformance 841/841) | Done |
+
+### Verification
+- Verifier: fresh agent, PASS; Layer-3 validation exit 0. Class table diffed against the plan's normative reference: exact match. Both converters re-run by the verifier against the real `agents/verifier.md` / `hooks/hooks.json`.
+- Live-tree discover (AC-quoted): `CODEX-SCAN-SUMMARY: files=129 hits=1645 violations=0 unknown=27 per-class=cron:107,agent-dispatch:60,bg-monitor:18,skill-tool:29,arguments:162,ask-user:9,plugin-root:819,project-dir:415,frontmatter-flags:18,claude-model-dispatch:8` — every class > 0.
+- unknown=27 spot-checked: all genuine unclassified Claude constructs (24× `CLAUDE_TEMPLATE` references, 3× `CLAUDE_CODE_SESSION_ID`); no false tokenization; the designed self-amendment path (Phase 4) covers them.
+- Test suite fresh: **Overall: 8447/8447 passed, 0 failed** (baseline 8389; +58 fully attributed).
+- All 9 ACs run literally and passed (marker cases `allow-md` / `allow-sh` both suppress and un-suppress).
+
+### Plan-text drift
+- None (the reference table's live-tree scale column is explicitly "context, NOT frozen expectations").
+
 ## Phase — 2 Runner behavioral matrix: happy / failures / every suites
 
 **Plan:** docs/plans/CODEX_PORT_PLAN.md
